@@ -864,6 +864,7 @@ header.top{
 .dot-impegno{background:#3A4560;border:1px solid #4A5878;}
 .dot-allenamento{background:var(--gold-dim);border:1px solid var(--gold);}
 .dot-retest{background:rgba(95,168,163,0.18);border:1px solid #5FA8A3;}
+.dot-ans{background:rgba(124,147,224,0.18);border:1px solid #7C93E0;}
 .dot-free{background:transparent;border:1px dashed var(--line);}
 
 #retestHint{margin:10px 0 4px;}
@@ -917,6 +918,7 @@ header.top{
 .cal-block.tipo-impegno{background:#3A4560;border:1px solid #4A5878;color:#DCE2F0;}
 .cal-block.tipo-allenamento{background:var(--gold-dim);border:1px solid var(--gold);color:var(--gold-bright);}
 .cal-block.tipo-retest{background:rgba(95,168,163,0.18);border:1px solid #5FA8A3;color:#8FCFC9;}
+.cal-block.tipo-ans{background:rgba(124,147,224,0.18);border:1px solid #7C93E0;color:#A9B7EE;}
 
 .cal-free{
   position:absolute;left:3px;right:3px;border-radius:3px;
@@ -1022,6 +1024,13 @@ header.top{
 }
 .cli-tab.active{color:var(--gold-bright);border-bottom-color:var(--gold);}
 
+.cli-area-badge-row{max-width:1320px;margin:0 auto;padding:12px 32px 0;display:flex;gap:8px;flex-wrap:wrap;}
+.cli-area-badge{
+  font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px;
+  background:var(--navy-850);border:1px solid var(--line);color:var(--ink-mute);
+}
+.cli-area-badge.on{background:var(--gold-bg-10, rgba(253,112,35,.12));border-color:var(--gold-line);color:var(--gold-bright);}
+
 .cli-cal-wrap{
   max-width:1320px;margin:0 auto;padding:26px 32px 48px;
 }
@@ -1043,8 +1052,26 @@ header.top{
 }
 .val-card-del:hover{color:#E0776A;}
 
+/* ---------- sistema (GHI / test) ---------- */
+.ghi-add-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;}
+.ghi-add-row input{flex:1;min-width:120px;}
+.ghi-row{
+  display:flex;align-items:center;gap:14px;padding:10px 14px;border:1px solid var(--line);
+  border-radius:8px;margin-bottom:6px;background:var(--navy-850);font-size:12.5px;
+}
+.ghi-date{color:var(--ink-mute);min-width:76px;}
+.ghi-val{font-weight:700;border:1px solid;border-radius:20px;padding:2px 10px;min-width:56px;text-align:center;}
+.ghi-fonte{color:var(--ink-mute);font-size:11px;text-transform:uppercase;letter-spacing:.03em;}
+.ghi-note{color:var(--ink-dim);flex:1;}
+.sist-test-item{display:flex;align-items:center;gap:8px;padding:8px 0;font-size:13px;color:var(--ink-dim);cursor:pointer;}
+
+/* ---------- storico ---------- */
+.storico-filtri{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+.storico-filtri select, .storico-filtri input{min-width:120px;}
+
 .val-editor-header{border-bottom:1px solid var(--line-soft);padding-bottom:16px;margin-bottom:20px;}
 .val-section{margin-bottom:26px;}
+.val-esito-section{padding:16px;border:1px solid var(--gold-line);border-radius:8px;background:var(--gold-bg-10, rgba(253,112,35,.06));}
 .val-section-title{
   font-family:var(--serif);font-size:14px;font-weight:700;color:var(--client-accent-bright);
   margin-bottom:12px;padding-bottom:6px;border-bottom:1px solid var(--client-accent-line);
@@ -1226,6 +1253,7 @@ body[data-theme="light"]{
 .upcoming-item.tipo-border-allenamento{border-left-color:var(--gold);}
 .upcoming-item.tipo-border-retest{border-left-color:var(--client-accent);}
 .upcoming-item.tipo-border-impegno{border-left-color:#3A4560;}
+.upcoming-item.tipo-border-ans{border-left-color:#7C93E0;}
 .upcoming-item .ui-info .uid{font-size:13px;color:var(--ink);}
 .upcoming-item .ui-info .uim{font-size:11.5px;color:var(--ink-mute);margin-top:3px;}
 
@@ -1236,6 +1264,7 @@ body[data-theme="light"]{
 .tipo-tag-allenamento{background:var(--gold-dim);color:var(--gold-bright);}
 .tipo-tag-retest{background:var(--client-accent-dim);color:var(--client-accent-bright);}
 .tipo-tag-impegno{background:rgba(58,69,96,0.4);color:#B7C0D4;}
+.tipo-tag-ans{background:rgba(124,147,224,0.18);color:#7C93E0;}
 
 .timeline{border-left:2px solid var(--client-accent-line);padding-left:18px;}
 .timeline-item{position:relative;margin-bottom:16px;cursor:pointer;}
@@ -1639,10 +1668,14 @@ body[data-theme="light"]{
 <div id="mainWrap" style="display:none;">
   <div class="cli-context-bar" id="cliContextBar"></div>
   <div class="cli-tabs" id="cliTabs">
-    <div class="cli-tab active" data-tab="pathway">Pathway</div>
+    <div class="cli-tab active" data-tab="valutazioni">Valutazione</div>
+    <div class="cli-tab" data-tab="sistema">Sistema</div>
+    <div class="cli-tab" data-tab="areaHuman">Area Human</div>
+    <div class="cli-tab" data-tab="pathway">Area Performance</div>
+    <div class="cli-tab" data-tab="storico">Storico</div>
     <div class="cli-tab" data-tab="calendario">Calendario cliente</div>
-    <div class="cli-tab" data-tab="valutazioni">Valutazioni</div>
   </div>
+  <div class="cli-area-badge-row" id="cliAreaBadgeRow"></div>
   <div class="wrap" id="pathwayWrap">
 
 
@@ -1703,6 +1736,7 @@ body[data-theme="light"]{
       <span class="leg-item"><span class="leg-dot dot-impegno"></span>Impegno</span>
       <span class="leg-item"><span class="leg-dot dot-allenamento"></span>Allenamento</span>
       <span class="leg-item"><span class="leg-dot dot-retest"></span>Retest</span>
+      <span class="leg-item"><span class="leg-dot dot-ans"></span>Percorso ANS</span>
     </div>
     <div style="font-size:11.5px;color:var(--ink-mute);margin-top:4px;">Clicca su una lezione per i dettagli, o in un punto vuoto del calendario per richiedere un appuntamento in quell'orario.</div>
 
@@ -1729,6 +1763,21 @@ body[data-theme="light"]{
       <div id="valutazioniList"></div>
     </div>
     <div id="valutazioneEditorView" style="display:none;"></div>
+  </div>
+
+  <div class="val-wrap" id="sistemaWrap" style="display:none;">
+    <div id="sistemaContent"></div>
+  </div>
+
+  <div class="val-wrap" id="areaHumanWrap" style="display:none;">
+    <div class="timeline-empty" style="padding:60px 20px;text-align:center;">
+      <div style="font-family:var(--serif);font-size:18px;margin-bottom:8px;">Area Human</div>
+      <div style="font-size:13px;color:var(--ink-mute);">In arrivo — questa sezione sarà preparata in un prossimo passaggio.</div>
+    </div>
+  </div>
+
+  <div class="val-wrap" id="storicoWrap" style="display:none;">
+    <div id="storicoContent"></div>
   </div>
 </div>
 
@@ -1828,6 +1877,7 @@ body[data-theme="light"]{
     <span class="leg-item"><span class="leg-dot dot-impegno"></span>Impegno</span>
     <span class="leg-item"><span class="leg-dot dot-allenamento"></span>Allenamento</span>
     <span class="leg-item"><span class="leg-dot dot-retest"></span>Retest</span>
+    <span class="leg-item"><span class="leg-dot dot-ans"></span>Percorso ANS</span>
     <span class="leg-item"><span class="leg-dot dot-recv"></span>Orario di ricevimento</span>
     <span class="leg-item"><span class="leg-dot dot-nondisp"></span>Non disponibile</span>
     <span class="leg-item"><span class="leg-dot dot-free"></span>Finestra libera (clicca per inserire)</span>
@@ -2065,7 +2115,12 @@ function clienteToRow(c){
     block_operativo_id: c.blockOperativoId || null,
     valutazioni: c.valutazioni || [],
     eliminato: !!c.eliminato,
-    eliminato_il: c.eliminatoIl || null
+    eliminato_il: c.eliminatoIl || null,
+    esito_valutazione: c.esitoValutazione || null,
+    area_target: c.areaTarget || [],
+    area_attiva: c.areaAttiva || null,
+    ghi_storico: c.ghiStorico || [],
+    sistema_test_selezionati: Array.from(c.sistemaTestSelezionati || [])
   };
 }
 function rowToCliente(r){
@@ -2083,7 +2138,12 @@ function rowToCliente(r){
     blockOperativoId: r.block_operativo_id || null,
     valutazioni: r.valutazioni || [],
     eliminato: !!r.eliminato,
-    eliminatoIl: r.eliminato_il || null
+    eliminatoIl: r.eliminato_il || null,
+    esitoValutazione: r.esito_valutazione || null,
+    areaTarget: r.area_target || [],
+    areaAttiva: r.area_attiva || null,
+    ghiStorico: r.ghi_storico || [],
+    sistemaTestSelezionati: new Set(r.sistema_test_selezionati || [])
   };
 }
 // elenco (eventualmente vuoto) dei professionisti assegnati a un cliente,
@@ -3113,7 +3173,13 @@ function loadClientIntoWorkspace(id){
   state.valutazioni = c.valutazioni || [];
   state.valutazioneEditor = null;
   state.schedaEditor = null;
-  state.clientTab = 'pathway';
+  // tab di apertura: se il cliente non ha ancora un esito di valutazione va
+  // dritto sulla valutazione; altrimenti si apre sull'area in cui si trova
+  // OGGI operativamente
+  if(!c.esitoValutazione) state.clientTab = 'valutazioni';
+  else if(c.areaAttiva==='sistema') state.clientTab = 'sistema';
+  else if(c.areaAttiva==='AH') state.clientTab = 'areaHuman';
+  else state.clientTab = 'pathway';
   state.pathwayEditMode = !c.pathway;
 }
 
@@ -3144,19 +3210,59 @@ function findSchedaById(c, schedaId){
   return null;
 }
 
+// mostra la tab richiesta (una delle #cliTabs) e nasconde le altre,
+// chiamando il render della tab appena attivata: unico punto usato sia dal
+// click sulle tab, sia dall'apertura di un cliente dalla lista, sia dalla
+// creazione di un nuovo cliente, così restano sempre coerenti
+function activateClientTab(tab){
+  state.clientTab = tab;
+  document.getElementById('pathwayWrap').style.display = tab==='pathway' ? 'grid' : 'none';
+  document.getElementById('clientCalWrap').style.display = tab==='calendario' ? 'grid' : 'none';
+  document.getElementById('valutazioniWrap').style.display = tab==='valutazioni' ? 'block' : 'none';
+  document.getElementById('sistemaWrap').style.display = tab==='sistema' ? 'block' : 'none';
+  document.getElementById('areaHumanWrap').style.display = tab==='areaHuman' ? 'block' : 'none';
+  document.getElementById('storicoWrap').style.display = tab==='storico' ? 'block' : 'none';
+  renderCliTabs();
+  if(tab==='pathway') renderPathwayView();
+  if(tab==='calendario') renderClientCalendar();
+  if(tab==='valutazioni') renderValutazioni();
+  if(tab==='sistema') renderSistemaTab();
+  if(tab==='storico') renderStoricoTab();
+}
+
 function renderCliTabs(){
   document.querySelectorAll('#cliTabs .cli-tab').forEach(t=>{
     t.classList.toggle('active', t.dataset.tab===state.clientTab);
-    t.onclick = ()=>{
-      state.clientTab = t.dataset.tab;
-      renderCliTabs();
-      document.getElementById('pathwayWrap').style.display = state.clientTab==='pathway' ? 'grid' : 'none';
-      document.getElementById('clientCalWrap').style.display = state.clientTab==='calendario' ? 'grid' : 'none';
-      document.getElementById('valutazioniWrap').style.display = state.clientTab==='valutazioni' ? 'block' : 'none';
-      if(state.clientTab==='calendario') renderClientCalendar();
-      if(state.clientTab==='valutazioni') renderValutazioni();
-    };
+    t.onclick = ()=> activateClientTab(t.dataset.tab);
   });
+  renderCliAreaBadgeRow();
+}
+
+// riga di badge che mostra a colpo d'occhio lo smistamento attuale del
+// cliente (esito valutazione, stato lavoro Sistema, area attiva)
+function renderCliAreaBadgeRow(){
+  const box = document.getElementById('cliAreaBadgeRow');
+  if(!box) return;
+  const c = activeClient();
+  if(!c){ box.innerHTML = ''; return; }
+  const labels = {
+    fisioterapia: 'Fisioterapia (acuto)',
+    sistema: 'Lavoro Sistema in corso',
+    AH: 'Area Human',
+    AP: 'Area Performance',
+    'AH+AP': 'Area Human + Area Performance'
+  };
+  if(!c.esitoValutazione){
+    box.innerHTML = `<span class="cli-area-badge">Prima valutazione da completare</span>`;
+    return;
+  }
+  const attivaLabel = labels[c.areaAttiva] || '—';
+  let html = `<span class="cli-area-badge on">${attivaLabel}</span>`;
+  if(c.areaAttiva==='sistema' && c.areaTarget && c.areaTarget.length){
+    const targetLabel = c.areaTarget.length>1 ? 'Area Human + Area Performance' : (labels[c.areaTarget[0]] || c.areaTarget[0]);
+    html += `<span class="cli-area-badge">In attesa → ${targetLabel}</span>`;
+  }
+  box.innerHTML = html;
 }
 
 // ==================== VALUTAZIONI (prima valutazione / follow-up) ====================
@@ -3263,6 +3369,8 @@ function emptyValutazione(){
     tensRelax: null,        // 'tens' | 'relax'
     desiderioMigliorarsi: null, // 1-10
     evidenziati: [],        // chiavi campo marcate importanti per questo cliente
+    esito: null,            // 'acuto' (-> Fisioterapia) | 'sistema' (-> lavoro Sistema)
+    areaScelta: [],         // se esito è 'sistema': ['AH'] | ['AP'] | ['AH','AP']
     createdAt: Date.now()
   };
 }
@@ -3483,6 +3591,18 @@ function renderValutazioneEditor(){
     </div></div>`;
   });
 
+  html += `<div class="val-section val-esito-section"><div class="val-section-title">Esito valutazione — smistamento</div>
+    <div style="font-size:12px;color:var(--ink-mute);margin-bottom:10px;">In acuto va indirizzato in Fisioterapia; altrimenti entra nel lavoro Sistema, per poi essere indirizzato all'area scelta una volta che i GHI sono validi.</div>
+    ${valChipGroupHTML('esito', [{v:'acuto',l:'Acuto → Fisioterapia'},{v:'sistema',l:'Non acuto → Sistema'}], v.esito)}
+    <div id="valAreaSceltaWrap" style="margin-top:10px;${v.esito==='sistema'?'':'display:none;'}">
+      <label style="font-size:12px;color:var(--ink-mute);">Area di destinazione (al termine del lavoro Sistema)</label>
+      <div class="val-chip-group" id="valAreaScelta">
+        <button type="button" class="val-chip ${v.areaScelta.includes('AH')?'sel':''}" data-areaval="AH">Area Human</button>
+        <button type="button" class="val-chip ${v.areaScelta.includes('AP')?'sel':''}" data-areaval="AP">Area Performance</button>
+      </div>
+    </div>
+  </div>`;
+
   html += `<div class="ev-actions val-editor-actions"><div></div><button class="btn-gold" id="btnSalvaValutazione">Salva valutazione</button></div>`;
 
   box.innerHTML = html;
@@ -3533,9 +3653,25 @@ function bindValutazioneEditorEvents(){
       chip.onclick = ()=>{
         v[name] = (v[name]===chip.dataset.chipval) ? null : chip.dataset.chipval;
         group.querySelectorAll('[data-chipval]').forEach(c=> c.classList.toggle('sel', c.dataset.chipval===v[name]));
+        if(name==='esito'){
+          const wrap = document.getElementById('valAreaSceltaWrap');
+          if(wrap) wrap.style.display = v.esito==='sistema' ? '' : 'none';
+        }
       };
     });
   });
+
+  const areaSceltaBox = document.getElementById('valAreaScelta');
+  if(areaSceltaBox){
+    areaSceltaBox.querySelectorAll('[data-areaval]').forEach(chip=>{
+      chip.onclick = ()=>{
+        const val = chip.dataset.areaval;
+        const idx = v.areaScelta.indexOf(val);
+        if(idx>=0) v.areaScelta.splice(idx,1); else v.areaScelta.push(val);
+        chip.classList.toggle('sel');
+      };
+    });
+  }
 
   document.querySelectorAll('[data-persona]').forEach(group=>{
     const key = group.dataset.persona;
@@ -3559,8 +3695,211 @@ function bindValutazioneEditorEvents(){
       if(i>=0) state.valutazioni[i] = v; else state.valutazioni.push(v);
     }
     syncClientFromState();
+    // l'esito di QUESTA valutazione (se indicato) aggiorna lo smistamento
+    // corrente del cliente: acuto -> Fisioterapia subito; sistema -> lavoro
+    // Sistema, con l'area di destinazione scelta messa "in attesa" finché i
+    // GHI non sono validi (vedi "via libera" nella tab Sistema)
+    const c = activeClient();
+    if(c && v.esito){
+      c.esitoValutazione = v.esito;
+      if(v.esito==='acuto'){
+        c.areaAttiva = 'fisioterapia';
+        c.areaTarget = [];
+      } else if(v.esito==='sistema'){
+        c.areaAttiva = 'sistema';
+        c.areaTarget = v.areaScelta.slice();
+      }
+      db.saveCliente(c);
+      renderContextBar();
+      renderCliTabs();
+    }
     state.valutazioneEditor = null;
     renderValutazioni();
+  };
+}
+
+// ==================== SISTEMA (lavoro sistema, tra valutazione e AH/AP) ====================
+// Catalogo di partenza dei test/percorsi del lavoro Sistema — riusa lo
+// stesso pattern del catalogo KPI (elenco + selezione a set), ma è un
+// catalogo a sé: Ale lo affinerà con l'elenco reale dei test.
+const SISTEMA_TEST_CATALOG = [
+  'GHI — Global Health Index (Biotekna)',
+  'Test variabilità cardiaca (HRV)',
+  'Percorso ANS — biofeedback respiratorio',
+  'Retest GHI di controllo'
+];
+// soglie di colorazione del GHI — placeholder in attesa dei valori reali
+// Biotekna (Ale ha dei PDF di esempio da cui ricavarli con precisione)
+const GHI_SOGLIE = { basso: 40, medio: 70 };
+function ghiColor(valore){
+  const n = parseFloat(valore);
+  if(isNaN(n)) return 'var(--ink-mute)';
+  if(n < GHI_SOGLIE.basso) return '#E0776A';
+  if(n < GHI_SOGLIE.medio) return '#E0A05F';
+  return '#7CC48A';
+}
+function renderSistemaTab(){
+  const c = activeClient();
+  const box = document.getElementById('sistemaContent');
+  if(!c || !box) return;
+  if(!c.ghiStorico) c.ghiStorico = [];
+  if(!c.sistemaTestSelezionati) c.sistemaTestSelezionati = new Set();
+
+  const ghiRows = c.ghiStorico.slice().sort((a,b)=> (b.data||'').localeCompare(a.data||''));
+  const ghiListHTML = ghiRows.length ? ghiRows.map(g=>`
+    <div class="ghi-row">
+      <span class="ghi-date">${g.data ? g.data.split('-').reverse().join('/') : '—'}</span>
+      <span class="ghi-val" style="color:${ghiColor(g.valore)};border-color:${ghiColor(g.valore)};">${g.valore}</span>
+      <span class="ghi-fonte">${g.fonte==='pdf' ? 'da PDF' : 'manuale'}</span>
+      <span class="ghi-note">${escHtml(g.note||'')}</span>
+      <button type="button" class="val-card-del" data-del-ghi="${g.id}" title="Elimina">×</button>
+    </div>`).join('') : `<div class="val-empty">Nessun valore GHI ancora registrato.</div>`;
+
+  const testHTML = SISTEMA_TEST_CATALOG.map(t=>`
+    <label class="sist-test-item">
+      <input type="checkbox" data-sisttest="${escAttr(t)}" ${c.sistemaTestSelezionati.has(t)?'checked':''}>
+      ${t}
+    </label>`).join('');
+
+  const canGoLive = c.areaAttiva==='sistema' && c.areaTarget && c.areaTarget.length>0;
+  const targetLabel = canGoLive ? (c.areaTarget.length>1 ? 'Area Human + Area Performance' : (c.areaTarget[0]==='AH' ? 'Area Human' : 'Area Performance')) : '';
+
+  box.innerHTML = `
+    <div class="client-section-label-row"><div class="client-section-label">Storico GHI</div></div>
+    <div class="ghi-add-row">
+      <input class="editable" type="date" id="ghiNuovaData" value="${fmtDateISO(new Date())}">
+      <input class="editable" type="number" id="ghiNuovoValore" placeholder="Valore GHI">
+      <input class="editable" id="ghiNuovaNota" placeholder="Nota (opzionale)">
+      <button class="btn-gold" id="btnAddGhi">+ Aggiungi</button>
+    </div>
+    <div id="ghiList" style="margin:14px 0 26px;">${ghiListHTML}</div>
+
+    <div class="client-section-label-row"><div class="client-section-label">Test / percorsi da svolgere</div></div>
+    <div id="sistTestList" style="margin-bottom:18px;">${testHTML}</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:26px;">
+      <button class="btn-ghost" id="btnPianificaRetest">Pianifica retest in calendario</button>
+      <button class="btn-ghost" id="btnPianificaAns">Pianifica percorso ANS in calendario</button>
+    </div>
+
+    ${canGoLive ? `<div class="val-esito-section">
+      <div class="val-section-title">Via libera</div>
+      <div style="font-size:12.5px;color:var(--ink-mute);margin-bottom:10px;">Quando i valori GHI sono validi, sposta il cliente all'area scelta in valutazione: <b>${targetLabel}</b>.</div>
+      <button class="btn-gold" id="btnViaLibera">Via libera → ${targetLabel}</button>
+    </div>` : ''}
+  `;
+
+  document.getElementById('btnAddGhi').onclick = ()=>{
+    const data = document.getElementById('ghiNuovaData').value;
+    const valore = document.getElementById('ghiNuovoValore').value;
+    const nota = document.getElementById('ghiNuovaNota').value;
+    if(!data || valore===''){ alert('Inserisci almeno data e valore.'); return; }
+    c.ghiStorico.push({ id:'ghi_'+Date.now()+'_'+Math.random().toString(36).slice(2,7), data, valore: parseFloat(valore), fonte:'manuale', note:nota });
+    db.saveCliente(c);
+    renderSistemaTab();
+  };
+  box.querySelectorAll('[data-del-ghi]').forEach(btn=>{
+    btn.onclick = ()=>{
+      c.ghiStorico = c.ghiStorico.filter(g=>g.id!==btn.dataset.delGhi);
+      db.saveCliente(c);
+      renderSistemaTab();
+    };
+  });
+  box.querySelectorAll('[data-sisttest]').forEach(chk=>{
+    chk.onchange = ()=>{
+      const t = chk.dataset.sisttest;
+      if(chk.checked) c.sistemaTestSelezionati.add(t); else c.sistemaTestSelezionati.delete(t);
+      db.saveCliente(c);
+    };
+  });
+  document.getElementById('btnPianificaRetest').onclick = ()=>{
+    openEventEditor({day: fmtDateISO(new Date()), start:'09:00', end:'10:00', tipo:'retest', clienteId:c.id}, false);
+  };
+  document.getElementById('btnPianificaAns').onclick = ()=>{
+    openEventEditor({day: fmtDateISO(new Date()), start:'09:00', end:'10:00', tipo:'ans', clienteId:c.id}, false);
+  };
+  const btnVia = document.getElementById('btnViaLibera');
+  if(btnVia) btnVia.onclick = ()=>{
+    c.areaAttiva = c.areaTarget.length>1 ? 'AH+AP' : c.areaTarget[0];
+    db.saveCliente(c);
+    renderCliTabs();
+    activateClientTab(c.areaAttiva==='AH' ? 'areaHuman' : 'pathway');
+  };
+}
+
+// ==================== STORICO (tutti i trattamenti del cliente) ====================
+// area derivata dall'appuntamento: non è un campo salvato a sé, si ricava da
+// tipo (retest/ans -> sistema) o dall'area del professionista assegnato
+// (Fisioterapista -> fisioterapia), altrimenti performance di default
+function storicoAreaOf(a){
+  if(a.tipo==='retest' || a.tipo==='ans') return 'sistema';
+  const prof = a.professionistaId ? state.professionisti.find(p=>p.id===a.professionistaId) : null;
+  if(prof && prof.area==='Fisioterapista') return 'fisioterapia';
+  return 'performance';
+}
+function renderStoricoTab(){
+  const c = activeClient();
+  const box = document.getElementById('storicoContent');
+  if(!c || !box) return;
+  if(!state.storicoFiltri) state.storicoFiltri = { area:'', profId:'', da:'', a:'' };
+  const f = state.storicoFiltri;
+  const tutti = state.appuntamenti.filter(a=>a.clienteId===c.id);
+  const profOptions = state.professionisti.filter(p=> tutti.some(a=>a.professionistaId===p.id));
+
+  box.innerHTML = `
+    <div class="client-section-label-row"><div class="client-section-label">Storico trattamenti</div></div>
+    <div class="storico-filtri">
+      <select class="editable" id="stFiltroArea">
+        <option value="">Tutte le aree</option>
+        <option value="performance">Area Performance</option>
+        <option value="sistema">Lavoro Sistema</option>
+        <option value="fisioterapia">Fisioterapia</option>
+      </select>
+      <select class="editable" id="stFiltroProf">
+        <option value="">Tutti i professionisti</option>
+        ${profOptions.map(p=>`<option value="${p.id}">${p.nome}</option>`).join('')}
+      </select>
+      <input class="editable" type="date" id="stFiltroDa" placeholder="Da">
+      <input class="editable" type="date" id="stFiltroA" placeholder="A">
+      <button class="btn-ghost" id="btnStFiltriReset">Azzera filtri</button>
+    </div>
+    <div id="stLista" style="margin-top:16px;"></div>
+  `;
+  document.getElementById('stFiltroArea').value = f.area;
+  document.getElementById('stFiltroProf').value = f.profId;
+  document.getElementById('stFiltroDa').value = f.da;
+  document.getElementById('stFiltroA').value = f.a;
+
+  function renderLista(){
+    let rows = tutti.filter(a=>{
+      if(f.area && storicoAreaOf(a)!==f.area) return false;
+      if(f.profId && a.professionistaId!==f.profId) return false;
+      if(f.da && a.day < f.da) return false;
+      if(f.a && a.day > f.a) return false;
+      return true;
+    });
+    rows.sort((a,b)=> (a.day+a.start).localeCompare(b.day+b.start));
+    const areaLbl = {performance:'Area Performance', sistema:'Sistema', fisioterapia:'Fisioterapia'};
+    const listBox = document.getElementById('stLista');
+    if(!rows.length){ listBox.innerHTML = `<div class="val-empty">Nessun trattamento trovato con questi filtri.</div>`; return; }
+    listBox.innerHTML = rows.map(a=>{
+      const prof = a.professionistaId ? state.professionisti.find(p=>p.id===a.professionistaId) : null;
+      return `<div class="upcoming-item tipo-border-${a.tipo}">
+        <div class="ui-info">
+          <div class="uid"><span class="tipo-tag tipo-tag-${a.tipo}">${tipoLabel(a.tipo)}</span> ${a.titolo || tipoLabel(a.tipo)}</div>
+          <div class="uim">${a.day.split('-').reverse().join('/')} · ${a.start}–${a.end} · ${areaLbl[storicoAreaOf(a)]}${prof ? ' · '+prof.nome : ''}</div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+  renderLista();
+
+  document.getElementById('stFiltroArea').onchange = (e)=>{ f.area = e.target.value; renderLista(); };
+  document.getElementById('stFiltroProf').onchange = (e)=>{ f.profId = e.target.value; renderLista(); };
+  document.getElementById('stFiltroDa').onchange = (e)=>{ f.da = e.target.value; renderLista(); };
+  document.getElementById('stFiltroA').onchange = (e)=>{ f.a = e.target.value; renderLista(); };
+  document.getElementById('btnStFiltriReset').onclick = ()=>{
+    state.storicoFiltri = { area:'', profId:'', da:'', a:'' };
+    renderStoricoTab();
   };
 }
 
@@ -5006,7 +5345,17 @@ function createCliente(data){
     schede: {},
     professionistiIds: state.professionista ? [state.professionista.id] : [],
     authUserId: null,
-    valutazioni: []
+    valutazioni: [],
+    // macro-aree: esito della prima valutazione (null finché non fatta),
+    // 'acuto' (-> Fisioterapia) o 'sistema' (-> lavoro sistema, poi AH/AP);
+    // areaTarget è l'area (o le aree) scelte a cui destinare il cliente una
+    // volta che il lavoro sistema è concluso; areaAttiva è l'area in cui il
+    // cliente si trova OPERATIVAMENTE oggi (aggiornata anche col "via libera")
+    esitoValutazione: null,
+    areaTarget: [],
+    areaAttiva: null,
+    ghiStorico: [],
+    sistemaTestSelezionati: new Set()
   };
   state.clienti.push(c);
   db.saveCliente(c);
@@ -5185,10 +5534,7 @@ function renderClientiList(filter){
       loadClientIntoWorkspace(card.dataset.openCliente);
       showView('pathway');
       renderContextBar();
-      renderCliTabs();
-      document.getElementById('clientCalWrap').style.display = 'none';
-      document.getElementById('valutazioniWrap').style.display = 'none';
-      renderPathwayView();
+      activateClientTab(state.clientTab);
     };
   });
   box.querySelectorAll('[data-del-cliente]').forEach(btn=>{
@@ -5274,10 +5620,12 @@ document.getElementById('btnCreaCliente').onclick = ()=>{
   loadClientIntoWorkspace(c.id);
   showView('pathway');
   renderContextBar();
-  renderCliTabs();
-  document.getElementById('clientCalWrap').style.display = 'none';
-  document.getElementById('valutazioniWrap').style.display = 'none';
-  renderPathwayView();
+  // la prima cosa che si apre per un cliente nuovo è la possibilità di fare
+  // la prima valutazione (da cui poi si smista in Fisioterapia/Sistema):
+  // il pathway si imposta comunque solo più avanti, con la scelta del
+  // profilo/building block, quindi qui si salta dritti alla tab Valutazioni
+  activateClientTab('valutazioni');
+  openValutazioneEditor(emptyValutazione(), true);
 };
 
 // ---------------- profilo ----------------
@@ -6247,7 +6595,7 @@ function mondayOf(d){ const r=new Date(d); const day=r.getDay(); const diff=(day
 function addDays(d,n){ const r=new Date(d); r.setDate(r.getDate()+n); return r; }
 function fmtDateISO(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 function sameDate(a,b){ return a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate(); }
-function tipoLabel(t){ return t==='impegno'?'Impegno':t==='retest'?'Retest':'Allenamento'; }
+function tipoLabel(t){ return t==='impegno'?'Impegno':t==='retest'?'Retest':t==='ans'?'Percorso ANS':'Allenamento'; }
 
 function parseReviewWeeks(str){
   if(!str) return null;
@@ -6540,6 +6888,7 @@ function renderEventModal(){
       <div class="ev-type-opt ${ed.tipo==='impegno'?'active':''}" data-settipo="impegno">Impegno</div>
       <div class="ev-type-opt ${ed.tipo==='allenamento'?'active':''}" data-settipo="allenamento">Allenamento</div>
       <div class="ev-type-opt ${ed.tipo==='retest'?'active':''}" data-settipo="retest">Retest</div>
+      <div class="ev-type-opt ${ed.tipo==='ans'?'active':''}" data-settipo="ans">Percorso ANS</div>
     </div>
     <div class="ev-field"><label>Titolo / nota</label><input class="editable" id="evTitolo" value="${ed.titolo||''}" placeholder="es. Allenamento forza / Retest 1RM / Impegno personale"></div>
     <div class="ev-field"><label>Cliente (opzionale)</label>
