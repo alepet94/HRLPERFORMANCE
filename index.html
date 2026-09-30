@@ -2918,6 +2918,10 @@ const db = {
   async saveBlockOperativo(b){ if(!dbEnabled || !sb) return; const {error} = await sb.from('blocchi_operativi').upsert(blockOperativoToRow(b)); if(error) console.error('Supabase saveBlockOperativo', error); },
   async deleteBlockOperativo(id){ if(!dbEnabled || !sb) return; const {error} = await sb.from('blocchi_operativi').delete().eq('id',id); if(error) console.error('Supabase deleteBlockOperativo', error); },
   async deleteProfessionista(id){ if(!dbEnabled || !sb) return; const {error} = await sb.from('professionisti').delete().eq('id',id); if(error) console.error('Supabase deleteProfessionista', error); },
+  // aggiorna ruolo/area di un professionista già registrato (es. da Team): la
+  // policy RLS "professionisti update self or admin" richiede che sia
+  // l'utente stesso o un admin a farlo
+  async saveProfessionista(p){ if(!dbEnabled || !sb) return true; const {error} = await sb.from('professionisti').update({nome:p.nome, ruolo:p.ruolo, area:p.area||null}).eq('id',p.id); if(error){ console.error('Supabase saveProfessionista', error); return false; } return true; },
   // elimina anche l'account di accesso (auth.users): funzione SQL SECURITY
   // DEFINER che verifica lei stessa che il chiamante sia admin, vedi schema.sql
   async deleteAuthUser(targetUserId){
@@ -3241,16 +3245,61 @@ function renderTeamModal(){
   box.innerHTML = state.professionisti.map(p=>{
     const isSelf = state.professionista && p.id===state.professionista.id;
     const isLastAdmin = p.ruolo==='admin' && admins.length<=1;
-    const disabled = !isAdmin || isSelf || isLastAdmin;
+    const disabledDel = !isAdmin || isSelf || isLastAdmin;
     const title = isSelf ? 'Non puoi eliminare il tuo stesso account' : (isLastAdmin ? 'Deve rimanere almeno un admin' : 'Elimina professionista');
-    return `<div class="team-row">
-      <div>
-        <div class="team-name">${p.nome}${isSelf ? ' (tu)' : ''}</div>
-        <div class="team-meta">${p.ruolo}${p.area ? ' · '+p.area : ''}</div>
+    // il ruolo si può cambiare liberamente, tranne togliere l'ultimo admin
+    // rimasto (nessuno resterebbe con i permessi per rimediare)
+    const ruoloDisabled = !isAdmin || isLastAdmin;
+    const ruoloTitle = isLastAdmin ? 'Deve rimanere almeno un admin' : '';
+    return `<div class="team-row" data-prof-row="${p.id}">
+      <div style="flex:1;">
+        <div class="team-name">${escHtml(p.nome)}${isSelf ? ' (tu)' : ''}</div>
+        <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;">
+          <select class="editable" data-prof-ruolo="${p.id}" ${ruoloDisabled?'disabled':''} title="${ruoloTitle}" style="font-size:12px;padding:4px 8px;">
+            <option value="operatore" ${p.ruolo==='operatore'?'selected':''}>Operatore</option>
+            <option value="admin" ${p.ruolo==='admin'?'selected':''}>Admin</option>
+          </select>
+          <select class="editable" data-prof-area="${p.id}" ${!isAdmin?'disabled':''} style="font-size:12px;padding:4px 8px;">
+            <option value="">— Nessuna area —</option>
+            ${AREE_COMPETENZA.map(a=>`<option value="${a}" ${p.area===a?'selected':''}>${a}</option>`).join('')}
+          </select>
+        </div>
       </div>
-      <button class="team-del" data-del-prof="${p.id}" ${disabled?'disabled':''} title="${title}">Elimina</button>
+      <button class="team-del" data-del-prof="${p.id}" ${disabledDel?'disabled':''} title="${title}">Elimina</button>
     </div>`;
   }).join('');
+  box.querySelectorAll('[data-prof-ruolo]').forEach(sel=>{
+    sel.onchange = async ()=>{
+      const p = state.professionisti.find(x=>x.id===sel.dataset.profRuolo);
+      if(!p) return;
+      const prevRuolo = p.ruolo;
+      p.ruolo = sel.value;
+      const ok = await db.saveProfessionista(p);
+      if(!ok){ p.ruolo = prevRuolo; alert('Non è stato possibile salvare il cambio di ruolo. Riprova.'); renderTeamModal(); return; }
+      if(state.professionista && state.professionista.id===p.id){
+        state.professionista.ruolo = p.ruolo;
+        renderProfBadge();
+        renderCliTabs();
+      }
+      renderTeamModal();
+    };
+  });
+  box.querySelectorAll('[data-prof-area]').forEach(sel=>{
+    sel.onchange = async ()=>{
+      const p = state.professionisti.find(x=>x.id===sel.dataset.profArea);
+      if(!p) return;
+      const prevArea = p.area;
+      p.area = sel.value || '';
+      const ok = await db.saveProfessionista(p);
+      if(!ok){ p.area = prevArea; alert('Non è stato possibile salvare il cambio di area. Riprova.'); renderTeamModal(); return; }
+      if(state.professionista && state.professionista.id===p.id){
+        state.professionista.area = p.area;
+        renderProfBadge();
+        renderCliTabs();
+      }
+      renderTeamModal();
+    };
+  });
   box.querySelectorAll('[data-del-prof]').forEach(btn=>{
     btn.onclick = ()=>{
       const p = state.professionisti.find(x=>x.id===btn.dataset.delProf);
