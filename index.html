@@ -4127,6 +4127,60 @@ function emptyGhiMarcatori(){
 // definiscono le rispettive schede); non è legata a un appuntamento in
 // calendario, è un elenco libero per cliente, una scheda per seduta
 const TRATTAMENTO_OSTEO_LABELS = { viscerale:'Viscerale', cranio_sacrale:'Cranio sacrale', strutturale:'Strutturale' };
+// apre in una nuova finestra un report stampabile (via "Stampa" del browser,
+// da cui l'utente sceglie "Salva come PDF") di una singola scheda trattamento
+// osteopatia: logo, data seduta, operatore e contenuto diviso per aree.
+// Non genera un vero file PDF via libreria (nessuna libreria di scrittura
+// PDF è presente nell'app): riusa lo stesso pattern già in uso altrove
+// (finestra HTML autonoma + window.print()), che evita una dipendenza
+// aggiuntiva e dà pieno controllo del layout via CSS.
+function apriReportOsteopatia(c, s){
+  const prof = state.professionisti.find(p=>p.id===s.professionistaId);
+  const dataFmt = s.data ? s.data.split('-').reverse().join('/') : '—';
+  const logoSrc = (document.querySelector('.mark-logo') || document.querySelector('.auth-logo') || {}).src || '';
+  let sezioniHTML;
+  if(s.trattamento==='strutturale'){
+    sezioniHTML = ['articolare','funzionale','muscolare'].map(k=>{
+      const lbl = k==='articolare'?'Articolare':k==='funzionale'?'Funzionale':'Muscolare';
+      const val = s[k];
+      return `<div class="rep-sezione"><h3>${lbl}</h3><div class="rep-testo">${val ? escHtml(val) : '<em>Nessuna nota</em>'}</div></div>`;
+    }).join('');
+  } else {
+    sezioniHTML = `<div class="rep-sezione"><h3>Note</h3><div class="rep-testo">${s.note ? escHtml(s.note) : '<em>Nessuna nota</em>'}</div></div>`;
+  }
+  const html = `<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8">
+    <title>Report trattamento — ${escHtml(c.nome || '')}</title>
+    <style>
+      body{font-family:-apple-system,Segoe UI,Arial,sans-serif;background:#fff;color:#111;padding:36px;max-width:760px;margin:0 auto;}
+      .rep-head{display:flex;align-items:center;gap:18px;border-bottom:2px solid #8a6d1d;padding-bottom:16px;margin-bottom:20px;}
+      .rep-head img{height:52px;filter:invert(1);background:#1b1b1b;padding:8px;border-radius:6px;}
+      .rep-head h1{font-size:20px;margin:0;}
+      .rep-head .rep-sub{color:#555;font-size:12.5px;margin-top:2px;}
+      .rep-meta{display:grid;grid-template-columns:1fr 1fr;gap:10px 24px;margin-bottom:24px;font-size:13px;}
+      .rep-meta .rep-meta-label{color:#777;text-transform:uppercase;font-size:10.5px;letter-spacing:.04em;display:block;}
+      .rep-sezione{margin-bottom:18px;}
+      .rep-sezione h3{font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:#8a6d1d;margin:0 0 6px;border-bottom:1px solid #e0d3a8;padding-bottom:4px;}
+      .rep-testo{font-size:13.5px;white-space:pre-wrap;line-height:1.5;}
+      .rep-print-btn{margin-top:28px;padding:10px 18px;background:#8a6d1d;color:#fff;border:none;border-radius:4px;font-size:13px;cursor:pointer;}
+      @media print{ .rep-print-btn{display:none;} body{padding:0;} }
+    </style></head><body>
+    <div class="rep-head">
+      ${logoSrc ? `<img src="${logoSrc}" alt="HRL">` : ''}
+      <div><h1>Report fine trattamento — Osteopatia</h1><div class="rep-sub">HRL Performance Pathways</div></div>
+    </div>
+    <div class="rep-meta">
+      <div><span class="rep-meta-label">Cliente</span>${escHtml(c.nome || '—')}</div>
+      <div><span class="rep-meta-label">Data seduta</span>${dataFmt}</div>
+      <div><span class="rep-meta-label">Operatore</span>${prof ? escHtml(prof.nome) : '—'}</div>
+      <div><span class="rep-meta-label">Tipologia trattamento</span>${escHtml(TRATTAMENTO_OSTEO_LABELS[s.trattamento] || s.trattamento || '—')}</div>
+    </div>
+    ${sezioniHTML}
+    <button class="rep-print-btn" onclick="window.print()">Stampa / Salva come PDF</button>
+    </body></html>`;
+  const win = window.open('', '_blank');
+  if(!win){ alert('Il browser ha bloccato l\'apertura della finestra di report. Consenti i popup per questo sito e riprova.'); return; }
+  win.document.open(); win.document.write(html); win.document.close();
+}
 function emptySchedaOsteopatia(){
   return {
     id: 'so_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
@@ -4475,7 +4529,10 @@ function renderAreaHumanOsteopatia(){
     return `<div class="val-card">
       <div class="val-card-top">
         <div class="val-card-date">${s.data ? s.data.split('-').reverse().join('/') : '—'}</div>
-        <button class="val-card-del" data-del-osteo="${s.id}" title="Elimina scheda">×</button>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button class="val-card-del" data-report-osteo="${s.id}" title="Report PDF" style="color:var(--ink-mute);">📄</button>
+          <button class="val-card-del" data-del-osteo="${s.id}" title="Elimina scheda">×</button>
+        </div>
       </div>
       <div class="val-card-autore">${escHtml(TRATTAMENTO_OSTEO_LABELS[s.trattamento] || s.trattamento || '—')}${prof ? ' · ' + escHtml(prof.nome) : ''}${s.segnalazioneId ? ' · <span class="osteo-flag-badge" title="Ha generato una segnalazione a un collega">🚩 segnalata</span>' : ''}</div>
       <div class="val-card-motivo">${escHtml(dettaglio)}</div>
@@ -4594,6 +4651,12 @@ function renderAreaHumanOsteopatia(){
       renderAreaHumanTab();
     };
   });
+  box.querySelectorAll('[data-report-osteo]').forEach(btn=>{
+    btn.onclick = ()=>{
+      const s = c.schedeOsteopatia.find(x=>x.id===btn.dataset.reportOsteo);
+      if(s) apriReportOsteopatia(c, s);
+    };
+  });
 }
 
 // ==================== AREA FISIOTERAPIA (in costruzione) ====================
@@ -4613,16 +4676,31 @@ function storicoAreaOf(a){
   if(a.tipo==='retest' || a.tipo==='ans') return 'sistema';
   const prof = a.professionistaId ? state.professionisti.find(p=>p.id===a.professionistaId) : null;
   if(prof && prof.area==='Fisioterapista') return 'fisioterapia';
+  if(prof && prof.area==='Osteopata') return 'areaHuman';
   return 'performance';
 }
+const STORICO_AREA_LBL = {performance:'Area Performance', sistema:'Sistema', fisioterapia:'Fisioterapia', areaHuman:'Area Human'};
+// storico (tutti i professionisti): diviso in "Trattamenti svolti" (appuntamenti
+// passati + schede trattamento come quelle di osteopatia, che sono sempre
+// relative a una seduta già avvenuta) e "Prossimi appuntamenti" (appuntamenti
+// futuri già in calendario, senza schede: quelle si compilano solo a seduta
+// avvenuta)
 function renderStoricoTab(){
   const c = activeClient();
   const box = document.getElementById('storicoContent');
   if(!c || !box) return;
   if(!state.storicoFiltri) state.storicoFiltri = { area:'', profId:'', da:'', a:'' };
   const f = state.storicoFiltri;
-  const tutti = state.appuntamenti.filter(a=>a.clienteId===c.id);
-  const profOptions = state.professionisti.filter(p=> tutti.some(a=>a.professionistaId===p.id));
+  const todayStr = fmtDateISO(new Date());
+  const tuttiApp = state.appuntamenti.filter(a=>a.clienteId===c.id);
+  const svoltiApp = tuttiApp.filter(a=>a.day < todayStr);
+  const prossimi = tuttiApp.filter(a=>a.day >= todayStr);
+  const schedeOsteo = c.schedeOsteopatia || [];
+
+  const profIds = new Set();
+  tuttiApp.forEach(a=>{ if(a.professionistaId) profIds.add(a.professionistaId); });
+  schedeOsteo.forEach(s=>{ if(s.professionistaId) profIds.add(s.professionistaId); });
+  const profOptions = state.professionisti.filter(p=> profIds.has(p.id));
 
   box.innerHTML = `
     <div class="client-section-label-row"><div class="client-section-label">Storico trattamenti</div></div>
@@ -4632,6 +4710,7 @@ function renderStoricoTab(){
         <option value="performance">Area Performance</option>
         <option value="sistema">Lavoro Sistema</option>
         <option value="fisioterapia">Fisioterapia</option>
+        <option value="areaHuman">Area Human</option>
       </select>
       <select class="editable" id="stFiltroProf">
         <option value="">Tutti i professionisti</option>
@@ -4641,41 +4720,91 @@ function renderStoricoTab(){
       <input class="editable" type="date" id="stFiltroA" placeholder="A">
       <button class="btn-ghost" id="btnStFiltriReset">Azzera filtri</button>
     </div>
-    <div id="stLista" style="margin-top:16px;"></div>
+    <div class="client-section-label-row" style="margin-top:20px;"><div class="client-section-label">Trattamenti svolti</div></div>
+    <div id="stListaSvolti" style="margin-top:10px;"></div>
+    <div class="client-section-label-row" style="margin-top:24px;"><div class="client-section-label">Prossimi appuntamenti</div></div>
+    <div id="stListaProssimi" style="margin-top:10px;"></div>
   `;
   document.getElementById('stFiltroArea').value = f.area;
   document.getElementById('stFiltroProf').value = f.profId;
   document.getElementById('stFiltroDa').value = f.da;
   document.getElementById('stFiltroA').value = f.a;
 
-  function renderLista(){
-    let rows = tutti.filter(a=>{
+  function appHTML(a){
+    const prof = a.professionistaId ? state.professionisti.find(p=>p.id===a.professionistaId) : null;
+    return `<div class="upcoming-item tipo-border-${a.tipo}">
+      <div class="ui-info">
+        <div class="uid"><span class="tipo-tag tipo-tag-${a.tipo}">${tipoLabel(a.tipo)}</span> ${escHtml(a.titolo || tipoLabel(a.tipo))}</div>
+        <div class="uim">${a.day.split('-').reverse().join('/')} · ${a.start}–${a.end} · ${STORICO_AREA_LBL[storicoAreaOf(a)]}${prof ? ' · '+escHtml(prof.nome) : ''}</div>
+      </div>
+    </div>`;
+  }
+  function osteoHTML(s){
+    const prof = s.professionistaId ? state.professionisti.find(p=>p.id===s.professionistaId) : null;
+    let dettaglio;
+    if(s.trattamento==='strutturale'){
+      const parts = [];
+      if(s.articolare) parts.push('Articolare: ' + s.articolare);
+      if(s.funzionale) parts.push('Funzionale: ' + s.funzionale);
+      if(s.muscolare) parts.push('Muscolare: ' + s.muscolare);
+      dettaglio = parts.length ? parts.join(' · ') : 'Nessuna nota';
+    } else {
+      dettaglio = s.note || 'Nessuna nota';
+    }
+    return `<div class="upcoming-item tipo-border-allenamento">
+      <div class="ui-info">
+        <div class="uid"><span class="tipo-tag tipo-tag-allenamento">Osteopatia</span> ${escHtml(TRATTAMENTO_OSTEO_LABELS[s.trattamento] || s.trattamento || '—')}</div>
+        <div class="uim">${s.data ? s.data.split('-').reverse().join('/') : '—'} · Area Human${prof ? ' · '+escHtml(prof.nome) : ''}</div>
+        <div class="uim" style="margin-top:4px;">${escHtml(dettaglio)}</div>
+      </div>
+      <div style="display:flex;align-items:center;">
+        <button class="btn-small" data-storico-report-osteo="${s.id}">📄 Report PDF</button>
+      </div>
+    </div>`;
+  }
+
+  function renderListe(){
+    const svoltiRows = svoltiApp.filter(a=>{
       if(f.area && storicoAreaOf(a)!==f.area) return false;
       if(f.profId && a.professionistaId!==f.profId) return false;
       if(f.da && a.day < f.da) return false;
       if(f.a && a.day > f.a) return false;
       return true;
-    });
-    rows.sort((a,b)=> (a.day+a.start).localeCompare(b.day+b.start));
-    const areaLbl = {performance:'Area Performance', sistema:'Sistema', fisioterapia:'Fisioterapia'};
-    const listBox = document.getElementById('stLista');
-    if(!rows.length){ listBox.innerHTML = `<div class="val-empty">Nessun trattamento trovato con questi filtri.</div>`; return; }
-    listBox.innerHTML = rows.map(a=>{
-      const prof = a.professionistaId ? state.professionisti.find(p=>p.id===a.professionistaId) : null;
-      return `<div class="upcoming-item tipo-border-${a.tipo}">
-        <div class="ui-info">
-          <div class="uid"><span class="tipo-tag tipo-tag-${a.tipo}">${tipoLabel(a.tipo)}</span> ${a.titolo || tipoLabel(a.tipo)}</div>
-          <div class="uim">${a.day.split('-').reverse().join('/')} · ${a.start}–${a.end} · ${areaLbl[storicoAreaOf(a)]}${prof ? ' · '+prof.nome : ''}</div>
-        </div>
-      </div>`;
-    }).join('');
-  }
-  renderLista();
+    }).map(a=>({ key: a.day+a.start, html: appHTML(a) }));
+    const svoltiOsteo = (f.area && f.area!=='areaHuman') ? [] : schedeOsteo.filter(s=>{
+      if(f.profId && s.professionistaId!==f.profId) return false;
+      if(f.da && (s.data||'') < f.da) return false;
+      if(f.a && (s.data||'') > f.a) return false;
+      return true;
+    }).map(s=>({ key: (s.data||'')+'z', html: osteoHTML(s) }));
+    const svoltiAll = svoltiRows.concat(svoltiOsteo).sort((a,b)=> b.key.localeCompare(a.key));
 
-  document.getElementById('stFiltroArea').onchange = (e)=>{ f.area = e.target.value; renderLista(); };
-  document.getElementById('stFiltroProf').onchange = (e)=>{ f.profId = e.target.value; renderLista(); };
-  document.getElementById('stFiltroDa').onchange = (e)=>{ f.da = e.target.value; renderLista(); };
-  document.getElementById('stFiltroA').onchange = (e)=>{ f.a = e.target.value; renderLista(); };
+    const prossimiRows = prossimi.filter(a=>{
+      if(f.area && storicoAreaOf(a)!==f.area) return false;
+      if(f.profId && a.professionistaId!==f.profId) return false;
+      if(f.da && a.day < f.da) return false;
+      if(f.a && a.day > f.a) return false;
+      return true;
+    }).sort((a,b)=> (a.day+a.start).localeCompare(b.day+b.start));
+
+    const svBox = document.getElementById('stListaSvolti');
+    svBox.innerHTML = svoltiAll.length ? svoltiAll.map(r=>r.html).join('') : `<div class="val-empty">Nessun trattamento svolto trovato con questi filtri.</div>`;
+    svBox.querySelectorAll('[data-storico-report-osteo]').forEach(btn=>{
+      btn.onclick = ()=>{
+        const s = schedeOsteo.find(x=>x.id===btn.dataset.storicoReportOsteo);
+        if(s) apriReportOsteopatia(c, s);
+      };
+    });
+
+    const prBox = document.getElementById('stListaProssimi');
+    prBox.innerHTML = prossimiRows.length ? prossimiRows.map(appHTML).join('') : `<div class="val-empty">Nessun appuntamento futuro trovato con questi filtri.</div>`;
+  }
+  renderListe();
+
+  document.getElementById('stFiltroArea').onchange = (e)=>{ f.area = e.target.value; renderListe(); };
+  document.getElementById('stFiltroProf').onchange = (e)=>{ f.profId = e.target.value; renderListe(); };
+  document.getElementById('stFiltroDa').onchange = (e)=>{ f.da = e.target.value; renderListe(); };
+  document.getElementById('stFiltroA').onchange = (e)=>{ f.a = e.target.value; renderListe(); };
   document.getElementById('btnStFiltriReset').onclick = ()=>{
     state.storicoFiltri = { area:'', profId:'', da:'', a:'' };
     renderStoricoTab();
