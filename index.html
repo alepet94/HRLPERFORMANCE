@@ -527,6 +527,7 @@ header.top{
   border-radius:5px;
   padding:20px;
   margin-top:6px;
+  position:relative;
 }
 .scheda-editor-grid{
   display:grid;
@@ -535,6 +536,29 @@ header.top{
   align-items:start;
 }
 @media (max-width:800px){.scheda-editor-grid{grid-template-columns:1fr;}}
+/* variante scheda cliente: le linee guida non occupano più una colonna
+   fissa, così la scheda (tabella esercizi compresa) usa tutta la
+   larghezza disponibile; le linee guida diventano un pannello a comparsa,
+   aperto/chiuso da un'etichetta cliccabile, ancorato in alto a destra
+   allo stesso livello dell'inizio della scheda */
+.scheda-editor-grid.grid-guida-floating{display:block;}
+.guida-toggle-row{
+  position:relative;
+  display:flex;justify-content:flex-end;
+  margin-bottom:12px;
+}
+.guida-toggle-pill{
+  font-family:var(--serif);font-size:12.5px;color:var(--gold-bright);
+  border:1px solid var(--gold-line);border-radius:20px;padding:6px 14px;cursor:pointer;
+  background:var(--navy-900);z-index:21;display:flex;align-items:center;gap:6px;
+}
+.guida-toggle-pill:hover{border-color:var(--gold);}
+.guida-toggle-arrow{font-size:9px;}
+.guida-box.floating{
+  position:absolute;top:calc(100% + 6px);right:0;width:300px;max-width:calc(100vw - 60px);
+  z-index:20;box-shadow:0 12px 32px rgba(0,0,0,.45);display:none;
+}
+.guida-box.floating.open{display:block;}
 
 .scheda-top-fields{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:16px;}
 @media (max-width:600px){.scheda-top-fields{grid-template-columns:1fr;}}
@@ -1053,16 +1077,26 @@ header.top{
 .val-card-del:hover{color:#E0776A;}
 
 /* ---------- sistema (GHI / test) ---------- */
-.ghi-add-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;}
-.ghi-add-row input{flex:1;min-width:120px;}
-.ghi-row{
-  display:flex;align-items:center;gap:14px;padding:10px 14px;border:1px solid var(--line);
-  border-radius:8px;margin-bottom:6px;background:var(--navy-850);font-size:12.5px;
+.ghi-table{width:100%;border-collapse:collapse;font-size:12px;}
+.ghi-table th,.ghi-table td{padding:6px 8px;text-align:center;border-bottom:1px solid var(--line-soft);}
+.ghi-table thead th{color:var(--ink-mute);font-weight:600;font-size:11px;}
+.ghi-table td.ghi-date{text-align:left;color:var(--ink-dim);white-space:nowrap;}
+.ghi-fonte{font-size:10px;color:var(--ink-mute);}
+.ghi-chip{
+  display:inline-block;font-weight:700;border-radius:20px;padding:2px 10px;min-width:36px;
+  border:1px solid;
 }
-.ghi-date{color:var(--ink-mute);min-width:76px;}
-.ghi-val{font-weight:700;border:1px solid;border-radius:20px;padding:2px 10px;min-width:56px;text-align:center;}
-.ghi-fonte{color:var(--ink-mute);font-size:11px;text-transform:uppercase;letter-spacing:.03em;}
-.ghi-note{color:var(--ink-dim);flex:1;}
+.ghi-chip.verde{color:#7CC48A;border-color:#7CC48A;background:rgba(124,196,138,.1);}
+.ghi-chip.rosso{color:#E0776A;border-color:#E0776A;background:rgba(224,119,106,.1);}
+.ghi-draft-box{border:1px solid var(--line);border-radius:10px;padding:16px;background:var(--navy-850);}
+.ghi-draft-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:6px;}
+.ghi-draft-field{display:flex;flex-direction:column;gap:4px;}
+.ghi-draft-field label{font-size:11px;color:var(--ink-mute);}
+.ghi-toggle{
+  border:1px solid;border-radius:20px;padding:3px 0;font-size:11px;font-weight:700;cursor:pointer;background:none;
+}
+.ghi-toggle.verde{color:#7CC48A;border-color:#7CC48A;}
+.ghi-toggle.rosso{color:#E0776A;border-color:#E0776A;}
 .sist-test-item{display:flex;align-items:center;gap:8px;padding:8px 0;font-size:13px;color:var(--ink-dim);cursor:pointer;}
 
 /* ---------- storico ---------- */
@@ -3728,15 +3762,46 @@ const SISTEMA_TEST_CATALOG = [
   'Percorso ANS — biofeedback respiratorio',
   'Retest GHI di controllo'
 ];
-// soglie di colorazione del GHI — placeholder in attesa dei valori reali
-// Biotekna (Ale ha dei PDF di esempio da cui ricavarli con precisione)
-const GHI_SOGLIE = { basso: 40, medio: 70 };
-function ghiColor(valore){
-  const n = parseFloat(valore);
-  if(isNaN(n)) return 'var(--ink-mute)';
-  if(n < GHI_SOGLIE.basso) return '#E0776A';
-  if(n < GHI_SOGLIE.medio) return '#E0A05F';
-  return '#7CC48A';
+// marcatori della tabella "Healthspan analysis" del referto Biotekna (GHI):
+// il PDF stesso assegna a ciascun marcatore un semaforo verde/rosso (icone
+// colorate accanto al valore) — non ricalcoliamo noi delle soglie, teniamo
+// solo il valore e lo stato così come compaiono nel referto
+const MARCATORI_GHI = [
+  {key:'phA', label:'PhA', gruppo:'Regulatory'},
+  {key:'lfPower', label:'LF Power', gruppo:'Regulatory'},
+  {key:'rmssd', label:'RMSSD', gruppo:'Regulatory'},
+  {key:'sScore', label:'S-Score', gruppo:'Regulatory'},
+  {key:'ecw', label:'ECW', gruppo:'Structural'},
+  {key:'ecMatrix', label:'ECMatrix', gruppo:'Structural'},
+  {key:'imat', label:'IMAT', gruppo:'Structural'}
+];
+function emptyGhiMarcatori(){
+  const m = {};
+  MARCATORI_GHI.forEach(x=> m[x.key] = { valore:'', stato:'verde' });
+  return m;
+}
+// individua nel testo estratto dal PDF (extractPdfText, righe separate da
+// \t per colonna) la tabella "Healthspan analysis" e ne legge SOLO la prima
+// riga di dati (la più recente — le successive, già presenti nel referto,
+// sono lo storico che si accumula da sé referto dopo referto, non vanno
+// reimportate): il colore dei singoli marcatori non viene letto dal PDF
+// (sono minuscole icone incorporate, non testo) — si importano solo i
+// valori, poi chi importa marca a occhio gli eventuali marcatori in rosso
+// confrontando col referto, prima di salvare
+function parseGhiFromPdfText(text){
+  const lines = text.split('\n');
+  const headerIdx = lines.findIndex(l=> l.includes('PhA') && l.includes('LF Power') && l.includes('RMSSD'));
+  if(headerIdx<0 || headerIdx+1>=lines.length) return null;
+  const cols = lines[headerIdx+1].split('\t').map(s=>s.trim());
+  if(cols.length<8) return null;
+  const dataMatch = cols[0].match(/(\d{2})-(\d{2})-(\d{4})/);
+  if(!dataMatch) return null;
+  const data = `${dataMatch[3]}-${dataMatch[2]}-${dataMatch[1]}`;
+  const nums = cols.slice(1,8).map(v=> parseFloat(v.replace(',','.')));
+  if(nums.some(n=>isNaN(n))) return null;
+  const marcatori = {};
+  MARCATORI_GHI.forEach((m,i)=> marcatori[m.key] = { valore:nums[i], stato:'verde' });
+  return { data, marcatori };
 }
 function renderSistemaTab(){
   const c = activeClient();
@@ -3745,15 +3810,34 @@ function renderSistemaTab(){
   if(!c.ghiStorico) c.ghiStorico = [];
   if(!c.sistemaTestSelezionati) c.sistemaTestSelezionati = new Set();
 
+  if(!state.ghiDraft) state.ghiDraft = { data: fmtDateISO(new Date()), nota:'', marcatori: emptyGhiMarcatori() };
+  const draft = state.ghiDraft;
+
   const ghiRows = c.ghiStorico.slice().sort((a,b)=> (b.data||'').localeCompare(a.data||''));
-  const ghiListHTML = ghiRows.length ? ghiRows.map(g=>`
-    <div class="ghi-row">
-      <span class="ghi-date">${g.data ? g.data.split('-').reverse().join('/') : '—'}</span>
-      <span class="ghi-val" style="color:${ghiColor(g.valore)};border-color:${ghiColor(g.valore)};">${g.valore}</span>
-      <span class="ghi-fonte">${g.fonte==='pdf' ? 'da PDF' : 'manuale'}</span>
-      <span class="ghi-note">${escHtml(g.note||'')}</span>
-      <button type="button" class="val-card-del" data-del-ghi="${g.id}" title="Elimina">×</button>
-    </div>`).join('') : `<div class="val-empty">Nessun valore GHI ancora registrato.</div>`;
+  const marcColHTML = (m)=>{
+    return `<th>${m.label}</th>`;
+  };
+  const ghiTableHTML = ghiRows.length ? `
+    <table class="ghi-table">
+      <thead>
+        <tr><th></th><th colspan="4" style="text-align:center;">Regulatory Markers</th><th colspan="3" style="text-align:center;">Structural Markers</th><th></th></tr>
+        <tr><th>Data</th>${MARCATORI_GHI.map(marcColHTML).join('')}<th></th></tr>
+      </thead>
+      <tbody>
+        ${ghiRows.map(g=>{
+          const mk = g.marcatori || {};
+          return `<tr>
+            <td class="ghi-date">${g.data ? g.data.split('-').reverse().join('/') : '—'}${g.fonte==='pdf'?' <span class="ghi-fonte">(PDF)</span>':''}</td>
+            ${MARCATORI_GHI.map(m=>{
+              const v = mk[m.key] || {};
+              const on = v.stato==='rosso';
+              return `<td><span class="ghi-chip ${on?'rosso':'verde'}">${v.valore!==undefined && v.valore!=='' ? v.valore : '—'}</span></td>`;
+            }).join('')}
+            <td><button type="button" class="val-card-del" data-del-ghi="${g.id}" title="Elimina">×</button></td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>` : `<div class="val-empty">Nessun referto GHI ancora registrato.</div>`;
 
   const testHTML = SISTEMA_TEST_CATALOG.map(t=>`
     <label class="sist-test-item">
@@ -3766,15 +3850,31 @@ function renderSistemaTab(){
 
   box.innerHTML = `
     <div class="client-section-label-row"><div class="client-section-label">Storico GHI</div></div>
-    <div class="ghi-add-row">
-      <input class="editable" type="date" id="ghiNuovaData" value="${fmtDateISO(new Date())}">
-      <input class="editable" type="number" id="ghiNuovoValore" placeholder="Valore GHI">
-      <input class="editable" id="ghiNuovaNota" placeholder="Nota (opzionale)">
-      <button class="btn-gold" id="btnAddGhi">+ Aggiungi</button>
-    </div>
-    <div id="ghiList" style="margin:14px 0 26px;">${ghiListHTML}</div>
+    <div id="ghiList" style="margin:14px 0 20px;">${ghiTableHTML}</div>
 
-    <div class="client-section-label-row"><div class="client-section-label">Test / percorsi da svolgere</div></div>
+    <div class="ghi-draft-box">
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">
+        <label style="font-size:12px;color:var(--ink-mute);">Data referto</label>
+        <input class="editable" type="date" id="ghiDraftData" value="${escAttr(draft.data)}" style="max-width:160px;">
+        <label class="btn-ghost" style="cursor:pointer;">Importa da PDF (referto GHI)
+          <input type="file" id="ghiPdfInput" accept="application/pdf" style="display:none;">
+        </label>
+        <span id="ghiPdfStatus" style="font-size:11.5px;color:var(--ink-mute);"></span>
+      </div>
+      <div class="ghi-draft-grid">
+        ${MARCATORI_GHI.map(m=>`
+          <div class="ghi-draft-field">
+            <label>${m.label}</label>
+            <input class="editable" type="number" step="0.1" data-ghidraftval="${m.key}" value="${draft.marcatori[m.key].valore}">
+            <button type="button" class="ghi-toggle ${draft.marcatori[m.key].stato==='rosso'?'rosso':'verde'}" data-ghidraftstato="${m.key}">${draft.marcatori[m.key].stato==='rosso'?'Rosso':'Verde'}</button>
+          </div>`).join('')}
+      </div>
+      <div style="font-size:11px;color:var(--ink-mute);margin:8px 0 12px;">I valori si importano dal PDF, ma il semaforo rosso/verde va confermato a occhio confrontando col referto (le icone colorate non sono testo estraibile) — di default parte tutto verde.</div>
+      <div class="ev-field"><input class="editable" id="ghiDraftNota" placeholder="Nota (opzionale)" value="${escAttr(draft.nota)}"></div>
+      <button class="btn-gold" id="btnAddGhi">Salva referto GHI</button>
+    </div>
+
+    <div class="client-section-label-row" style="margin-top:30px;"><div class="client-section-label">Test / percorsi da svolgere</div></div>
     <div id="sistTestList" style="margin-bottom:18px;">${testHTML}</div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:26px;">
       <button class="btn-ghost" id="btnPianificaRetest">Pianifica retest in calendario</button>
@@ -3788,13 +3888,45 @@ function renderSistemaTab(){
     </div>` : ''}
   `;
 
+  document.getElementById('ghiDraftData').onchange = (e)=>{ draft.data = e.target.value; };
+  document.getElementById('ghiDraftNota').oninput = (e)=>{ draft.nota = e.target.value; };
+  box.querySelectorAll('[data-ghidraftval]').forEach(inp=>{
+    inp.onchange = ()=>{ draft.marcatori[inp.dataset.ghidraftval].valore = inp.value===''?'':parseFloat(inp.value); };
+  });
+  box.querySelectorAll('[data-ghidraftstato]').forEach(btn=>{
+    btn.onclick = ()=>{
+      const k = btn.dataset.ghidraftstato;
+      draft.marcatori[k].stato = draft.marcatori[k].stato==='rosso' ? 'verde' : 'rosso';
+      renderSistemaTab();
+    };
+  });
+  document.getElementById('ghiPdfInput').onchange = async (e)=>{
+    const file = e.target.files[0];
+    if(!file) return;
+    const statusEl = document.getElementById('ghiPdfStatus');
+    statusEl.textContent = 'Lettura del PDF…';
+    try{
+      const text = await extractPdfText(file);
+      const parsed = parseGhiFromPdfText(text);
+      if(!parsed){
+        statusEl.textContent = 'Non ho trovato la tabella "Healthspan analysis" in questo PDF — inserisci i valori a mano.';
+        return;
+      }
+      state.ghiDraft = { data: parsed.data, nota: draft.nota, marcatori: parsed.marcatori, fonte:'pdf' };
+      statusEl.textContent = 'Valori importati dal PDF — controlla il semaforo rosso/verde di ogni marcatore prima di salvare.';
+      renderSistemaTab();
+    } catch(ex){
+      statusEl.textContent = 'Errore nella lettura del PDF: ' + (ex.message || ex);
+    }
+  };
   document.getElementById('btnAddGhi').onclick = ()=>{
-    const data = document.getElementById('ghiNuovaData').value;
-    const valore = document.getElementById('ghiNuovoValore').value;
-    const nota = document.getElementById('ghiNuovaNota').value;
-    if(!data || valore===''){ alert('Inserisci almeno data e valore.'); return; }
-    c.ghiStorico.push({ id:'ghi_'+Date.now()+'_'+Math.random().toString(36).slice(2,7), data, valore: parseFloat(valore), fonte:'manuale', note:nota });
+    const data = document.getElementById('ghiDraftData').value || draft.data;
+    if(!data){ alert('Inserisci almeno la data del referto.'); return; }
+    const marcatori = {};
+    MARCATORI_GHI.forEach(m=> marcatori[m.key] = { ...draft.marcatori[m.key] });
+    c.ghiStorico.push({ id:'ghi_'+Date.now()+'_'+Math.random().toString(36).slice(2,7), data, marcatori, fonte: draft.fonte || 'manuale', note: draft.nota || '' });
     db.saveCliente(c);
+    state.ghiDraft = null;
     renderSistemaTab();
   };
   box.querySelectorAll('[data-del-ghi]').forEach(btn=>{
@@ -5790,12 +5922,18 @@ function computeSRPE(durata, rpe){
   return Math.round(d*r);
 }
 
+// pannello "Linee guida" della scheda: aperto/chiuso a scelta di chi sta
+// compilando, non è un dato della scheda (non va salvato con essa), quindi
+// vive qui e non dentro state.schedaEditor — resta chiuso di default ogni
+// volta che si apre una scheda diversa
+let schedaGuidaOpen = false;
 function openSchedaEditor(existing){
   const design = designForClient(state.profilo, state.pathway, state.blockOperativoId);
   const defaultFase = design[state.activePhase] ? design[state.activePhase].fase : (design[0] ? design[0].fase : '');
   state.schedaEditor = existing
     ? JSON.parse(JSON.stringify(existing))
     : { id:'sc_'+Date.now(), nome:'', fase:defaultFase, data:'', esercizi:[newEsercizioRow()], durataMin:'', rpeSessione:'', istruzioni:'' };
+  schedaGuidaOpen = false;
   renderResult();
 }
 
@@ -5868,7 +6006,18 @@ function schedaEditorHTML(){
   const faseData = design.find(d=>d.fase===ed.fase) || design[0];
   const srpe = computeSRPE(ed.durataMin, ed.rpeSessione);
 
-  let html = `<div class="scheda-editor"><div class="scheda-editor-grid"><div>`;
+  let html = `<div class="scheda-editor"><div class="scheda-editor-grid grid-guida-floating"><div>`;
+  html += `<div class="guida-toggle-row">
+    <div class="guida-toggle-pill" id="guidaTogglePill">Linee guida — ${ed.fase} <span class="guida-toggle-arrow">${schedaGuidaOpen?'▲':'▼'}</span></div>
+    <div class="guida-box floating ${schedaGuidaOpen?'open':''}" id="guidaBoxPanel">
+      <div class="gtitle">Linee guida — ${ed.fase}</div>
+      <div class="gfield"><div class="lbl">Obiettivo di fase</div><div class="val">${faseData ? faseData.obiettivoFase : '—'}</div></div>
+      <div class="gfield"><div class="lbl">Capacità prioritarie</div><div class="val">${faseData ? faseData.capacita : '—'}</div></div>
+      <div class="gfield"><div class="lbl">Esempi di KPI</div><div class="val">${faseData ? faseData.kpiEsempi : '—'}</div></div>
+      <div class="gfield"><div class="lbl">Criteri di ingresso</div><div class="val">${faseData ? faseData.criteriIngresso : '—'}</div></div>
+      <div class="gfield"><div class="lbl">Criteri di progressione</div><div class="val">${faseData ? faseData.criteriProgressione : '—'}</div></div>
+    </div>
+  </div>`;
   html += `<div class="scheda-top-fields">
     <div><label>Nome scheda</label><input class="editable" id="edNome" placeholder="es. Settimana 1 - Seduta A" value="${ed.nome}"></div>
     <div><label>Data</label><input class="editable" id="edData" placeholder="gg/mm/aaaa" value="${ed.data}"></div>
@@ -5953,15 +6102,6 @@ function schedaEditorHTML(){
     <button class="btn-gold" id="btnSaveScheda">Salva scheda</button>
   </div>`;
   html += `</div>`;
-
-  html += `<div class="guida-box">
-    <div class="gtitle">Linee guida — ${ed.fase}</div>
-    <div class="gfield"><div class="lbl">Obiettivo di fase</div><div class="val">${faseData ? faseData.obiettivoFase : '—'}</div></div>
-    <div class="gfield"><div class="lbl">Capacità prioritarie</div><div class="val">${faseData ? faseData.capacita : '—'}</div></div>
-    <div class="gfield"><div class="lbl">Esempi di KPI</div><div class="val">${faseData ? faseData.kpiEsempi : '—'}</div></div>
-    <div class="gfield"><div class="lbl">Criteri di ingresso</div><div class="val">${faseData ? faseData.criteriIngresso : '—'}</div></div>
-    <div class="gfield"><div class="lbl">Criteri di progressione</div><div class="val">${faseData ? faseData.criteriProgressione : '—'}</div></div>
-  </div>`;
 
   html += `</div></div>`;
   return html;
@@ -6147,6 +6287,15 @@ function bindSchedaEvents(box){
   if(btnCancel) btnCancel.onclick = closeSchedaEditor;
   const btnSave = document.getElementById('btnSaveScheda');
   if(btnSave) btnSave.onclick = saveSchedaEditor;
+
+  const guidaPill = document.getElementById('guidaTogglePill');
+  if(guidaPill) guidaPill.onclick = ()=>{
+    schedaGuidaOpen = !schedaGuidaOpen;
+    const panel = document.getElementById('guidaBoxPanel');
+    if(panel) panel.classList.toggle('open', schedaGuidaOpen);
+    const arrow = guidaPill.querySelector('.guida-toggle-arrow');
+    if(arrow) arrow.textContent = schedaGuidaOpen ? '▲' : '▼';
+  };
 }
 
 // ---------------- esercizi / video tutorial ----------------
