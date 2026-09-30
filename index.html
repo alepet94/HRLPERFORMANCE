@@ -4127,27 +4127,76 @@ function emptyGhiMarcatori(){
 // definiscono le rispettive schede); non è legata a un appuntamento in
 // calendario, è un elenco libero per cliente, una scheda per seduta
 const TRATTAMENTO_OSTEO_LABELS = { viscerale:'Viscerale', cranio_sacrale:'Cranio sacrale', strutturale:'Strutturale' };
+// una scheda osteopatia può ora coprire più aree di trattamento
+// contemporaneamente (tipi: array), e ogni area ha DUE testi distinti:
+// "report" (esportato nel PDF/storico, visibile a chiunque acceda alla
+// scheda) e "privata" (visibile solo all'autore, salvo condivisione
+// esplicita con altri professionisti via condividiPrivateCon — una sola
+// lista di condivisione per l'intera scheda, non per singola area).
+// normalizeSchedaOsteopatia converte al volo il vecchio formato (un solo
+// trattamento string + campi flat note/articolare/funzionale/muscolare,
+// tutti "da report") in questo nuovo formato, così le schede già salvate
+// restano leggibili senza bisogno di una migrazione dati.
+function emptyOsteoCampo(){ return { report:'', privata:'' }; }
+function normalizeSchedaOsteopatia(s){
+  if(s.tipi) return s;
+  const tipoVecchio = s.trattamento;
+  s.tipi = tipoVecchio ? [tipoVecchio] : [];
+  s.viscerale = emptyOsteoCampo();
+  s.cranio_sacrale = emptyOsteoCampo();
+  s.strutturale = { articolare: emptyOsteoCampo(), funzionale: emptyOsteoCampo(), muscolare: emptyOsteoCampo() };
+  if(tipoVecchio==='viscerale') s.viscerale.report = s.note || '';
+  if(tipoVecchio==='cranio_sacrale') s.cranio_sacrale.report = s.note || '';
+  if(tipoVecchio==='strutturale'){
+    s.strutturale.articolare.report = s.articolare || '';
+    s.strutturale.funzionale.report = s.funzionale || '';
+    s.strutturale.muscolare.report = s.muscolare || '';
+  }
+  s.condividiPrivateCon = s.condividiPrivateCon || [];
+  delete s.trattamento; delete s.note; delete s.articolare; delete s.funzionale; delete s.muscolare;
+  return s;
+}
+// true se il professionista loggato può vedere le note PRIVATE di questa
+// scheda: l'autore, chi è stato esplicitamente condiviso, o l'admin (stesso
+// principio di visibilità totale già applicato altrove nell'app all'admin)
+function canSeeOsteoPrivata(s){
+  if(!state.professionista) return false;
+  if(state.professionista.ruolo==='admin') return true;
+  if(s.professionistaId===state.professionista.id) return true;
+  return Array.isArray(s.condividiPrivateCon) && s.condividiPrivateCon.includes(state.professionista.id);
+}
+// elenca i blocchi (uno per area di trattamento selezionata, tre per
+// "strutturale") con relativo testo report/privata, per riuso comune tra
+// lista schede, storico e report PDF
+function osteoAreaBlocks(s){
+  const blocks = [];
+  if(s.tipi.includes('viscerale')) blocks.push({ titolo:'Viscerale', report:s.viscerale.report, privata:s.viscerale.privata });
+  if(s.tipi.includes('cranio_sacrale')) blocks.push({ titolo:'Cranio sacrale', report:s.cranio_sacrale.report, privata:s.cranio_sacrale.privata });
+  if(s.tipi.includes('strutturale')){
+    blocks.push({ titolo:'Strutturale — Articolare', report:s.strutturale.articolare.report, privata:s.strutturale.articolare.privata });
+    blocks.push({ titolo:'Strutturale — Funzionale', report:s.strutturale.funzionale.report, privata:s.strutturale.funzionale.privata });
+    blocks.push({ titolo:'Strutturale — Muscolare', report:s.strutturale.muscolare.report, privata:s.strutturale.muscolare.privata });
+  }
+  return blocks;
+}
 // apre in una nuova finestra un report stampabile (via "Stampa" del browser,
 // da cui l'utente sceglie "Salva come PDF") di una singola scheda trattamento
-// osteopatia: logo, data seduta, operatore e contenuto diviso per aree.
-// Non genera un vero file PDF via libreria (nessuna libreria di scrittura
-// PDF è presente nell'app): riusa lo stesso pattern già in uso altrove
-// (finestra HTML autonoma + window.print()), che evita una dipendenza
-// aggiuntiva e dà pieno controllo del layout via CSS.
+// osteopatia: logo, data seduta, operatore e contenuto diviso per aree. Solo
+// le note "per il report" vengono incluse: quelle private restano fuori dal
+// PDF/storico per definizione. Non genera un vero file PDF via libreria
+// (nessuna libreria di scrittura PDF è presente nell'app): riusa lo stesso
+// pattern già in uso altrove (finestra HTML autonoma + window.print()), che
+// evita una dipendenza aggiuntiva e dà pieno controllo del layout via CSS.
 function apriReportOsteopatia(c, s){
+  s = normalizeSchedaOsteopatia(s);
   const prof = state.professionisti.find(p=>p.id===s.professionistaId);
   const dataFmt = s.data ? s.data.split('-').reverse().join('/') : '—';
   const logoSrc = (document.querySelector('.mark-logo') || document.querySelector('.auth-logo') || {}).src || '';
-  let sezioniHTML;
-  if(s.trattamento==='strutturale'){
-    sezioniHTML = ['articolare','funzionale','muscolare'].map(k=>{
-      const lbl = k==='articolare'?'Articolare':k==='funzionale'?'Funzionale':'Muscolare';
-      const val = s[k];
-      return `<div class="rep-sezione"><h3>${lbl}</h3><div class="rep-testo">${val ? escHtml(val) : '<em>Nessuna nota</em>'}</div></div>`;
-    }).join('');
-  } else {
-    sezioniHTML = `<div class="rep-sezione"><h3>Note</h3><div class="rep-testo">${s.note ? escHtml(s.note) : '<em>Nessuna nota</em>'}</div></div>`;
-  }
+  const blocks = osteoAreaBlocks(s);
+  const sezioniHTML = blocks.length ? blocks.map(b=>
+    `<div class="rep-sezione"><h3>${escHtml(b.titolo)}</h3><div class="rep-testo">${b.report ? escHtml(b.report) : '<em>Nessuna nota</em>'}</div></div>`
+  ).join('') : `<div class="rep-sezione"><div class="rep-testo"><em>Nessuna area di trattamento registrata.</em></div></div>`;
+  const tipiLbl = s.tipi.map(t=>TRATTAMENTO_OSTEO_LABELS[t] || t).join(', ') || '—';
   const html = `<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8">
     <title>Report trattamento — ${escHtml(c.nome || '')}</title>
     <style>
@@ -4172,7 +4221,7 @@ function apriReportOsteopatia(c, s){
       <div><span class="rep-meta-label">Cliente</span>${escHtml(c.nome || '—')}</div>
       <div><span class="rep-meta-label">Data seduta</span>${dataFmt}</div>
       <div><span class="rep-meta-label">Operatore</span>${prof ? escHtml(prof.nome) : '—'}</div>
-      <div><span class="rep-meta-label">Tipologia trattamento</span>${escHtml(TRATTAMENTO_OSTEO_LABELS[s.trattamento] || s.trattamento || '—')}</div>
+      <div><span class="rep-meta-label">Tipologia trattamento</span>${escHtml(tipiLbl)}</div>
     </div>
     ${sezioniHTML}
     <button class="rep-print-btn" onclick="window.print()">Stampa / Salva come PDF</button>
@@ -4185,9 +4234,11 @@ function emptySchedaOsteopatia(){
   return {
     id: 'so_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
     data: fmtDateISO(new Date()),
-    trattamento: '',       // 'viscerale' | 'cranio_sacrale' | 'strutturale'
-    note: '',               // usato per viscerale/cranio_sacrale
-    articolare: '', funzionale: '', muscolare: '', // usati solo per strutturale
+    tipi: [],               // sottoinsieme di ['viscerale','cranio_sacrale','strutturale'], selezionabili insieme
+    viscerale: emptyOsteoCampo(),
+    cranio_sacrale: emptyOsteoCampo(),
+    strutturale: { articolare: emptyOsteoCampo(), funzionale: emptyOsteoCampo(), muscolare: emptyOsteoCampo() },
+    condividiPrivateCon: [], // id professionisti con cui sono condivise TUTTE le note private di questa scheda
     professionistaId: null,
     segnalazioneId: null,   // se non null, questa scheda ha generato una segnalazione a un collega
     segnalaFlag: false,     // campi transitori del solo draft in compilazione, non salvati sulla scheda
@@ -4510,22 +4561,22 @@ function renderAreaHumanOsteopatia(){
   const box = document.getElementById('areaHumanContent');
   if(!c || !box) return;
   if(!c.schedeOsteopatia) c.schedeOsteopatia = [];
+  c.schedeOsteopatia.forEach(normalizeSchedaOsteopatia);
   if(!state.schedaOsteopatiaDraft) state.schedaOsteopatiaDraft = emptySchedaOsteopatia();
   const draft = state.schedaOsteopatiaDraft;
+  const profOptions = state.professionisti.filter(p=> !state.professionista || p.id!==state.professionista.id);
 
   const rows = c.schedeOsteopatia.slice().sort((a,b)=> (b.data||'').localeCompare(a.data||''));
   const listHTML = rows.length ? rows.map(s=>{
     const prof = state.professionisti.find(p=>p.id===s.professionistaId);
-    let dettaglio;
-    if(s.trattamento==='strutturale'){
-      const parts = [];
-      if(s.articolare) parts.push('Articolare: ' + s.articolare);
-      if(s.funzionale) parts.push('Funzionale: ' + s.funzionale);
-      if(s.muscolare) parts.push('Muscolare: ' + s.muscolare);
-      dettaglio = parts.length ? parts.join(' · ') : 'Nessuna nota';
-    } else {
-      dettaglio = s.note || 'Nessuna nota';
-    }
+    const vedePrivata = canSeeOsteoPrivata(s);
+    const tipiLbl = s.tipi.map(t=>TRATTAMENTO_OSTEO_LABELS[t] || t).join(', ') || '—';
+    const blocks = osteoAreaBlocks(s);
+    const dettaglioHTML = blocks.length ? blocks.map(b=>{
+      const reportLine = `<div><b>${escHtml(b.titolo)}:</b> ${b.report ? escHtml(b.report) : '<em>nessuna nota</em>'}</div>`;
+      const privataLine = vedePrivata ? `<div style="color:var(--ink-mute);">🔒 <i>Privata:</i> ${b.privata ? escHtml(b.privata) : '<em>nessuna</em>'}</div>` : '';
+      return reportLine + privataLine;
+    }).join('') : '<div><em>Nessuna area registrata</em></div>';
     return `<div class="val-card">
       <div class="val-card-top">
         <div class="val-card-date">${s.data ? s.data.split('-').reverse().join('/') : '—'}</div>
@@ -4534,12 +4585,18 @@ function renderAreaHumanOsteopatia(){
           <button class="val-card-del" data-del-osteo="${s.id}" title="Elimina scheda">×</button>
         </div>
       </div>
-      <div class="val-card-autore">${escHtml(TRATTAMENTO_OSTEO_LABELS[s.trattamento] || s.trattamento || '—')}${prof ? ' · ' + escHtml(prof.nome) : ''}${s.segnalazioneId ? ' · <span class="osteo-flag-badge" title="Ha generato una segnalazione a un collega">🚩 segnalata</span>' : ''}</div>
-      <div class="val-card-motivo">${escHtml(dettaglio)}</div>
+      <div class="val-card-autore">${escHtml(tipiLbl)}${prof ? ' · ' + escHtml(prof.nome) : ''}${s.segnalazioneId ? ' · <span class="osteo-flag-badge" title="Ha generato una segnalazione a un collega">🚩 segnalata</span>' : ''}${(s.condividiPrivateCon&&s.condividiPrivateCon.length) ? ' · <span title="Note private condivise">🔓 condivisa</span>' : ''}</div>
+      <div class="val-card-motivo">${dettaglioHTML}</div>
     </div>`;
   }).join('') : `<div class="val-empty">Nessuna scheda osteopatia ancora registrata per questo cliente.</div>`;
 
-  const profOptions = state.professionisti.filter(p=> !state.professionista || p.id!==state.professionista.id);
+  function campoHTML(idBase, tipoLbl, campo, subLbl){
+    return `
+      <div class="client-section-label-row" style="margin-top:14px;"><div class="client-section-label" style="font-size:11px;">${escHtml(subLbl || tipoLbl)}</div></div>
+      <div class="ev-field"><label>Note per il report (nel PDF e nello storico del cliente)</label><textarea class="editable" id="${idBase}Report" rows="2" placeholder="Contenuto del trattamento, visibile nel report">${escHtml(campo.report)}</textarea></div>
+      <div class="ev-field"><label>Note private (solo per te, salvo condivisione)</label><textarea class="editable" id="${idBase}Privata" rows="2" placeholder="Note personali, non esportate nel report">${escHtml(campo.privata)}</textarea></div>
+    `;
+  }
 
   box.innerHTML = `
     <div class="client-section-label-row"><div class="client-section-label">Storico osteopatia</div></div>
@@ -4551,17 +4608,32 @@ function renderAreaHumanOsteopatia(){
         <div class="ev-field"><label>Data seduta</label><input class="editable" type="date" id="osteoData" value="${escAttr(draft.data)}"></div>
       </div>
       <div style="margin:10px 0 16px;">
-        <label style="font-size:11px;color:var(--ink-mute);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:6px;">Tipologia trattamento</label>
-        ${valChipGroupHTML('osteoTrattamento', [{v:'viscerale',l:'Viscerale'},{v:'cranio_sacrale',l:'Cranio sacrale'},{v:'strutturale',l:'Strutturale'}], draft.trattamento)}
+        <label style="font-size:11px;color:var(--ink-mute);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:6px;">Tipologia trattamento (selezionabili insieme)</label>
+        <div style="display:flex;gap:18px;flex-wrap:wrap;">
+          <label style="display:flex;align-items:center;gap:6px;font-size:13.5px;"><input type="checkbox" data-tipo-osteo="viscerale" ${draft.tipi.includes('viscerale')?'checked':''}> Viscerale</label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:13.5px;"><input type="checkbox" data-tipo-osteo="cranio_sacrale" ${draft.tipi.includes('cranio_sacrale')?'checked':''}> Cranio sacrale</label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:13.5px;"><input type="checkbox" data-tipo-osteo="strutturale" ${draft.tipi.includes('strutturale')?'checked':''}> Strutturale</label>
+        </div>
       </div>
       <div id="osteoCampiWrap">
-        ${draft.trattamento==='strutturale' ? `
-          <div class="ev-field"><label>Articolare</label><textarea class="editable" id="osteoArticolare" rows="2" placeholder="Note per professionista">${escHtml(draft.articolare)}</textarea></div>
-          <div class="ev-field"><label>Funzionale</label><textarea class="editable" id="osteoFunzionale" rows="2" placeholder="Note per professionista">${escHtml(draft.funzionale)}</textarea></div>
-          <div class="ev-field"><label>Muscolare</label><textarea class="editable" id="osteoMuscolare" rows="2" placeholder="Note per professionista">${escHtml(draft.muscolare)}</textarea></div>
-        ` : (draft.trattamento==='viscerale' || draft.trattamento==='cranio_sacrale') ? `
-          <div class="ev-field"><label>Note per professionista</label><textarea class="editable" id="osteoNote" rows="3" placeholder="Note per professionista">${escHtml(draft.note)}</textarea></div>
-        ` : `<div class="val-empty">Seleziona una tipologia di trattamento per continuare.</div>`}
+        ${!draft.tipi.length ? `<div class="val-empty">Seleziona almeno una tipologia di trattamento per continuare.</div>` : ''}
+        ${draft.tipi.includes('viscerale') ? campoHTML('osteoVisc', 'Viscerale', draft.viscerale) : ''}
+        ${draft.tipi.includes('cranio_sacrale') ? campoHTML('osteoCS', 'Cranio sacrale', draft.cranio_sacrale) : ''}
+        ${draft.tipi.includes('strutturale') ? `
+          <div class="client-section-label-row" style="margin-top:16px;"><div class="client-section-label">Strutturale</div></div>
+          ${campoHTML('osteoStrutArt', 'Strutturale', draft.strutturale.articolare, 'Articolare')}
+          ${campoHTML('osteoStrutFun', 'Strutturale', draft.strutturale.funzionale, 'Funzionale')}
+          ${campoHTML('osteoStrutMus', 'Strutturale', draft.strutturale.muscolare, 'Muscolare')}
+        ` : ''}
+      </div>
+
+      <div class="osteo-flag-box" style="margin-top:16px;">
+        <label style="font-size:11px;color:var(--ink-mute);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:8px;">Condividi le note private di questa scheda con</label>
+        ${profOptions.length ? profOptions.map(p=>`
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;margin-bottom:4px;">
+            <input type="checkbox" data-condividi-prof="${p.id}" ${draft.condividiPrivateCon.includes(p.id)?'checked':''}> ${escHtml(p.nome)}${p.area?' ('+escHtml(p.area)+')':''}
+          </label>
+        `).join('') : `<div class="val-empty" style="margin:0;">Nessun altro professionista disponibile.</div>`}
       </div>
 
       <div class="osteo-flag-box">
@@ -4587,19 +4659,36 @@ function renderAreaHumanOsteopatia(){
   `;
 
   document.getElementById('osteoData').onchange = (e)=>{ draft.data = e.target.value; };
-  box.querySelectorAll('[data-chipgroup="osteoTrattamento"] [data-chipval]').forEach(btn=>{
-    btn.onclick = ()=>{ draft.trattamento = btn.dataset.chipval; renderAreaHumanTab(); };
+  box.querySelectorAll('[data-tipo-osteo]').forEach(chk=>{
+    chk.onchange = (e)=>{
+      const t = chk.dataset.tipoOsteo;
+      if(e.target.checked){ if(!draft.tipi.includes(t)) draft.tipi.push(t); }
+      else { draft.tipi = draft.tipi.filter(x=>x!==t); }
+      renderAreaHumanTab();
+    };
   });
-  const noteEl = document.getElementById('osteoNote'); if(noteEl) noteEl.oninput = (e)=>{ draft.note = e.target.value; };
-  const artEl = document.getElementById('osteoArticolare'); if(artEl) artEl.oninput = (e)=>{ draft.articolare = e.target.value; };
-  const funEl = document.getElementById('osteoFunzionale'); if(funEl) funEl.oninput = (e)=>{ draft.funzionale = e.target.value; };
-  const musEl = document.getElementById('osteoMuscolare'); if(musEl) musEl.oninput = (e)=>{ draft.muscolare = e.target.value; };
+  box.querySelectorAll('[data-condividi-prof]').forEach(chk=>{
+    chk.onchange = (e)=>{
+      const pid = chk.dataset.condividiProf;
+      if(e.target.checked){ if(!draft.condividiPrivateCon.includes(pid)) draft.condividiPrivateCon.push(pid); }
+      else { draft.condividiPrivateCon = draft.condividiPrivateCon.filter(x=>x!==pid); }
+    };
+  });
+  function wireCampo(idBase, campo){
+    const rEl = document.getElementById(idBase+'Report'); if(rEl) rEl.oninput = (e)=>{ campo.report = e.target.value; };
+    const pEl = document.getElementById(idBase+'Privata'); if(pEl) pEl.oninput = (e)=>{ campo.privata = e.target.value; };
+  }
+  wireCampo('osteoVisc', draft.viscerale);
+  wireCampo('osteoCS', draft.cranio_sacrale);
+  wireCampo('osteoStrutArt', draft.strutturale.articolare);
+  wireCampo('osteoStrutFun', draft.strutturale.funzionale);
+  wireCampo('osteoStrutMus', draft.strutturale.muscolare);
   document.getElementById('osteoFlagCheck').onchange = (e)=>{ draft.segnalaFlag = e.target.checked; renderAreaHumanTab(); };
   const flagProfEl = document.getElementById('osteoFlagProf'); if(flagProfEl) flagProfEl.onchange = (e)=>{ draft.segnalaAProfId = e.target.value; };
   const flagTestoEl = document.getElementById('osteoFlagTesto'); if(flagTestoEl) flagTestoEl.oninput = (e)=>{ draft.segnalaTesto = e.target.value; };
 
   document.getElementById('btnSaveOsteo').onclick = async ()=>{
-    if(!draft.trattamento){ alert('Seleziona una tipologia di trattamento.'); return; }
+    if(!draft.tipi.length){ alert('Seleziona almeno una tipologia di trattamento.'); return; }
     if(draft.segnalaFlag){
       if(!draft.segnalaAProfId){ alert('Seleziona il professionista a cui inviare la segnalazione.'); return; }
       if(!draft.segnalaTesto || !draft.segnalaTesto.trim()){ alert('Scrivi una nota per il collega prima di segnalare.'); return; }
@@ -4607,11 +4696,15 @@ function renderAreaHumanOsteopatia(){
     const btn = document.getElementById('btnSaveOsteo');
     btn.disabled = true; btn.textContent = 'Salvataggio…';
     const scheda = {
-      id: draft.id, data: draft.data, trattamento: draft.trattamento,
-      note: draft.trattamento==='strutturale' ? '' : draft.note,
-      articolare: draft.trattamento==='strutturale' ? draft.articolare : '',
-      funzionale: draft.trattamento==='strutturale' ? draft.funzionale : '',
-      muscolare: draft.trattamento==='strutturale' ? draft.muscolare : '',
+      id: draft.id, data: draft.data, tipi: draft.tipi.slice(),
+      viscerale: { report: draft.viscerale.report, privata: draft.viscerale.privata },
+      cranio_sacrale: { report: draft.cranio_sacrale.report, privata: draft.cranio_sacrale.privata },
+      strutturale: {
+        articolare: { report: draft.strutturale.articolare.report, privata: draft.strutturale.articolare.privata },
+        funzionale: { report: draft.strutturale.funzionale.report, privata: draft.strutturale.funzionale.privata },
+        muscolare: { report: draft.strutturale.muscolare.report, privata: draft.strutturale.muscolare.privata }
+      },
+      condividiPrivateCon: draft.condividiPrivateCon.slice(),
       professionistaId: state.professionista ? state.professionista.id : null,
       segnalazioneId: null
     };
@@ -4695,7 +4788,7 @@ function renderStoricoTab(){
   const tuttiApp = state.appuntamenti.filter(a=>a.clienteId===c.id);
   const svoltiApp = tuttiApp.filter(a=>a.day < todayStr);
   const prossimi = tuttiApp.filter(a=>a.day >= todayStr);
-  const schedeOsteo = c.schedeOsteopatia || [];
+  const schedeOsteo = (c.schedeOsteopatia || []).map(normalizeSchedaOsteopatia);
 
   const profIds = new Set();
   tuttiApp.forEach(a=>{ if(a.professionistaId) profIds.add(a.professionistaId); });
@@ -4741,21 +4834,19 @@ function renderStoricoTab(){
   }
   function osteoHTML(s){
     const prof = s.professionistaId ? state.professionisti.find(p=>p.id===s.professionistaId) : null;
-    let dettaglio;
-    if(s.trattamento==='strutturale'){
-      const parts = [];
-      if(s.articolare) parts.push('Articolare: ' + s.articolare);
-      if(s.funzionale) parts.push('Funzionale: ' + s.funzionale);
-      if(s.muscolare) parts.push('Muscolare: ' + s.muscolare);
-      dettaglio = parts.length ? parts.join(' · ') : 'Nessuna nota';
-    } else {
-      dettaglio = s.note || 'Nessuna nota';
-    }
+    const tipiLbl = s.tipi.map(t=>TRATTAMENTO_OSTEO_LABELS[t] || t).join(', ') || '—';
+    const vedePrivata = canSeeOsteoPrivata(s);
+    const blocks = osteoAreaBlocks(s);
+    const dettaglioHTML = blocks.length ? blocks.map(b=>{
+      const reportPart = `<b>${escHtml(b.titolo)}:</b> ${b.report ? escHtml(b.report) : 'nessuna nota'}`;
+      const privataPart = vedePrivata && b.privata ? ` <span style="color:var(--ink-mute);">(🔒 ${escHtml(b.privata)})</span>` : '';
+      return `<div>${reportPart}${privataPart}</div>`;
+    }).join('') : '<div>Nessuna nota</div>';
     return `<div class="upcoming-item tipo-border-allenamento">
       <div class="ui-info">
-        <div class="uid"><span class="tipo-tag tipo-tag-allenamento">Osteopatia</span> ${escHtml(TRATTAMENTO_OSTEO_LABELS[s.trattamento] || s.trattamento || '—')}</div>
+        <div class="uid"><span class="tipo-tag tipo-tag-allenamento">Osteopatia</span> ${escHtml(tipiLbl)}</div>
         <div class="uim">${s.data ? s.data.split('-').reverse().join('/') : '—'} · Area Human${prof ? ' · '+escHtml(prof.nome) : ''}</div>
-        <div class="uim" style="margin-top:4px;">${escHtml(dettaglio)}</div>
+        <div class="uim" style="margin-top:4px;">${dettaglioHTML}</div>
       </div>
       <div style="display:flex;align-items:center;">
         <button class="btn-small" data-storico-report-osteo="${s.id}">📄 Report PDF</button>
