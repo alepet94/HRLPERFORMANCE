@@ -1114,6 +1114,22 @@ header.top{
 .osteo-flag-box{border-top:1px solid var(--line-soft);margin-top:18px;padding-top:16px;}
 .osteo-flag-toggle{display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--ink-dim);}
 .osteo-flag-toggle input{cursor:pointer;}
+/* nota "per il report" (esportata in PDF/storico, sempre visibile a chi
+   accede alla scheda) vs nota "privata" (visibile solo all'autore o a chi è
+   stato condiviso): stesso box ma bordo/sfondo diversi, arancio per il
+   report (colore brand, "pubblico") e grigio neutro per le private, così
+   sono riconoscibili a colpo d'occhio */
+.osteo-note-box{border-left:3px solid;border-radius:6px;padding:10px 12px;margin-bottom:8px;background:var(--navy-800);}
+.osteo-note-box label{font-size:11px;color:var(--ink-mute);display:block;margin-bottom:4px;}
+.osteo-note-box textarea{width:100%;}
+.osteo-note-report{border-left-color:var(--gold);}
+.osteo-note-privata{border-left-color:#8E8C88;background:var(--navy-700);}
+.osteo-privata-toggle{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-mute);cursor:pointer;margin:2px 0 10px;}
+.osteo-privata-toggle input{cursor:pointer;}
+.osteo-condividi-btn{background:none;border:1px solid var(--line);border-radius:20px;padding:6px 14px;font-size:12.5px;color:var(--ink-dim);cursor:pointer;}
+.osteo-condividi-btn:hover{border-color:var(--gold);color:var(--gold);}
+.osteo-condividi-list label{display:flex;align-items:center;gap:8px;font-size:13.5px;padding:8px 2px;border-bottom:1px solid var(--line-soft);cursor:pointer;}
+.osteo-condividi-list label:last-child{border-bottom:none;}
 .segnalazione-item{border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:12px;background:var(--navy-850);}
 .segnalazione-item.non-letta{border-color:var(--gold-line);background:var(--gold-bg-10, rgba(253,112,35,.06));}
 .segnalazione-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap;}
@@ -2094,6 +2110,16 @@ body[data-theme="light"]{
     <p style="font-size:12.5px;color:var(--ink-mute);margin:-8px 0 16px;">Spazi/risorse prenotabili (es. sale, studi): compaiono come colonna a sé nel multicalendario giornaliero.</p>
     <div id="spaziContent"></div>
     <div class="ev-actions" style="margin-top:16px;"><div></div><button class="btn-gold" id="btnNuovoSpazio">+ Nuovo spazio</button></div>
+  </div>
+</div>
+
+<div class="modal-bg" id="osteoCondividiModal">
+  <div class="modal">
+    <button class="modal-close" id="closeOsteoCondividi">×</button>
+    <h3>Condividi note private</h3>
+    <p style="font-size:12.5px;color:var(--ink-mute);margin:-8px 0 16px;">Seleziona i professionisti che potranno vedere le note private di questa scheda, oltre a te.</p>
+    <div id="osteoCondividiContent" class="osteo-condividi-list"></div>
+    <div class="ev-actions" style="margin-top:16px;"><div></div><button class="btn-gold" id="btnOsteoCondividiFatto">Fatto</button></div>
   </div>
 </div>
 
@@ -3408,6 +3434,9 @@ document.getElementById('btnSpazi').onclick = ()=>{
 };
 document.getElementById('closeSpazi').onclick = ()=> document.getElementById('spaziModal').classList.remove('open');
 document.getElementById('spaziModal').onclick = (e)=>{ if(e.target.id==='spaziModal') document.getElementById('spaziModal').classList.remove('open'); };
+document.getElementById('closeOsteoCondividi').onclick = ()=> document.getElementById('osteoCondividiModal').classList.remove('open');
+document.getElementById('osteoCondividiModal').onclick = (e)=>{ if(e.target.id==='osteoCondividiModal') document.getElementById('osteoCondividiModal').classList.remove('open'); };
+document.getElementById('btnOsteoCondividiFatto').onclick = ()=> document.getElementById('osteoCondividiModal').classList.remove('open');
 document.getElementById('btnNuovoSpazio').onclick = ()=>{
   const s = { id: 'spz_' + Date.now() + '_' + Math.random().toString(36).slice(2,7), nome: 'Nuovo spazio', colore: '', note: '' };
   state.spazi.push(s);
@@ -4243,7 +4272,8 @@ function emptySchedaOsteopatia(){
     segnalazioneId: null,   // se non null, questa scheda ha generato una segnalazione a un collega
     segnalaFlag: false,     // campi transitori del solo draft in compilazione, non salvati sulla scheda
     segnalaAProfId: '',
-    segnalaTesto: ''
+    segnalaTesto: '',
+    _privataOpen: {}        // campo transitorio del solo draft: quali box "nota privata" sono aperti (idBase -> bool), mai salvato
   };
 }
 // individua nel testo estratto dal PDF (extractPdfText, righe separate da
@@ -4556,6 +4586,35 @@ function renderAreaHumanTab(){
   }
   box.innerHTML = `<div class="val-empty">Nessuno strumento disponibile qui per la tua area.</div>`;
 }
+// bottone + modale "Condividi note private": invece di una lista di
+// checkbox sempre visibile nel form, un bottone che apre una finestra
+// dedicata (stesso pattern modal-bg/.modal già usato altrove, es. "Spazi
+// comuni") dove spuntare i colleghi da aggiungere/togliere; le modifiche
+// sono live sul draft (niente da "salvare" nel modale, si chiude e basta)
+function updateOsteoCondividiBtnLabel(){
+  const draft = state.schedaOsteopatiaDraft;
+  const btn = document.getElementById('btnOsteoCondividi');
+  if(!btn || !draft) return;
+  const n = draft.condividiPrivateCon.length;
+  btn.textContent = n ? `🔓 Condivise con ${n} colleg${n===1?'a':'he'}` : '🔒 Condividi note private…';
+}
+function renderOsteoCondividiModal(){
+  const draft = state.schedaOsteopatiaDraft;
+  if(!draft) return;
+  const profOptions = state.professionisti.filter(p=> !state.professionista || p.id!==state.professionista.id);
+  const box = document.getElementById('osteoCondividiContent');
+  box.innerHTML = profOptions.length ? profOptions.map(p=>`
+    <label><input type="checkbox" data-condividi-prof="${p.id}" ${draft.condividiPrivateCon.includes(p.id)?'checked':''}> ${escHtml(p.nome)}${p.area?' ('+escHtml(p.area)+')':''}</label>
+  `).join('') : `<div class="val-empty">Nessun altro professionista disponibile.</div>`;
+  box.querySelectorAll('[data-condividi-prof]').forEach(chk=>{
+    chk.onchange = (e)=>{
+      const pid = chk.dataset.condividiProf;
+      if(e.target.checked){ if(!draft.condividiPrivateCon.includes(pid)) draft.condividiPrivateCon.push(pid); }
+      else { draft.condividiPrivateCon = draft.condividiPrivateCon.filter(x=>x!==pid); }
+      updateOsteoCondividiBtnLabel();
+    };
+  });
+}
 function renderAreaHumanOsteopatia(){
   const c = activeClient();
   const box = document.getElementById('areaHumanContent');
@@ -4590,11 +4649,22 @@ function renderAreaHumanOsteopatia(){
     </div>`;
   }).join('') : `<div class="val-empty">Nessuna scheda osteopatia ancora registrata per questo cliente.</div>`;
 
+  if(!draft._privataOpen) draft._privataOpen = {};
   function campoHTML(idBase, tipoLbl, campo, subLbl){
+    const isOpen = draft._privataOpen[idBase] || !!campo.privata;
     return `
       <div class="client-section-label-row" style="margin-top:14px;"><div class="client-section-label" style="font-size:11px;">${escHtml(subLbl || tipoLbl)}</div></div>
-      <div class="ev-field"><label>Note per il report (nel PDF e nello storico del cliente)</label><textarea class="editable" id="${idBase}Report" rows="2" placeholder="Contenuto del trattamento, visibile nel report">${escHtml(campo.report)}</textarea></div>
-      <div class="ev-field"><label>Note private (solo per te, salvo condivisione)</label><textarea class="editable" id="${idBase}Privata" rows="2" placeholder="Note personali, non esportate nel report">${escHtml(campo.privata)}</textarea></div>
+      <div class="osteo-note-box osteo-note-report">
+        <label>Note per il report (nel PDF e nello storico del cliente)</label>
+        <textarea class="editable" id="${idBase}Report" rows="2" placeholder="Contenuto del trattamento, visibile nel report">${escHtml(campo.report)}</textarea>
+      </div>
+      <label class="osteo-privata-toggle"><input type="checkbox" data-privata-toggle="${idBase}" ${isOpen?'checked':''}> 🔒 Aggiungi nota privata</label>
+      ${isOpen ? `
+        <div class="osteo-note-box osteo-note-privata">
+          <label>Nota privata (solo per te, salvo condivisione)</label>
+          <textarea class="editable" id="${idBase}Privata" rows="2" placeholder="Note personali, non esportate nel report">${escHtml(campo.privata)}</textarea>
+        </div>
+      ` : ''}
     `;
   }
 
@@ -4628,12 +4698,8 @@ function renderAreaHumanOsteopatia(){
       </div>
 
       <div class="osteo-flag-box" style="margin-top:16px;">
-        <label style="font-size:11px;color:var(--ink-mute);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:8px;">Condividi le note private di questa scheda con</label>
-        ${profOptions.length ? profOptions.map(p=>`
-          <label style="display:flex;align-items:center;gap:6px;font-size:13px;margin-bottom:4px;">
-            <input type="checkbox" data-condividi-prof="${p.id}" ${draft.condividiPrivateCon.includes(p.id)?'checked':''}> ${escHtml(p.nome)}${p.area?' ('+escHtml(p.area)+')':''}
-          </label>
-        `).join('') : `<div class="val-empty" style="margin:0;">Nessun altro professionista disponibile.</div>`}
+        <label style="font-size:11px;color:var(--ink-mute);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:8px;">Note private</label>
+        <button type="button" class="osteo-condividi-btn" id="btnOsteoCondividi"></button>
       </div>
 
       <div class="osteo-flag-box">
@@ -4667,13 +4733,17 @@ function renderAreaHumanOsteopatia(){
       renderAreaHumanTab();
     };
   });
-  box.querySelectorAll('[data-condividi-prof]').forEach(chk=>{
+  box.querySelectorAll('[data-privata-toggle]').forEach(chk=>{
     chk.onchange = (e)=>{
-      const pid = chk.dataset.condividiProf;
-      if(e.target.checked){ if(!draft.condividiPrivateCon.includes(pid)) draft.condividiPrivateCon.push(pid); }
-      else { draft.condividiPrivateCon = draft.condividiPrivateCon.filter(x=>x!==pid); }
+      draft._privataOpen[chk.dataset.privataToggle] = e.target.checked;
+      renderAreaHumanTab();
     };
   });
+  updateOsteoCondividiBtnLabel();
+  document.getElementById('btnOsteoCondividi').onclick = ()=>{
+    renderOsteoCondividiModal();
+    document.getElementById('osteoCondividiModal').classList.add('open');
+  };
   function wireCampo(idBase, campo){
     const rEl = document.getElementById(idBase+'Report'); if(rEl) rEl.oninput = (e)=>{ campo.report = e.target.value; };
     const pEl = document.getElementById(idBase+'Privata'); if(pEl) pEl.oninput = (e)=>{ campo.privata = e.target.value; };
