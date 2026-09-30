@@ -1099,6 +1099,18 @@ header.top{
 .ghi-toggle.rosso{color:#E0776A;border-color:#E0776A;}
 .sist-test-item{display:flex;align-items:center;gap:8px;padding:8px 0;font-size:13px;color:var(--ink-dim);cursor:pointer;}
 
+/* ---------- Area Human / scheda Osteopatia ---------- */
+.osteo-flag-badge{color:var(--gold-bright);font-size:11px;}
+.osteo-flag-box{border-top:1px solid var(--line-soft);margin-top:18px;padding-top:16px;}
+.osteo-flag-toggle{display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--ink-dim);}
+.osteo-flag-toggle input{cursor:pointer;}
+.segnalazione-item{border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:12px;background:var(--navy-850);}
+.segnalazione-item.non-letta{border-color:var(--gold-line);background:var(--gold-bg-10, rgba(253,112,35,.06));}
+.segnalazione-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap;}
+.segnalazione-meta{font-size:11.5px;color:var(--ink-mute);}
+.segnalazione-testo{font-size:13px;color:var(--ink-dim);line-height:1.4;margin-bottom:10px;}
+.segnalazione-actions{display:flex;gap:8px;flex-wrap:wrap;}
+
 /* ---------- storico ---------- */
 .storico-filtri{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
 .storico-filtri select, .storico-filtri input{min-width:120px;}
@@ -1804,10 +1816,7 @@ body[data-theme="light"]{
   </div>
 
   <div class="val-wrap" id="areaHumanWrap" style="display:none;">
-    <div class="timeline-empty" style="padding:60px 20px;text-align:center;">
-      <div style="font-family:var(--serif);font-size:18px;margin-bottom:8px;">Area Human</div>
-      <div style="font-size:13px;color:var(--ink-mute);">In arrivo — questa sezione sarà preparata in un prossimo passaggio.</div>
-    </div>
+    <div id="areaHumanContent"></div>
   </div>
 
   <div class="val-wrap" id="storicoWrap" style="display:none;">
@@ -1903,6 +1912,7 @@ body[data-theme="light"]{
     <button class="btn-ghost" id="btnDisponibilita">Disponibilità settimanale</button>
     <button class="btn-ghost" id="btnRichieste">Richieste <span class="rich-badge" id="richBadge" style="display:none;">0</span></button>
     <button class="btn-ghost" id="btnAvvisi">Avvisi <span class="rich-badge" id="avvisiBadge" style="display:none;">0</span></button>
+    <button class="btn-ghost" id="btnSegnalazioni">Segnalazioni <span class="rich-badge" id="segnalazioniBadge" style="display:none;">0</span></button>
     <button class="btn-ghost" id="btnNewImpegno">+ Nuovo impegno</button>
   </div>
 
@@ -1941,6 +1951,15 @@ body[data-theme="light"]{
     <h3>Avvisi readiness</h3>
     <p style="font-size:12.5px;color:var(--ink-mute);margin:-8px 0 16px;">Sessioni in cui il cliente ha dichiarato una readiness media sotto la soglia impostata.</p>
     <div id="avvisiListContent"></div>
+  </div>
+</div>
+
+<div class="modal-bg" id="segnalazioniModal">
+  <div class="modal">
+    <button class="modal-close" id="closeSegnalazioni">×</button>
+    <h3>Segnalazioni tra professionisti</h3>
+    <p style="font-size:12.5px;color:var(--ink-mute);margin:-8px 0 16px;">Note che un collega ti ha indirizzato su un cliente (es. dalla scheda osteopatia). Restano qui finché non le segni come lette.</p>
+    <div id="segnalazioniListContent"></div>
   </div>
 </div>
 
@@ -2107,7 +2126,10 @@ const state = {
   blocchiOperativi: [],  // catalogo "blocchi operativi": {id, profilo, nome, fasi:[{id,nome,ordine,obiettivo}]} — determinano le fasi del percorso al posto di quelle generiche del pathway
   blockOperativoId: null,        // blocco operativo assegnato al cliente in lavorazione (workspace corrente)
   blockOperativoEditor: null,
-  blockOperativoEditorIsNew: false
+  blockOperativoEditorIsNew: false,
+  segnalazioni: [],          // note tra professionisti: {id, clienteId, schedaOsteopatiaId, daProfessionistaId, aProfessionistaId, testo, letta, createdAt}
+  seenSegnalazioniIds: null,
+  schedaOsteopatiaDraft: null // scheda Area Human (Osteopatia) in compilazione, o null
 };
 
 const WEEKDAY_NAMES = ['Dom','Lun','Mar','Mer','Gio','Ven','Sab'];
@@ -2154,7 +2176,8 @@ function clienteToRow(c){
     area_target: c.areaTarget || [],
     area_attiva: c.areaAttiva || null,
     ghi_storico: c.ghiStorico || [],
-    sistema_test_selezionati: Array.from(c.sistemaTestSelezionati || [])
+    sistema_test_selezionati: Array.from(c.sistemaTestSelezionati || []),
+    schede_osteopatia: c.schedeOsteopatia || []
   };
 }
 function rowToCliente(r){
@@ -2177,7 +2200,8 @@ function rowToCliente(r){
     areaTarget: r.area_target || [],
     areaAttiva: r.area_attiva || null,
     ghiStorico: r.ghi_storico || [],
-    sistemaTestSelezionati: new Set(r.sistema_test_selezionati || [])
+    sistemaTestSelezionati: new Set(r.sistema_test_selezionati || []),
+    schedeOsteopatia: r.schede_osteopatia || []
   };
 }
 // elenco (eventualmente vuoto) dei professionisti assegnati a un cliente,
@@ -2246,6 +2270,22 @@ function rowToRichiesta(r){
 }
 function notificaToRow(n){ return { id: n.id, cliente_id: n.clienteId, testo: n.testo, letta: !!n.letta }; }
 function rowToNotifica(r){ return { id: r.id, clienteId: r.cliente_id, testo: r.testo, letta: !!r.letta }; }
+// segnalazioni: nota che un professionista indirizza a un collega su un
+// cliente (es. dalla scheda osteopatia), con inbox persistente finché non letta
+function segnalazioneToRow(s){
+  return {
+    id: s.id, cliente_id: s.clienteId, scheda_osteopatia_id: s.schedaOsteopatiaId || null,
+    da_professionista_id: s.daProfessionistaId || null, a_professionista_id: s.aProfessionistaId || null,
+    testo: s.testo || '', letta: !!s.letta, created_at: s.createdAt || null
+  };
+}
+function rowToSegnalazione(r){
+  return {
+    id: r.id, clienteId: r.cliente_id, schedaOsteopatiaId: r.scheda_osteopatia_id || null,
+    daProfessionistaId: r.da_professionista_id || null, aProfessionistaId: r.a_professionista_id || null,
+    testo: r.testo || '', letta: !!r.letta, createdAt: r.created_at || null
+  };
+}
 function fasciaToRow(f){ return { id: f.id, day: f.day, start_time: f.start, end_time: f.end }; }
 function rowToFascia(r){ return { id: r.id, day: r.day, start: r.start_time, end: r.end_time }; }
 function dispRicorrenteToRow(d){
@@ -2721,15 +2761,21 @@ const db = {
         sb.from('esercizi_custom').select('*'),
         sb.from('disponibilita_ricorrenti').select('*'),
         sb.from('notifiche_cliente').select('*'),
-        sb.from('blocchi_operativi').select('*')
+        sb.from('blocchi_operativi').select('*'),
+        sb.from('segnalazioni').select('*')
       ]);
     } catch(ex){
       console.error('Supabase load exception', ex);
       db.lastError = (ex && ex.message) ? ex.message : String(ex);
       return false;
     }
-    const [c,a,r,f,cs,t,ex,dr,nc,bop] = results;
+    const [c,a,r,f,cs,t,ex,dr,nc,bop,seg] = results;
+    // "segnalazioni" è una tabella nuova: se Ale non ha ancora eseguito la
+    // relativa migrazione su Supabase, la select fallisce (tabella
+    // inesistente) — non deve bloccare il caricamento di tutto il resto,
+    // quindi il suo errore è tollerato a parte invece di finire in firstError
     const firstError = c.error || a.error || r.error || f.error || cs.error || t.error || ex.error || dr.error || nc.error || bop.error;
+    if(seg.error) console.error('Supabase load segnalazioni (probabile migrazione mancante)', seg.error);
     if(firstError){
       console.error('Supabase load error', firstError);
       db.lastError = firstError.message || firstError.hint || firstError.code || JSON.stringify(firstError);
@@ -2744,6 +2790,7 @@ const db = {
     state.customExercises = (ex.data || []).map(rowToEsercizio);
     state.disponibilitaRicorrenti = (dr.data || []).map(rowToDispRicorrente);
     state.notificheCliente = (nc.data || []).map(rowToNotifica);
+    state.segnalazioni = seg.error ? [] : (seg.data || []).map(rowToSegnalazione);
     if(bop.data && bop.data.length){
       state.blocchiOperativi = bop.data.map(rowToBlockOperativo);
     } else {
@@ -2763,6 +2810,7 @@ const db = {
   async saveRichiesta(r){ if(!dbEnabled || !sb) return true; const {error} = await sb.from('richieste').upsert(richiestaToRow(r)); if(error){ console.error('Supabase saveRichiesta', error); return false; } return true; },
   async deleteRichiesta(id){ if(!dbEnabled || !sb) return; const {error} = await sb.from('richieste').delete().eq('id',id); if(error) console.error('Supabase deleteRichiesta', error); },
   async saveNotifica(n){ if(!dbEnabled || !sb) return; const {error} = await sb.from('notifiche_cliente').upsert(notificaToRow(n)); if(error) console.error('Supabase saveNotifica', error); },
+  async saveSegnalazione(s){ if(!dbEnabled || !sb) return true; const {error} = await sb.from('segnalazioni').upsert(segnalazioneToRow(s)); if(error){ console.error('Supabase saveSegnalazione', error); return false; } return true; },
   async deleteNotifica(id){ if(!dbEnabled || !sb) return; const {error} = await sb.from('notifiche_cliente').delete().eq('id',id); if(error) console.error('Supabase deleteNotifica', error); },
   async saveFascia(f){ if(!dbEnabled || !sb) return; const {error} = await sb.from('fasce_disponibili').upsert(fasciaToRow(f)); if(error) console.error('Supabase saveFascia', error); },
   async deleteFascia(id){ if(!dbEnabled || !sb) return; const {error} = await sb.from('fasce_disponibili').delete().eq('id',id); if(error) console.error('Supabase deleteFascia', error); },
@@ -3005,10 +3053,12 @@ async function bootApp(){
     showDbBanner('err', 'Errore di connessione a Supabase: ' + (db.lastError || 'controlla URL/chiave e le policy RLS') + '. I dati resteranno solo in questa sessione finché non risolvi.');
   }
   seedSeenRichieste();
+  seedSeenSegnalazioni();
   startRichiestePolling();
   if(window.Notification && Notification.permission==='default'){
     try{ Notification.requestPermission(); }catch(ex){}
   }
+  renderRichBadge();
   showView('clienti');
   renderClientiList('');
 }
@@ -3261,6 +3311,7 @@ function activateClientTab(tab){
   if(tab==='calendario') renderClientCalendar();
   if(tab==='valutazioni') renderValutazioni();
   if(tab==='sistema') renderSistemaTab();
+  if(tab==='areaHuman') renderAreaHumanTab();
   if(tab==='storico') renderStoricoTab();
 }
 
@@ -3780,6 +3831,27 @@ function emptyGhiMarcatori(){
   MARCATORI_GHI.forEach(x=> m[x.key] = { valore:'', stato:'verde' });
   return m;
 }
+
+// ==================== AREA HUMAN — scheda Osteopatia ====================
+// prima professione costruita dentro Area Human (le altre — Nutrizionista,
+// Sleep Coach, Chinesiologo... — restano un placeholder finché non se ne
+// definiscono le rispettive schede); non è legata a un appuntamento in
+// calendario, è un elenco libero per cliente, una scheda per seduta
+const TRATTAMENTO_OSTEO_LABELS = { viscerale:'Viscerale', cranio_sacrale:'Cranio sacrale', strutturale:'Strutturale' };
+function emptySchedaOsteopatia(){
+  return {
+    id: 'so_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
+    data: fmtDateISO(new Date()),
+    trattamento: '',       // 'viscerale' | 'cranio_sacrale' | 'strutturale'
+    note: '',               // usato per viscerale/cranio_sacrale
+    articolare: '', funzionale: '', muscolare: '', // usati solo per strutturale
+    professionistaId: null,
+    segnalazioneId: null,   // se non null, questa scheda ha generato una segnalazione a un collega
+    segnalaFlag: false,     // campi transitori del solo draft in compilazione, non salvati sulla scheda
+    segnalaAProfId: '',
+    segnalaTesto: ''
+  };
+}
 // individua nel testo estratto dal PDF (extractPdfText, righe separate da
 // \t per colonna) la tabella "Healthspan analysis" e ne legge SOLO la prima
 // riga di dati (la più recente — le successive, già presenti nel referto,
@@ -3956,6 +4028,152 @@ function renderSistemaTab(){
     renderCliTabs();
     activateClientTab(c.areaAttiva==='AH' ? 'areaHuman' : 'pathway');
   };
+}
+
+// ==================== AREA HUMAN (scheda Osteopatia) ====================
+function renderAreaHumanTab(){
+  const c = activeClient();
+  const box = document.getElementById('areaHumanContent');
+  if(!c || !box) return;
+  if(!c.schedeOsteopatia) c.schedeOsteopatia = [];
+  if(!state.schedaOsteopatiaDraft) state.schedaOsteopatiaDraft = emptySchedaOsteopatia();
+  const draft = state.schedaOsteopatiaDraft;
+
+  const rows = c.schedeOsteopatia.slice().sort((a,b)=> (b.data||'').localeCompare(a.data||''));
+  const listHTML = rows.length ? rows.map(s=>{
+    const prof = state.professionisti.find(p=>p.id===s.professionistaId);
+    let dettaglio;
+    if(s.trattamento==='strutturale'){
+      const parts = [];
+      if(s.articolare) parts.push('Articolare: ' + s.articolare);
+      if(s.funzionale) parts.push('Funzionale: ' + s.funzionale);
+      if(s.muscolare) parts.push('Muscolare: ' + s.muscolare);
+      dettaglio = parts.length ? parts.join(' · ') : 'Nessuna nota';
+    } else {
+      dettaglio = s.note || 'Nessuna nota';
+    }
+    return `<div class="val-card">
+      <div class="val-card-top">
+        <div class="val-card-date">${s.data ? s.data.split('-').reverse().join('/') : '—'}</div>
+        <button class="val-card-del" data-del-osteo="${s.id}" title="Elimina scheda">×</button>
+      </div>
+      <div class="val-card-autore">${escHtml(TRATTAMENTO_OSTEO_LABELS[s.trattamento] || s.trattamento || '—')}${prof ? ' · ' + escHtml(prof.nome) : ''}${s.segnalazioneId ? ' · <span class="osteo-flag-badge" title="Ha generato una segnalazione a un collega">🚩 segnalata</span>' : ''}</div>
+      <div class="val-card-motivo">${escHtml(dettaglio)}</div>
+    </div>`;
+  }).join('') : `<div class="val-empty">Nessuna scheda osteopatia ancora registrata per questo cliente.</div>`;
+
+  const profOptions = state.professionisti.filter(p=> !state.professionista || p.id!==state.professionista.id);
+
+  box.innerHTML = `
+    <div class="client-section-label-row"><div class="client-section-label">Storico osteopatia</div></div>
+    <div id="osteoList" style="margin:14px 0 24px;">${listHTML}</div>
+
+    <div class="client-section-label-row"><div class="client-section-label">Nuova scheda osteopatia</div></div>
+    <div class="ghi-draft-box">
+      <div class="ev-row">
+        <div class="ev-field"><label>Data seduta</label><input class="editable" type="date" id="osteoData" value="${escAttr(draft.data)}"></div>
+      </div>
+      <div style="margin:10px 0 16px;">
+        <label style="font-size:11px;color:var(--ink-mute);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:6px;">Tipologia trattamento</label>
+        ${valChipGroupHTML('osteoTrattamento', [{v:'viscerale',l:'Viscerale'},{v:'cranio_sacrale',l:'Cranio sacrale'},{v:'strutturale',l:'Strutturale'}], draft.trattamento)}
+      </div>
+      <div id="osteoCampiWrap">
+        ${draft.trattamento==='strutturale' ? `
+          <div class="ev-field"><label>Articolare</label><textarea class="editable" id="osteoArticolare" rows="2" placeholder="Note per professionista">${escHtml(draft.articolare)}</textarea></div>
+          <div class="ev-field"><label>Funzionale</label><textarea class="editable" id="osteoFunzionale" rows="2" placeholder="Note per professionista">${escHtml(draft.funzionale)}</textarea></div>
+          <div class="ev-field"><label>Muscolare</label><textarea class="editable" id="osteoMuscolare" rows="2" placeholder="Note per professionista">${escHtml(draft.muscolare)}</textarea></div>
+        ` : (draft.trattamento==='viscerale' || draft.trattamento==='cranio_sacrale') ? `
+          <div class="ev-field"><label>Note per professionista</label><textarea class="editable" id="osteoNote" rows="3" placeholder="Note per professionista">${escHtml(draft.note)}</textarea></div>
+        ` : `<div class="val-empty">Seleziona una tipologia di trattamento per continuare.</div>`}
+      </div>
+
+      <div class="osteo-flag-box">
+        <label class="osteo-flag-toggle">
+          <input type="checkbox" id="osteoFlagCheck" ${draft.segnalaFlag?'checked':''}>
+          Segnala ad un altro professionista
+        </label>
+        ${draft.segnalaFlag ? `
+          <div class="ev-row" style="margin-top:10px;">
+            <div class="ev-field"><label>Professionista</label>
+              <select id="osteoFlagProf">
+                <option value="">— Seleziona —</option>
+                ${profOptions.map(p=>`<option value="${p.id}" ${draft.segnalaAProfId===p.id?'selected':''}>${escHtml(p.nome)}${p.area?' ('+escHtml(p.area)+')':''}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+          <div class="ev-field"><label>Nota per il collega</label><textarea class="editable" id="osteoFlagTesto" rows="2" placeholder="Cosa vuoi segnalare?">${escHtml(draft.segnalaTesto)}</textarea></div>
+        ` : ''}
+      </div>
+
+      <button class="btn-gold" id="btnSaveOsteo" style="margin-top:16px;">Salva scheda</button>
+    </div>
+  `;
+
+  document.getElementById('osteoData').onchange = (e)=>{ draft.data = e.target.value; };
+  box.querySelectorAll('[data-chipgroup="osteoTrattamento"] [data-chipval]').forEach(btn=>{
+    btn.onclick = ()=>{ draft.trattamento = btn.dataset.chipval; renderAreaHumanTab(); };
+  });
+  const noteEl = document.getElementById('osteoNote'); if(noteEl) noteEl.oninput = (e)=>{ draft.note = e.target.value; };
+  const artEl = document.getElementById('osteoArticolare'); if(artEl) artEl.oninput = (e)=>{ draft.articolare = e.target.value; };
+  const funEl = document.getElementById('osteoFunzionale'); if(funEl) funEl.oninput = (e)=>{ draft.funzionale = e.target.value; };
+  const musEl = document.getElementById('osteoMuscolare'); if(musEl) musEl.oninput = (e)=>{ draft.muscolare = e.target.value; };
+  document.getElementById('osteoFlagCheck').onchange = (e)=>{ draft.segnalaFlag = e.target.checked; renderAreaHumanTab(); };
+  const flagProfEl = document.getElementById('osteoFlagProf'); if(flagProfEl) flagProfEl.onchange = (e)=>{ draft.segnalaAProfId = e.target.value; };
+  const flagTestoEl = document.getElementById('osteoFlagTesto'); if(flagTestoEl) flagTestoEl.oninput = (e)=>{ draft.segnalaTesto = e.target.value; };
+
+  document.getElementById('btnSaveOsteo').onclick = async ()=>{
+    if(!draft.trattamento){ alert('Seleziona una tipologia di trattamento.'); return; }
+    if(draft.segnalaFlag){
+      if(!draft.segnalaAProfId){ alert('Seleziona il professionista a cui inviare la segnalazione.'); return; }
+      if(!draft.segnalaTesto || !draft.segnalaTesto.trim()){ alert('Scrivi una nota per il collega prima di segnalare.'); return; }
+    }
+    const btn = document.getElementById('btnSaveOsteo');
+    btn.disabled = true; btn.textContent = 'Salvataggio…';
+    const scheda = {
+      id: draft.id, data: draft.data, trattamento: draft.trattamento,
+      note: draft.trattamento==='strutturale' ? '' : draft.note,
+      articolare: draft.trattamento==='strutturale' ? draft.articolare : '',
+      funzionale: draft.trattamento==='strutturale' ? draft.funzionale : '',
+      muscolare: draft.trattamento==='strutturale' ? draft.muscolare : '',
+      professionistaId: state.professionista ? state.professionista.id : null,
+      segnalazioneId: null
+    };
+    let seg = null;
+    if(draft.segnalaFlag){
+      seg = {
+        id: 'seg_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
+        clienteId: c.id, schedaOsteopatiaId: scheda.id,
+        daProfessionistaId: state.professionista ? state.professionista.id : null,
+        aProfessionistaId: draft.segnalaAProfId,
+        testo: draft.segnalaTesto.trim(), letta: false,
+        createdAt: new Date().toISOString()
+      };
+      scheda.segnalazioneId = seg.id;
+    }
+    c.schedeOsteopatia.push(scheda);
+    if(seg){
+      const okSeg = await db.saveSegnalazione(seg);
+      if(!okSeg){
+        c.schedeOsteopatia = c.schedeOsteopatia.filter(s=>s.id!==scheda.id);
+        btn.disabled = false; btn.textContent = 'Salva scheda';
+        alert('Non è stato possibile inviare la segnalazione al collega. Controlla la connessione e riprova.');
+        return;
+      }
+      state.segnalazioni.push(seg);
+      renderSegnalazioniBadge();
+    }
+    db.saveCliente(c);
+    state.schedaOsteopatiaDraft = emptySchedaOsteopatia();
+    renderAreaHumanTab();
+  };
+
+  box.querySelectorAll('[data-del-osteo]').forEach(btn=>{
+    btn.onclick = ()=>{
+      c.schedeOsteopatia = c.schedeOsteopatia.filter(s=>s.id!==btn.dataset.delOsteo);
+      db.saveCliente(c);
+      renderAreaHumanTab();
+    };
+  });
 }
 
 // ==================== STORICO (tutti i trattamenti del cliente) ====================
@@ -4955,7 +5173,40 @@ async function pollNuoveRichieste(){
 }
 function startRichiestePolling(){
   if(richiestePollTimer || !dbEnabled || !sb) return;
-  richiestePollTimer = setInterval(pollNuoveRichieste, 25000);
+  richiestePollTimer = setInterval(()=>{ pollNuoveRichieste(); pollNuoveSegnalazioni(); }, 25000);
+}
+
+function notifySegnalazione(s){
+  const c = state.clienti.find(x=>x.id===s.clienteId);
+  const mittente = state.professionisti.find(p=>p.id===s.daProfessionistaId);
+  const nomeCliente = c ? c.nome : 'un cliente';
+  const nomeMittente = mittente ? mittente.nome : 'Un collega';
+  const dettaglio = `su ${nomeCliente}: ${s.testo}`;
+  showToast('Nuova segnalazione', `${nomeMittente} ti ha segnalato una nota ${dettaglio}`);
+  if(window.Notification && Notification.permission==='granted'){
+    try{ new Notification('HRL Performance Pathways — nuova segnalazione', {body: `${nomeMittente} ${dettaglio}`}); }catch(ex){}
+  }
+}
+function seedSeenSegnalazioni(){
+  state.seenSegnalazioniIds = new Set(segnalazioniPerMe().filter(s=>!s.letta).map(s=>s.id));
+}
+async function pollNuoveSegnalazioni(){
+  if(!dbEnabled || !sb || !state.professionista) return;
+  try{
+    const { data, error } = await sb.from('segnalazioni').select('*').eq('a_professionista_id', state.professionista.id).eq('letta', false);
+    if(error){ console.error('poll segnalazioni (probabile migrazione mancante)', error); return; }
+    const rows = (data || []).map(rowToSegnalazione);
+    const altre = state.segnalazioni.filter(s=> s.aProfessionistaId!==state.professionista.id || s.letta);
+    state.segnalazioni = altre.concat(rows);
+    if(!state.seenSegnalazioniIds) state.seenSegnalazioniIds = new Set();
+    rows.filter(s=>!state.seenSegnalazioniIds.has(s.id)).forEach(s=>{
+      state.seenSegnalazioniIds.add(s.id);
+      notifySegnalazione(s);
+    });
+    renderSegnalazioniBadge();
+    const modal = document.getElementById('segnalazioniModal');
+    if(modal && modal.classList.contains('open')) renderSegnalazioniList();
+  } catch(ex){ console.error('poll segnalazioni exception', ex); }
 }
 
 // ---------------- richieste di modifica (cliente → operatore) ----------------
@@ -4965,6 +5216,7 @@ function renderRichBadge(){
   badge.textContent = n;
   badge.style.display = n>0 ? 'inline-block' : 'none';
   renderAvvisiBadge();
+  renderSegnalazioniBadge();
 }
 
 function getReadinessAlerts(){
@@ -5010,6 +5262,71 @@ document.getElementById('btnAvvisi').onclick = ()=>{
 };
 document.getElementById('closeAvvisi').onclick = ()=> document.getElementById('avvisiModal').classList.remove('open');
 document.getElementById('avvisiModal').onclick = (e)=>{ if(e.target.id==='avvisiModal') document.getElementById('avvisiModal').classList.remove('open'); };
+
+// ---------------- segnalazioni tra professionisti (inbox persistente) ----------------
+// indirizzate a un professionista specifico (es. dalla scheda osteopatia);
+// restano visibili finché il destinatario non le segna come lette, anche
+// se erano state inviate mentre non era collegato — stesso principio delle
+// notifiche persistenti già usate per il cliente (notifiche_cliente), qui
+// applicato tra professionisti
+function segnalazioniPerMe(){
+  if(!state.professionista) return [];
+  return state.segnalazioni.filter(s=> s.aProfessionistaId===state.professionista.id);
+}
+function renderSegnalazioniBadge(){
+  const badge = document.getElementById('segnalazioniBadge');
+  if(!badge) return;
+  const n = segnalazioniPerMe().filter(s=>!s.letta).length;
+  badge.textContent = n;
+  badge.style.display = n>0 ? 'inline-block' : 'none';
+}
+function renderSegnalazioniList(){
+  const box = document.getElementById('segnalazioniListContent');
+  const list = segnalazioniPerMe().sort((a,b)=> (b.createdAt||'').localeCompare(a.createdAt||''));
+  if(list.length===0){
+    box.innerHTML = `<div class="timeline-empty">Nessuna segnalazione al momento.</div>`;
+    return;
+  }
+  box.innerHTML = list.map(s=>{
+    const c = state.clienti.find(x=>x.id===s.clienteId);
+    const mittente = state.professionisti.find(p=>p.id===s.daProfessionistaId);
+    const dataFmt = s.createdAt ? new Date(s.createdAt).toLocaleString('it-IT', {day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit'}) : '';
+    return `<div class="segnalazione-item ${s.letta?'':'non-letta'}">
+      <div class="segnalazione-head">
+        <div><b>${c ? escHtml(c.nome) : 'Cliente eliminato'}</b></div>
+        <div class="segnalazione-meta">${mittente ? escHtml(mittente.nome) : 'Collega'} · ${dataFmt}</div>
+      </div>
+      <div class="segnalazione-testo">${escHtml(s.testo)}</div>
+      <div class="segnalazione-actions">
+        ${c ? `<button class="btn-small" data-apri-cliente-seg="${c.id}">Apri scheda cliente</button>` : ''}
+        ${!s.letta ? `<button class="btn-small" data-letta-seg="${s.id}">Segna come letta</button>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+  box.querySelectorAll('[data-letta-seg]').forEach(btn=>{
+    btn.onclick = ()=>{
+      const s = state.segnalazioni.find(x=>x.id===btn.dataset.lettaSeg);
+      if(s){ s.letta = true; db.saveSegnalazione(s); }
+      renderSegnalazioniList(); renderSegnalazioniBadge();
+    };
+  });
+  box.querySelectorAll('[data-apri-cliente-seg]').forEach(btn=>{
+    btn.onclick = ()=>{
+      document.getElementById('segnalazioniModal').classList.remove('open');
+      loadClientIntoWorkspace(btn.dataset.apriClienteSeg);
+      state.clientTab = 'areaHuman';
+      showView('pathway');
+      renderContextBar();
+      activateClientTab('areaHuman');
+    };
+  });
+}
+document.getElementById('btnSegnalazioni').onclick = ()=>{
+  renderSegnalazioniList();
+  document.getElementById('segnalazioniModal').classList.add('open');
+};
+document.getElementById('closeSegnalazioni').onclick = ()=> document.getElementById('segnalazioniModal').classList.remove('open');
+document.getElementById('segnalazioniModal').onclick = (e)=>{ if(e.target.id==='segnalazioniModal') document.getElementById('segnalazioniModal').classList.remove('open'); };
 
 function apriRichiestaModifica(appuntamentoId, prefill){
   const a = appuntamentoId ? state.appuntamenti.find(x=>x.id===appuntamentoId) : null;
@@ -5487,7 +5804,8 @@ function createCliente(data){
     areaTarget: [],
     areaAttiva: null,
     ghiStorico: [],
-    sistemaTestSelezionati: new Set()
+    sistemaTestSelezionati: new Set(),
+    schedeOsteopatia: []
   };
   state.clienti.push(c);
   db.saveCliente(c);
