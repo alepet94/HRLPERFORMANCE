@@ -2538,9 +2538,18 @@ async function extractPdfText(file){
       // del nome esercizio) ha quasi sempre un distacco reale di almeno una
       // decina di punti, anche quando il testo del nome è lungo e la
       // raggiunge quasi; un cambio di glifo dentro la stessa parola ha
-      // invece un distacco vicino allo zero
+      // invece un distacco vicino allo zero. Tra questi due estremi, però,
+      // uno spazio reale tra due parole della stessa colonna (es. le
+      // intestazioni "LF Power" o "S Score" in un referto GHI) può avere un
+      // distacco molto piccolo (anche solo 0.5-0.6pt, per via della crenatura
+      // stretta di alcuni font) — troppo poco per superare una soglia di 1pt,
+      // col rischio di incollare le due parole senza alcuno spazio ("LFPower")
+      // e mandare in errore un riconoscimento basato sul testo. Qualunque
+      // distacco chiaramente positivo, anche minimo, riceve quindi almeno
+      // uno spazio: resta escluso solo il caso ~zero del cambio di glifo
+      // dentro la stessa parola
       if(lastX!==null && gap > 8) curLine.push('\t');
-      else if(curLine.length && !curLine[curLine.length-1].endsWith('\t') && gap > 1) curLine.push(' ');
+      else if(curLine.length && !curLine[curLine.length-1].endsWith('\t') && gap > 0.3) curLine.push(' ');
       curLine.push(it.str);
       lastX = it.x + it.w;
     });
