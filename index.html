@@ -4856,9 +4856,15 @@ function renderStoricoTab(){
   const f = state.storicoFiltri;
   const todayStr = fmtDateISO(new Date());
   const tuttiApp = state.appuntamenti.filter(a=>a.clienteId===c.id);
-  const svoltiApp = tuttiApp.filter(a=>a.day < todayStr);
-  const prossimi = tuttiApp.filter(a=>a.day >= todayStr);
   const schedeOsteo = (c.schedeOsteopatia || []).map(normalizeSchedaOsteopatia);
+  // se per un giorno è già stata registrata una scheda trattamento (es.
+  // osteopatia), l'appuntamento di quel giorno è già stato svolto: non deve
+  // comparire anche tra i "Prossimi appuntamenti" (capita tipicamente lo
+  // stesso giorno, quando il professionista compila la scheda appena dopo
+  // la seduta, prima che passi la mezzanotte)
+  const giorniConTrattamentoSvolto = new Set(schedeOsteo.map(s=>s.data).filter(Boolean));
+  const svoltiApp = tuttiApp.filter(a=>a.day < todayStr);
+  const prossimi = tuttiApp.filter(a=>a.day >= todayStr && !giorniConTrattamentoSvolto.has(a.day));
 
   const profIds = new Set();
   tuttiApp.forEach(a=>{ if(a.professionistaId) profIds.add(a.professionistaId); });
