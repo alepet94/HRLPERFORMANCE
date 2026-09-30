@@ -1604,10 +1604,22 @@ body[data-theme="light"]{
       <input class="editable" id="cliSearchInput" placeholder="Cerca cliente...">
       <button class="btn-ghost" id="btnTeam" style="display:none;">Team</button>
       <button class="btn-ghost" id="btnNuovoProfessionista" style="display:none;">+ Nuovo professionista</button>
+      <button class="btn-ghost" id="btnCestino" style="display:none;" title="Clienti eliminati, recuperabili">🗑 Cestino</button>
       <button class="btn-gold" id="btnNuovoCliente">+ Nuovo cliente</button>
     </div>
   </div>
   <div class="cli-grid" id="cliGrid"></div>
+</div>
+
+<div class="modal-bg" id="cestinoModal">
+  <div class="modal">
+    <button class="modal-close" id="closeCestino">×</button>
+    <h3>Cestino</h3>
+    <div style="font-size:12px;color:var(--ink-mute);margin-bottom:12px;">
+      Clienti eliminati: restano qui finché non li ripristini o li elimini definitivamente.
+    </div>
+    <div id="cestinoList"></div>
+  </div>
 </div>
 
 <div class="modal-bg" id="cliModal">
@@ -2051,7 +2063,9 @@ function clienteToRow(c){
     email: c.email || null,
     auth_user_id: c.authUserId || null,
     block_operativo_id: c.blockOperativoId || null,
-    valutazioni: c.valutazioni || []
+    valutazioni: c.valutazioni || [],
+    eliminato: !!c.eliminato,
+    eliminato_il: c.eliminatoIl || null
   };
 }
 function rowToCliente(r){
@@ -2067,7 +2081,9 @@ function rowToCliente(r){
     email: r.email || '',
     authUserId: r.auth_user_id || null,
     blockOperativoId: r.block_operativo_id || null,
-    valutazioni: r.valutazioni || []
+    valutazioni: r.valutazioni || [],
+    eliminato: !!r.eliminato,
+    eliminatoIl: r.eliminato_il || null
   };
 }
 // elenco (eventualmente vuoto) dei professionisti assegnati a un cliente,
@@ -2122,14 +2138,16 @@ function richiestaToRow(r){
   return {
     id: r.id, cliente_id: r.clienteId, appuntamento_id: r.appuntamentoId, day: r.day,
     start_time: r.start, end_time: r.end, fascia_id: r.fasciaId || null, nota: r.nota || null, stato: r.stato,
-    letta: !!r.letta, servizio: r.servizio || null, professionista_id: r.professionistaId || null
+    letta: !!r.letta, servizio: r.servizio || null, professionista_id: r.professionistaId || null,
+    tipo: r.tipo || (r.appuntamentoId ? 'modifica' : 'nuovo')
   };
 }
 function rowToRichiesta(r){
   return {
     id: r.id, clienteId: r.cliente_id, appuntamentoId: r.appuntamento_id, day: r.day,
     start: r.start_time, end: r.end_time, fasciaId: r.fascia_id, nota: r.nota || '', stato: r.stato,
-    letta: !!r.letta, servizio: r.servizio || '', professionistaId: r.professionista_id || null
+    letta: !!r.letta, servizio: r.servizio || '', professionistaId: r.professionista_id || null,
+    tipo: r.tipo || (r.appuntamento_id ? 'modifica' : 'nuovo')
   };
 }
 function notificaToRow(n){ return { id: n.id, cliente_id: n.clienteId, testo: n.testo, letta: !!n.letta }; }
@@ -2648,7 +2666,7 @@ const db = {
   async saveAppuntamento(a){ if(!dbEnabled || !sb) return; const {error} = await sb.from('appuntamenti').upsert(appuntamentoToRow(a)); if(error) console.error('Supabase saveAppuntamento', error); },
   async deleteAppuntamento(id){ if(!dbEnabled || !sb) return; const {error} = await sb.from('appuntamenti').delete().eq('id',id); if(error) console.error('Supabase deleteAppuntamento', error); },
   async deleteAppuntamentiBySeries(seriesId){ if(!dbEnabled || !sb) return; const {error} = await sb.from('appuntamenti').delete().eq('series_id', seriesId); if(error) console.error('Supabase deleteSeries', error); },
-  async saveRichiesta(r){ if(!dbEnabled || !sb) return; const {error} = await sb.from('richieste').upsert(richiestaToRow(r)); if(error) console.error('Supabase saveRichiesta', error); },
+  async saveRichiesta(r){ if(!dbEnabled || !sb) return true; const {error} = await sb.from('richieste').upsert(richiestaToRow(r)); if(error){ console.error('Supabase saveRichiesta', error); return false; } return true; },
   async deleteRichiesta(id){ if(!dbEnabled || !sb) return; const {error} = await sb.from('richieste').delete().eq('id',id); if(error) console.error('Supabase deleteRichiesta', error); },
   async saveNotifica(n){ if(!dbEnabled || !sb) return; const {error} = await sb.from('notifiche_cliente').upsert(notificaToRow(n)); if(error) console.error('Supabase saveNotifica', error); },
   async deleteNotifica(id){ if(!dbEnabled || !sb) return; const {error} = await sb.from('notifiche_cliente').delete().eq('id',id); if(error) console.error('Supabase deleteNotifica', error); },
@@ -2828,6 +2846,11 @@ async function afterLogin(session){
   const { data:cliByUid, error:cliErr } = await sb.from('clienti').select('*').eq('auth_user_id', session.user.id).maybeSingle();
   if(cliErr){ renderAuthLogin('Errore nel caricare il profilo: ' + cliErr.message); return; }
   if(cliByUid){
+    if(cliByUid.eliminato){
+      await sb.auth.signOut();
+      renderAuthLogin('Questo profilo non è più attivo. Contatta il tuo centro per maggiori informazioni.');
+      return;
+    }
     state.clientAuthMode = true;
     await bootClientApp(rowToCliente(cliByUid));
     return;
@@ -3777,13 +3800,16 @@ function renderClientWeekWorkoutsList(){
         ${avviaBtn}
         ${pending
           ? `<span class="retest-badge">Richiesta in attesa</span><button class="btn-small danger" data-annulla-rich="${pending.id}">Annulla</button>`
-          : `<button class="btn-small" data-req-modifica="${a.id}">Richiedi modifica</button>`}
+          : `<button class="btn-small" data-req-modifica="${a.id}">Richiedi modifica</button><button class="btn-small danger" data-req-cancella="${a.id}">Richiedi cancellazione</button>`}
       </div>
     </div>`;
   }).join('') : `<div class="upcoming-empty">Nessun appuntamento in questa settimana.</div>`;
 
   upBox.querySelectorAll('[data-req-modifica]').forEach(btn=>{
     btn.onclick = ()=> apriRichiestaModifica(btn.dataset.reqModifica);
+  });
+  upBox.querySelectorAll('[data-req-cancella]').forEach(btn=>{
+    btn.onclick = ()=> apriRichiestaCancellazione(btn.dataset.reqCancella);
   });
   upBox.querySelectorAll('[data-avvia-scheda]').forEach(btn=>{
     btn.onclick = ()=> apriEsecuzioneScheda(btn.dataset.avviaScheda);
@@ -4008,7 +4034,7 @@ function apriDettaglioLezione(appuntamentoId){
     html += `<div class="ev-actions" style="margin-top:10px;"><div></div>${
       pendingDet
         ? `<span class="retest-badge">Richiesta in attesa</span><button class="btn-small danger" id="btnAnnullaRichDet">Annulla</button>`
-        : `<button class="btn-small" id="btnRichiediModificaDet">Richiedi modifica</button>`
+        : `<button class="btn-small" id="btnRichiediModificaDet">Richiedi modifica</button><button class="btn-small danger" id="btnRichiediCancellaDet">Richiedi cancellazione</button>`
     }</div>`;
   }
   box.innerHTML = html;
@@ -4022,6 +4048,11 @@ function apriDettaglioLezione(appuntamentoId){
   if(btnRichDet) btnRichDet.onclick = ()=>{
     document.getElementById('lessonModal').classList.remove('open');
     apriRichiestaModifica(a.id);
+  };
+  const btnRichCancellaDet = document.getElementById('btnRichiediCancellaDet');
+  if(btnRichCancellaDet) btnRichCancellaDet.onclick = ()=>{
+    document.getElementById('lessonModal').classList.remove('open');
+    apriRichiestaCancellazione(a.id);
   };
   const btnAnnullaDet = document.getElementById('btnAnnullaRichDet');
   if(btnAnnullaDet) btnAnnullaDet.onclick = ()=>{
@@ -4419,8 +4450,10 @@ function showToast(title, body){
 function notifyNuovaRichiesta(r){
   const c = state.clienti.find(x=>x.id===r.clienteId);
   const nome = c ? c.nome : 'Un cliente';
-  const azione = r.appuntamentoId ? 'ha chiesto di spostare un appuntamento' : 'ha richiesto un nuovo appuntamento';
-  const dettaglio = `${r.day.split('-').reverse().join('/')} · ${r.start}–${r.end}${r.servizio ? ' — ' + r.servizio : ''}`;
+  const azione = r.tipo==='cancellazione' ? 'ha chiesto di cancellare un appuntamento' : (r.appuntamentoId ? 'ha chiesto di spostare un appuntamento' : 'ha richiesto un nuovo appuntamento');
+  const dettaglio = r.tipo==='cancellazione'
+    ? `${r.day.split('-').reverse().join('/')} · ${r.start}–${r.end}${r.nota ? ' — motivo: ' + r.nota : ''}`
+    : `${r.day.split('-').reverse().join('/')} · ${r.start}–${r.end}${r.servizio ? ' — ' + r.servizio : ''}`;
   showToast('Nuova richiesta', `${nome} ${azione}: ${dettaglio}`);
   if(window.Notification && Notification.permission==='granted'){
     try{ new Notification('HRL Performance Pathways — nuova richiesta', {body: `${nome} ${azione}: ${dettaglio}`}); }catch(ex){}
@@ -4513,11 +4546,26 @@ function apriRichiestaModifica(appuntamentoId, prefill){
   const todayStr = fmtDateISO(new Date());
   const defDay = a ? a.day : ((prefill && prefill.day) || todayStr);
   const defStart = a ? a.start : ((prefill && prefill.start) || '09:00');
-  const defEnd = a ? a.end : ((prefill && prefill.end) || '10:00');
+  // durata: per una modifica si preserva quella dell'appuntamento esistente
+  // (chi propone un nuovo orario per una sessione già fissata sa quanto durava);
+  // per una richiesta ex novo si usa la durata minima di un allenamento come
+  // default, perché il cliente non può sapere quanto durerà davvero — non gli
+  // si chiede quindi mai di indicare un orario di fine.
+  const durataMin = a ? (timeToMinutes(a.end) - timeToMinutes(a.start)) : (state.calSettings.minAllenamento || 60);
   const c = activeClient();
   const profOptions = clienteProfIds(c).map(id=>state.professionisti.find(p=>p.id===id)).filter(Boolean);
+  // se il cliente non ha nessun professionista di riferimento assegnato, la
+  // richiesta va automaticamente alla segreteria (se ce n'è una), invece di
+  // restare senza nessun responsabile
+  const segreteriaProf = state.professionisti.find(p=>p.area==='Segreteria');
+  const noRefProf = !a && profOptions.length===0;
   const fixedProfId = a ? (a.professionistaId || profOptions[0]?.id || null) : null;
-  state.richiestaEditor = { appuntamentoId: appuntamentoId||null, propDay:defDay, propStart:defStart, propEnd:defEnd, nota:'', servizio:'', professionistaId: fixedProfId || profOptions[0]?.id || null };
+  // per il calcolo degli orari liberi si lascia professionistaId a null quando
+  // il cliente non ha un riferimento (così propone gli orari liberi di
+  // QUALSIASI professionista, non solo quelli della segreteria, che in
+  // genere non tiene sessioni); l'assegnazione alla segreteria avviene solo
+  // sulla richiesta salvata, più sotto
+  state.richiestaEditor = { appuntamentoId: appuntamentoId||null, propDay:defDay, propStart:defStart, nota:'', servizio:'', professionistaId: fixedProfId || profOptions[0]?.id || null };
   document.getElementById('richModalTitle').textContent = a ? 'Richiedi modifica appuntamento' : 'Richiedi un appuntamento';
   const box = document.getElementById('richModalContent');
   box.innerHTML = `
@@ -4534,13 +4582,10 @@ function apriRichiestaModifica(appuntamentoId, prefill){
       <select id="richProf" class="editable">
         ${profOptions.map(p=>`<option value="${p.id}" ${state.richiestaEditor.professionistaId===p.id?'selected':''}>${p.nome}${p.area?' ('+p.area+')':''}</option>`).join('')}
       </select>
-    </div>` : ''}
+    </div>` : (!a && noRefProf ? `<div class="ev-field"><div style="font-size:12px;color:var(--ink-mute);">Nessun professionista di riferimento impostato: la richiesta sarà gestita dalla segreteria.</div></div>` : (!a ? `<div class="ev-field"><div style="font-size:12px;color:var(--ink-mute);">Sarai contattato dal professionista che ti segue.</div></div>` : ''))}
     <div class="ev-field"><label>Giorno</label><input class="editable" type="date" id="richDay" value="${defDay}"></div>
     <div class="ev-field"><label>Orari liberi quel giorno</label><div id="richFreeSlots"></div></div>
-    <div class="ev-row">
-      <div class="ev-field"><label>Inizio</label><input class="editable" type="time" id="richStart" value="${defStart}"></div>
-      <div class="ev-field"><label>Fine</label><input class="editable" type="time" id="richEnd" value="${defEnd}"></div>
-    </div>
+    <div class="ev-field"><label>Inizio</label><input class="editable" type="time" id="richStart" value="${defStart}"></div>
     <div class="ev-field"><label>Nota (opzionale)</label><input class="editable" id="richNota" placeholder="${a ? 'es. motivo della richiesta' : 'es. di cosa vorresti parlare o su cosa lavorare'}"></div>
     <div class="ev-actions"><div></div><button class="btn-gold" id="btnInviaRichiesta">Invia richiesta</button></div>
   `;
@@ -4559,20 +4604,18 @@ function apriRichiestaModifica(appuntamentoId, prefill){
     slotsBox.innerHTML = slots.map(w=>{
       const label = `${minutesToTime(w.start)}–${minutesToTime(w.end)}`;
       const postiTxt = w.posti>1 ? ` (${w.liberi}/${w.posti} posti)` : '';
-      return `<button type="button" class="btn-small" data-slot-start="${w.start}" data-slot-end="${w.end}" style="margin:0 6px 6px 0;">${label}${postiTxt}</button>`;
+      return `<button type="button" class="btn-small" data-slot-start="${w.start}" style="margin:0 6px 6px 0;">${label}${postiTxt}</button>`;
     }).join('');
     slotsBox.querySelectorAll('[data-slot-start]').forEach(btn=>{
       btn.onclick = ()=>{
         const s = parseInt(btn.dataset.slotStart,10);
-        const e = parseInt(btn.dataset.slotEnd,10);
         document.getElementById('richStart').value = minutesToTime(s);
-        document.getElementById('richEnd').value = minutesToTime(e);
       };
     });
   }
   renderFreeSlots();
   document.getElementById('richDay').onchange = renderFreeSlots;
-  document.getElementById('btnInviaRichiesta').onclick = ()=>{
+  document.getElementById('btnInviaRichiesta').onclick = async ()=>{
     const servizioSel = document.getElementById('richServizio');
     if(servizioSel && !servizioSel.value){
       alert('Seleziona il tipo di richiesta.');
@@ -4580,12 +4623,12 @@ function apriRichiestaModifica(appuntamentoId, prefill){
     }
     const propDay = document.getElementById('richDay').value;
     const propStart = document.getElementById('richStart').value;
-    const propEnd = document.getElementById('richEnd').value;
-    if(!propDay || !propStart || !propEnd || propEnd<=propStart){
-      alert('Controlla data e orari: l\'orario di fine deve essere dopo quello di inizio.');
+    if(!propDay || !propStart){
+      alert('Controlla giorno e orario.');
       return;
     }
-    const sMin = timeToMinutes(propStart), eMin = timeToMinutes(propEnd);
+    const sMin = timeToMinutes(propStart), eMin = sMin + durataMin;
+    const propEnd = minutesToTime(eMin);
     const profId = state.richiestaEditor.professionistaId;
     const slots = computeBookableSlots(propDay, profId, a ? a.id : null);
     const fits = slots.some(w=> sMin>=w.start && eMin<=w.end);
@@ -4593,19 +4636,28 @@ function apriRichiestaModifica(appuntamentoId, prefill){
       alert('Questo orario non risulta libero. Scegli uno degli orari liberi proposti oppure un altro giorno.');
       return;
     }
+    const btn = document.getElementById('btnInviaRichiesta');
+    btn.disabled = true;
     const nuovaRichiesta = {
-      id: 'ri_' + Date.now(),
+      id: 'ri_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
       clienteId: activeClient().id,
       appuntamentoId: appuntamentoId || null,
+      tipo: a ? 'modifica' : 'nuovo',
       day: propDay, start: propStart, end: propEnd,
       fasciaId: null,
       nota: document.getElementById('richNota').value,
       servizio: servizioSel ? servizioSel.value : '',
       stato: 'in attesa',
-      professionistaId: profId || null
+      professionistaId: profId || (noRefProf ? (segreteriaProf?.id || null) : null)
     };
     state.richieste.push(nuovaRichiesta);
-    db.saveRichiesta(nuovaRichiesta);
+    const ok = await db.saveRichiesta(nuovaRichiesta);
+    if(!ok){
+      state.richieste = state.richieste.filter(r=>r.id!==nuovaRichiesta.id);
+      btn.disabled = false;
+      alert('Non è stato possibile inviare la richiesta al server. Controlla la connessione e riprova (se il problema persiste, contatta il tuo centro).');
+      return;
+    }
     document.getElementById('richModal').classList.remove('open');
     renderRichBadge();
     renderClientCalendar();
@@ -4614,6 +4666,54 @@ function apriRichiestaModifica(appuntamentoId, prefill){
 }
 document.getElementById('closeRich').onclick = ()=> document.getElementById('richModal').classList.remove('open');
 document.getElementById('richModal').onclick = (e)=>{ if(e.target.id==='richModal') document.getElementById('richModal').classList.remove('open'); };
+
+// richiesta di cancellazione di un appuntamento esistente, con motivo
+// obbligatorio: a differenza della modifica, qui non si propone un nuovo
+// giorno/orario — al professionista arriva solo la richiesta di annullare,
+// che lui approva (l'appuntamento viene rimosso) o rifiuta.
+function apriRichiestaCancellazione(appuntamentoId){
+  const a = state.appuntamenti.find(x=>x.id===appuntamentoId);
+  if(!a) return;
+  document.getElementById('richModalTitle').textContent = 'Richiedi cancellazione appuntamento';
+  const box = document.getElementById('richModalContent');
+  box.innerHTML = `
+    <div class="ev-field"><div style="color:var(--ink-dim);font-size:13px;">
+      Appuntamento: <b>${a.day.split('-').reverse().join('/')} · ${a.start}–${a.end}</b> — ${a.titolo||tipoLabel(a.tipo)}
+    </div></div>
+    <div class="ev-field"><label>Motivo della cancellazione</label><textarea class="editable" id="richMotivoCancella" rows="3" placeholder="es. imprevisto, indisponibilità..."></textarea></div>
+    <div class="ev-actions"><div></div><button class="btn-small danger" id="btnInviaRichiesta">Richiedi cancellazione</button></div>
+  `;
+  document.getElementById('btnInviaRichiesta').onclick = async ()=>{
+    const motivo = document.getElementById('richMotivoCancella').value.trim();
+    if(!motivo){ alert('Indica il motivo della cancellazione.'); return; }
+    const btn = document.getElementById('btnInviaRichiesta');
+    btn.disabled = true;
+    const nuovaRichiesta = {
+      id: 'ri_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
+      clienteId: activeClient().id,
+      appuntamentoId: a.id,
+      tipo: 'cancellazione',
+      day: a.day, start: a.start, end: a.end,
+      fasciaId: null,
+      nota: motivo,
+      servizio: '',
+      stato: 'in attesa',
+      professionistaId: a.professionistaId || null
+    };
+    state.richieste.push(nuovaRichiesta);
+    const ok = await db.saveRichiesta(nuovaRichiesta);
+    if(!ok){
+      state.richieste = state.richieste.filter(r=>r.id!==nuovaRichiesta.id);
+      btn.disabled = false;
+      alert('Non è stato possibile inviare la richiesta al server. Controlla la connessione e riprova (se il problema persiste, contatta il tuo centro).');
+      return;
+    }
+    document.getElementById('richModal').classList.remove('open');
+    renderRichBadge();
+    renderClientCalendar();
+  };
+  document.getElementById('richModal').classList.add('open');
+}
 
 function renderRichiesteList(){
   const box = document.getElementById('richiesteListContent');
@@ -4634,24 +4734,36 @@ function renderRichiesteList(){
     const c = state.clienti.find(x=>x.id===r.clienteId);
     const cProfId = r.professionistaId || (c ? clienteProfIds(c)[0] : null);
     const cProf = (canManageAll() && !state.calFilterProfId && cProfId) ? state.professionisti.find(p=>p.id===cProfId) : null;
-    const badgeTxt = r.appuntamentoId ? 'Richiesta di modifica' : 'Nuova richiesta appuntamento';
-    const badgeBg = r.appuntamentoId ? 'var(--ink-mute)' : 'var(--gold)';
+    const tipo = r.tipo || (r.appuntamentoId ? 'modifica' : 'nuovo');
+    const badgeTxt = tipo==='cancellazione' ? 'Richiesta di cancellazione' : (tipo==='modifica' ? 'Richiesta di modifica' : 'Nuova richiesta appuntamento');
+    const badgeBg = tipo==='cancellazione' ? '#c0453d' : (tipo==='modifica' ? 'var(--ink-mute)' : 'var(--gold)');
     return `<div class="rich-item">
       <div class="ri-top"><div class="ri-cliente">${c ? c.nome : 'Cliente eliminato'}${cProf?' · '+cProf.nome:''}</div><span style="font-size:11px;font-weight:700;padding:3px 8px;border-radius:20px;background:${badgeBg};color:#fff;white-space:nowrap;">${badgeTxt}</span></div>
-      <div class="ri-detail">${r.appuntamentoId ? `Attuale: ${a ? a.day.split('-').reverse().join('/') + ' · ' + a.start + '–' + a.end : '—'}` : '<b>Nessun appuntamento esistente</b> — richiesta di prenotazione ex novo'}</div>
-      ${r.servizio ? `<div class="ri-detail">Tipo: <b>${r.servizio}</b></div>` : ''}
-      <div class="ri-detail">Proposto: <b>${r.day.split('-').reverse().join('/')} · ${r.start}–${r.end}</b></div>
-      ${r.nota ? `<div class="ri-detail">Nota: ${r.nota}</div>` : ''}
+      ${tipo==='cancellazione'
+        ? `<div class="ri-detail">Appuntamento: <b>${a ? a.day.split('-').reverse().join('/') + ' · ' + a.start + '–' + a.end : (r.day.split('-').reverse().join('/') + ' · ' + r.start + '–' + r.end)}</b>${a ? ' — '+(a.titolo||tipoLabel(a.tipo)) : ''}</div>
+           <div class="ri-detail">Motivo: ${r.nota || '—'}</div>`
+        : `<div class="ri-detail">${r.appuntamentoId ? `Attuale: ${a ? a.day.split('-').reverse().join('/') + ' · ' + a.start + '–' + a.end : '—'}` : '<b>Nessun appuntamento esistente</b> — richiesta di prenotazione ex novo'}</div>
+           ${r.servizio ? `<div class="ri-detail">Tipo: <b>${r.servizio}</b></div>` : ''}
+           <div class="ri-detail">Proposto: <b>${r.day.split('-').reverse().join('/')} · ${r.start}–${r.end}</b></div>
+           ${r.nota ? `<div class="ri-detail">Nota: ${r.nota}</div>` : ''}`
+      }
       <div class="ri-actions">
-        <button class="btn-gold" data-approva="${r.id}">Approva</button>
+        <button class="btn-gold" data-approva="${r.id}">${tipo==='cancellazione' ? 'Conferma cancellazione' : 'Approva'}</button>
         <button class="btn-small danger" data-rifiuta="${r.id}">Rifiuta</button>
       </div>
     </div>`;
   }).join('');
   box.querySelectorAll('[data-approva]').forEach(btn=>{
-    btn.onclick = ()=>{
+    btn.onclick = async ()=>{
+      btn.disabled = true;
       const r = state.richieste.find(x=>x.id===btn.dataset.approva);
-      if(r.appuntamentoId){
+      const rTipo = r.tipo || (r.appuntamentoId ? 'modifica' : 'nuovo');
+      if(rTipo==='cancellazione'){
+        if(r.appuntamentoId){
+          state.appuntamenti = state.appuntamenti.filter(x=>x.id!==r.appuntamentoId);
+          db.deleteAppuntamento(r.appuntamentoId);
+        }
+      } else if(r.appuntamentoId){
         const a = state.appuntamenti.find(x=>x.id===r.appuntamentoId);
         if(a){ a.day = r.day; a.start = r.start; a.end = r.end; db.saveAppuntamento(a); }
       } else {
@@ -4668,7 +4780,10 @@ function renderRichiesteList(){
       if(r.fasciaId){ state.fasceDisponibili = state.fasceDisponibili.filter(f=>f.id!==r.fasciaId); db.deleteFascia(r.fasciaId); }
       r.stato = 'approvata';
       r.letta = false;
-      db.saveRichiesta(r);
+      const ok = await db.saveRichiesta(r);
+      if(!ok){
+        alert('Attenzione: l\'azione è stata applicata qui ma potrebbe non essersi salvata sul server (errore di connessione al database). Ricarica la pagina per verificare prima di continuare.');
+      }
       renderRichiesteList(); renderRichBadge(); renderCalendar();
     };
   });
@@ -4877,7 +4992,7 @@ function renderDispRicorrenteModal(prefill){
 
 function createCliente(data){
   const c = {
-    id: 'cl_' + Date.now(),
+    id: 'cl_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
     nome: data.nome,
     eta: data.eta || '',
     dataNascita: data.dataNascita || '',
@@ -4898,10 +5013,33 @@ function createCliente(data){
   return c;
 }
 
+// "elimina" un cliente = eliminazione soft: il record resta nel database
+// (con eliminato:true) e finisce nel Cestino, così un'eliminazione per
+// errore si può sempre annullare. L'eliminazione definitiva è un'azione
+// separata, esplicita, solo dal Cestino (vedi purgeCliente).
 async function deleteCliente(id){
   const c = state.clienti.find(c=>c.id===id);
-  state.clienti = state.clienti.filter(c=>c.id!==id);
+  if(!c) return;
+  c.eliminato = true;
+  c.eliminatoIl = new Date().toISOString();
   if(state.clienteAttivoId===id) state.clienteAttivoId = null;
+  db.saveCliente(c);
+}
+
+function restoreCliente(id){
+  const c = state.clienti.find(c=>c.id===id);
+  if(!c) return;
+  c.eliminato = false;
+  c.eliminatoIl = null;
+  db.saveCliente(c);
+}
+
+// eliminazione definitiva e irreversibile (solo dal Cestino): qui sì che il
+// record viene davvero rimosso dal database, insieme all'eventuale account
+// di accesso del cliente.
+async function purgeCliente(id){
+  const c = state.clienti.find(c=>c.id===id);
+  state.clienti = state.clienti.filter(c=>c.id!==id);
   db.deleteCliente(id);
   if(c && c.authUserId) db.deleteAuthUser(c.authUserId);
 }
@@ -5010,12 +5148,19 @@ function renderClientiList(filter){
   renderCliFilterProf();
   const box = document.getElementById('cliGrid');
   const f = (filter||'').trim().toLowerCase();
-  let list = state.clienti.filter(c=> !f || c.nome.toLowerCase().includes(f));
+  const isAdminForCestino = !!(state.professionista && state.professionista.ruolo==='admin');
+  const btnCestino = document.getElementById('btnCestino');
+  if(btnCestino){
+    const nEliminati = state.clienti.filter(c=>c.eliminato).length;
+    btnCestino.style.display = isAdminForCestino ? 'inline-flex' : 'none';
+    btnCestino.textContent = nEliminati ? `🗑 Cestino (${nEliminati})` : '🗑 Cestino';
+  }
+  let list = state.clienti.filter(c=> !c.eliminato && (!f || c.nome.toLowerCase().includes(f)));
   if(canManageAll() && state.calFilterProfId){
     list = list.filter(c=>clienteHasProf(c,state.calFilterProfId));
   }
   if(list.length===0){
-    box.innerHTML = `<div class="cli-empty-state">${state.clienti.length===0
+    box.innerHTML = `<div class="cli-empty-state">${state.clienti.filter(c=>!c.eliminato).length===0
       ? 'Nessun cliente ancora. Usa "+ Nuovo cliente" per iniziare.'
       : 'Nessun cliente trovato.'}</div>`;
     return;
@@ -5049,13 +5194,58 @@ function renderClientiList(filter){
   box.querySelectorAll('[data-del-cliente]').forEach(btn=>{
     btn.onclick = (e)=>{
       e.stopPropagation();
-      if(confirm('Eliminare questo cliente e i suoi dati (pathway, schede)?')){
+      if(confirm('Eliminare questo cliente? Finirà nel Cestino, da cui potrai ripristinarlo in qualsiasi momento.')){
         deleteCliente(btn.dataset.delCliente);
         renderClientiList(document.getElementById('cliSearchInput').value);
       }
     };
   });
 }
+
+function renderCestino(){
+  const box = document.getElementById('cestinoList');
+  const eliminati = state.clienti.filter(c=>c.eliminato)
+    .sort((a,b)=> new Date(b.eliminatoIl||0) - new Date(a.eliminatoIl||0));
+  if(!eliminati.length){
+    box.innerHTML = `<div class="cli-empty-state">Il cestino è vuoto.</div>`;
+    return;
+  }
+  box.innerHTML = eliminati.map(c=>{
+    const data = c.eliminatoIl ? new Date(c.eliminatoIl).toLocaleDateString('it-IT', {day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
+    return `<div class="cestino-row" data-cestino-row="${c.id}" style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid var(--line-soft);">
+      <div>
+        <div style="font-weight:600;">${c.nome}</div>
+        <div style="font-size:11.5px;color:var(--ink-mute);">Eliminato il ${data}</div>
+      </div>
+      <div style="display:flex;gap:8px;flex:none;">
+        <button type="button" class="btn-small" data-restore-cliente="${c.id}">↺ Ripristina</button>
+        <button type="button" class="btn-small" data-purge-cliente="${c.id}" style="color:#e05656;">Elimina definitivamente</button>
+      </div>
+    </div>`;
+  }).join('');
+  box.querySelectorAll('[data-restore-cliente]').forEach(btn=>{
+    btn.onclick = ()=>{
+      restoreCliente(btn.dataset.restoreCliente);
+      renderCestino();
+      renderClientiList(document.getElementById('cliSearchInput').value);
+    };
+  });
+  box.querySelectorAll('[data-purge-cliente]').forEach(btn=>{
+    btn.onclick = async ()=>{
+      if(confirm('Eliminare definitivamente questo cliente? Non sarà più possibile recuperarlo.')){
+        await purgeCliente(btn.dataset.purgeCliente);
+        renderCestino();
+        renderClientiList(document.getElementById('cliSearchInput').value);
+      }
+    };
+  });
+}
+document.getElementById('btnCestino').onclick = ()=>{
+  renderCestino();
+  document.getElementById('cestinoModal').classList.add('open');
+};
+document.getElementById('closeCestino').onclick = ()=> document.getElementById('cestinoModal').classList.remove('open');
+document.getElementById('cestinoModal').onclick = (e)=>{ if(e.target.id==='cestinoModal') document.getElementById('cestinoModal').classList.remove('open'); };
 
 document.getElementById('btnClienti').onclick = ()=>{
   showView('clienti');
@@ -6355,7 +6545,7 @@ function renderEventModal(){
     <div class="ev-field"><label>Cliente (opzionale)</label>
       <select id="evCliente" class="editable">
         <option value="">— Nessuno / impegno personale —</option>
-        ${state.clienti.map(c=>`<option value="${c.id}" ${ed.clienteId===c.id?'selected':''}>${c.nome}</option>`).join('')}
+        ${state.clienti.filter(c=>!c.eliminato || c.id===ed.clienteId).map(c=>`<option value="${c.id}" ${ed.clienteId===c.id?'selected':''}>${c.nome}${c.eliminato?' (eliminato)':''}</option>`).join('')}
       </select>
     </div>
     ${(()=>{
