@@ -3885,6 +3885,111 @@ function parseGhiFromPdfText(text){
   MARCATORI_GHI.forEach((m,i)=> marcatori[m.key] = { valore:nums[i], stato:'verde' });
   return { data, marcatori };
 }
+// campiona il colore (rosso/verde) del piccolo semaforo accanto a un valore
+// nella tabella "Healthspan analysis": il semaforo è un'icona incorporata nel
+// PDF (non testo/colore estraibile come stringa), quindi va letta come pixel
+// dalla pagina renderizzata su canvas. pdfX/pdfY sono le coordinate (spazio
+// PDF, stesse dell'item di testo del valore a cui il semaforo è affiancato)
+// da cui partire; si campiona una piccola serie di punti a destra del
+// valore e leggermente sopra/sotto la riga di base del testo, per tollerare
+// la differenza tra baseline del testo e centro verticale dell'icona (che
+// non è nota a priori, essendo un'immagine e non testo)
+function sampleMarkerStato(ctx, viewport, pdfXAfterValue, pdfYBaseline){
+  const dxCandidates = [4.8, 4.2, 5.4, 3.6, 6.0];
+  const dyCandidates = [1.8, 0.5, 3.2, -0.8, 4.5];
+  let bestDiff = -1, bestStato = null;
+  for(const dx of dxCandidates){
+    for(const dy of dyCandidates){
+      const pt = viewport.convertToViewportPoint(pdfXAfterValue + dx, pdfYBaseline + dy);
+      const px = Math.round(pt[0]), py = Math.round(pt[1]);
+      if(px<0 || py<0 || px>=ctx.canvas.width || py>=ctx.canvas.height) continue;
+      const d = ctx.getImageData(px, py, 1, 1).data;
+      const [r,g] = d;
+      const diff = Math.abs(r-g);
+      // un pixel di sfondo (bianco/grigio/testo nero) non ha un canale
+      // rosso/verde nettamente dominante: lo scartiamo come inconcludente
+      if(diff < 25) continue;
+      if(diff > bestDiff){ bestDiff = diff; bestStato = g > r ? 'verde' : 'rosso'; }
+    }
+  }
+  return bestStato; // null se nessun punto campionato è risultato conclusivo
+}
+// lettura completa di un referto GHI da PDF: estrae sia i valori numerici
+// che lo stato rosso/verde di ciascun marcatore, leggendo il colore reale
+// del semaforo pixel per pixel sulla pagina renderizzata (le icone non sono
+// testo/colore estraibile). Cerca la tabella "Healthspan analysis" pagina
+// per pagina (può non essere sulla prima); se la trova ma non riesce a
+// determinare con sicurezza il colore di un marcatore, quel marcatore parte
+// verde di default — come già in precedenza — e resta comunque modificabile
+// a mano prima di salvare
+async function extractGhiWithColors(file){
+  if(!window.pdfjsLib) throw new Error('Libreria di lettura PDF non disponibile (controlla la connessione internet).');
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({data: buf}).promise;
+  for(let p=1; p<=pdf.numPages; p++){
+    const page = await pdf.getPage(p);
+    const content = await page.getTextContent();
+    const items = content.items
+      .map(it=>({ str: it.str, x: it.transform[4], y: it.transform[5], w: it.width||0 }))
+      .filter(it=>it.str.trim()!=='');
+    if(!items.length) continue;
+    items.sort((a,b)=> b.y-a.y || a.x-b.x);
+    let curY = null, curItems = [];
+    const linesOfItems = [];
+    items.forEach(it=>{
+      if(curY===null || Math.abs(it.y-curY)>3){ if(curItems.length) linesOfItems.push(curItems); curItems = []; curY = it.y; }
+      curItems.push(it);
+    });
+    if(curItems.length) linesOfItems.push(curItems);
+    const textLines = linesOfItems.map(li=>{
+      let out = '', lastX = null;
+      li.slice().sort((a,b)=>a.x-b.x).forEach(it=>{
+        const gap = lastX!==null ? (it.x-lastX) : 0;
+        if(lastX!==null && gap>8) out += '\t';
+        else if(out && !out.endsWith('\t') && gap>0.3) out += ' ';
+        out += it.str;
+        lastX = it.x + it.w;
+      });
+      return out.trim();
+    });
+    const headerIdx = textLines.findIndex(l=> l.includes('PhA') && l.includes('LF Power') && l.includes('RMSSD'));
+    if(headerIdx<0 || headerIdx+1>=textLines.length) continue;
+    const dataMatch = textLines[headerIdx+1].match(/(\d{2})-(\d{2})-(\d{4})/);
+    if(!dataMatch) continue;
+    const dataItems = linesOfItems[headerIdx+1].slice().sort((a,b)=>a.x-b.x);
+    const valueItems = dataItems.slice(1, 8);
+    if(valueItems.length<7) continue;
+    const nums = valueItems.map(it=> parseFloat(it.str.replace(',','.')));
+    if(nums.some(n=>isNaN(n))) continue;
+    const data = `${dataMatch[3]}-${dataMatch[2]}-${dataMatch[1]}`;
+
+    let ctx = null, viewport = null;
+    try{
+      const scale = 3;
+      viewport = page.getViewport({scale});
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.ceil(viewport.width);
+      canvas.height = Math.ceil(viewport.height);
+      ctx = canvas.getContext('2d', {willReadFrequently:true});
+      await page.render({canvasContext: ctx, viewport}).promise;
+    } catch(ex){
+      console.error('Rendering pagina PDF per lettura semafori GHI', ex);
+      ctx = null;
+    }
+
+    const marcatori = {};
+    let coloriRilevati = 0;
+    MARCATORI_GHI.forEach((m,i)=>{
+      const it = valueItems[i];
+      let stato = null;
+      if(ctx) stato = sampleMarkerStato(ctx, viewport, it.x + it.w, it.y);
+      if(stato) coloriRilevati++;
+      marcatori[m.key] = { valore: nums[i], stato: stato || 'verde' };
+    });
+    return { data, marcatori, coloriRilevati, coloriTotali: MARCATORI_GHI.length };
+  }
+  return null;
+}
 function renderSistemaTab(){
   const c = activeClient();
   const box = document.getElementById('sistemaContent');
@@ -3988,14 +4093,15 @@ function renderSistemaTab(){
     const statusEl = document.getElementById('ghiPdfStatus');
     statusEl.textContent = 'Lettura del PDF…';
     try{
-      const text = await extractPdfText(file);
-      const parsed = parseGhiFromPdfText(text);
+      const parsed = await extractGhiWithColors(file);
       if(!parsed){
         statusEl.textContent = 'Non ho trovato la tabella "Healthspan analysis" in questo PDF — inserisci i valori a mano.';
         return;
       }
       state.ghiDraft = { data: parsed.data, nota: draft.nota, marcatori: parsed.marcatori, fonte:'pdf' };
-      statusEl.textContent = 'Valori importati dal PDF — controlla il semaforo rosso/verde di ogni marcatore prima di salvare.';
+      statusEl.textContent = parsed.coloriRilevati===parsed.coloriTotali
+        ? 'Valori e semafori importati automaticamente dal PDF — ricontrolla prima di salvare.'
+        : `Valori importati dal PDF. Semaforo rilevato automaticamente per ${parsed.coloriRilevati}/${parsed.coloriTotali} marcatori — per gli altri (partiti verdi di default) confermalo a occhio confrontando col referto.`;
       renderSistemaTab();
     } catch(ex){
       statusEl.textContent = 'Errore nella lettura del PDF: ' + (ex.message || ex);
@@ -4007,6 +4113,14 @@ function renderSistemaTab(){
     const marcatori = {};
     MARCATORI_GHI.forEach(m=> marcatori[m.key] = { ...draft.marcatori[m.key] });
     c.ghiStorico.push({ id:'ghi_'+Date.now()+'_'+Math.random().toString(36).slice(2,7), data, marcatori, fonte: draft.fonte || 'manuale', note: draft.nota || '' });
+    // GHI passato: se in questo referto tutti i marcatori sono verdi, segna
+    // in automatico la spunta "GHI — Global Health Index (Biotekna)" nella
+    // checklist test dell'area Sistema
+    const tuttiVerdi = MARCATORI_GHI.every(m=> marcatori[m.key].stato==='verde');
+    if(tuttiVerdi){
+      if(!c.sistemaTestSelezionati) c.sistemaTestSelezionati = new Set();
+      c.sistemaTestSelezionati.add('GHI — Global Health Index (Biotekna)');
+    }
     db.saveCliente(c);
     state.ghiDraft = null;
     renderSistemaTab();
