@@ -900,6 +900,10 @@ header.top{
 
 .cal-grid-scroll{overflow-x:auto;border:1px solid var(--line-soft);border-radius:5px;margin-top:10px;}
 .cal-grid{display:grid;grid-template-columns:52px repeat(7,minmax(120px,1fr));min-width:900px;}
+.cal-multi-grid{display:grid;}
+.cal-multi-grid .cal-col-head{position:sticky;top:0;}
+.cal-multi-grid .cal-col-head .cch-sub{font-size:10px;color:var(--ink-mute);margin-top:1px;}
+.cal-multi-grid .cal-col-head.spazio-head{background:var(--gold-dim);}
 .cal-col-head{
   position:sticky;top:0;background:var(--navy-900);
   border-bottom:1px solid var(--line-soft);border-left:1px solid var(--line-soft);
@@ -1679,6 +1683,7 @@ body[data-theme="light"]{
       <select class="editable" id="cliFilterProf" style="display:none;max-width:220px;"></select>
       <input class="editable" id="cliSearchInput" placeholder="Cerca cliente...">
       <button class="btn-ghost" id="btnTeam" style="display:none;">Team</button>
+      <button class="btn-ghost" id="btnSpazi" style="display:none;">Spazi comuni</button>
       <button class="btn-ghost" id="btnNuovoProfessionista" style="display:none;">+ Nuovo professionista</button>
       <button class="btn-ghost" id="btnCestino" style="display:none;" title="Clienti eliminati, recuperabili">🗑 Cestino</button>
       <button class="btn-gold" id="btnNuovoCliente">+ Nuovo cliente</button>
@@ -1712,6 +1717,14 @@ body[data-theme="light"]{
   </div>
 </div>
 
+<div class="modal-bg" id="cliAnagraficaModal">
+  <div class="modal">
+    <button class="modal-close" id="closeCliAnagrafica">×</button>
+    <h3 id="cliAnagraficaTitle">Scheda cliente</h3>
+    <div id="cliAnagraficaContent"></div>
+  </div>
+</div>
+
 <div id="mainWrap" style="display:none;">
   <div class="cli-context-bar" id="cliContextBar"></div>
   <div class="cli-tabs" id="cliTabs">
@@ -1719,6 +1732,7 @@ body[data-theme="light"]{
     <div class="cli-tab" data-tab="sistema">Sistema</div>
     <div class="cli-tab" data-tab="areaHuman">Area Human</div>
     <div class="cli-tab" data-tab="pathway">Area Performance</div>
+    <div class="cli-tab" data-tab="fisioterapia">Area Fisioterapia</div>
     <div class="cli-tab" data-tab="storico">Storico</div>
     <div class="cli-tab" data-tab="calendario">Calendario cliente</div>
   </div>
@@ -1820,6 +1834,10 @@ body[data-theme="light"]{
     <div id="areaHumanContent"></div>
   </div>
 
+  <div class="val-wrap" id="fisioterapiaWrap" style="display:none;">
+    <div id="fisioterapiaContent"></div>
+  </div>
+
   <div class="val-wrap" id="storicoWrap" style="display:none;">
     <div id="storicoContent"></div>
   </div>
@@ -1903,6 +1921,7 @@ body[data-theme="light"]{
     <div class="cal-mode-toggle">
       <div class="cal-mode-opt active" data-calmode="settimana">Settimana</div>
       <div class="cal-mode-opt" data-calmode="mese">Mese</div>
+      <div class="cal-mode-opt" id="calModeMulti" data-calmode="multi" style="display:none;">Multicalendario</div>
     </div>
     <div class="cal-nav">
       <button class="btn-ghost" id="btnWeekPrev">‹</button>
@@ -1910,6 +1929,10 @@ body[data-theme="light"]{
       <button class="btn-ghost" id="btnWeekNext">›</button>
     </div>
     <select class="btn-ghost" id="calFilterProf" style="display:none;"></select>
+    <div class="prof-add-wrap" id="calMultiVisWrap" style="display:none;">
+      <button type="button" class="btn-ghost" id="calMultiVisBtn">Colonne visibili</button>
+      <div class="prof-dropdown" id="calMultiVisDropdown" style="display:none;"></div>
+    </div>
     <button class="btn-ghost" id="btnDisponibilita">Disponibilità settimanale</button>
     <button class="btn-ghost" id="btnRichieste">Richieste <span class="rich-badge" id="richBadge" style="display:none;">0</span></button>
     <button class="btn-ghost" id="btnAvvisi">Avvisi <span class="rich-badge" id="avvisiBadge" style="display:none;">0</span></button>
@@ -1935,6 +1958,9 @@ body[data-theme="light"]{
   </div>
   <div id="calMonthWrap" style="display:none;">
     <div class="cal-month-grid" id="calMonthGrid"></div>
+  </div>
+  <div class="cal-grid-scroll" id="calMultiWrap" style="display:none;">
+    <div class="cal-multi-grid" id="calMultiGrid"></div>
   </div>
 </div>
 
@@ -2056,6 +2082,16 @@ body[data-theme="light"]{
   </div>
 </div>
 
+<div class="modal-bg" id="spaziModal">
+  <div class="modal">
+    <button class="modal-close" id="closeSpazi">×</button>
+    <h3>Spazi comuni</h3>
+    <p style="font-size:12.5px;color:var(--ink-mute);margin:-8px 0 16px;">Spazi/risorse prenotabili (es. sale, studi): compaiono come colonna a sé nel multicalendario giornaliero.</p>
+    <div id="spaziContent"></div>
+    <div class="ev-actions" style="margin-top:16px;"><div></div><button class="btn-gold" id="btnNuovoSpazio">+ Nuovo spazio</button></div>
+  </div>
+</div>
+
 <div class="modal-bg" id="exEditorModal">
   <div class="modal">
     <button class="modal-close" id="closeExEditor">×</button>
@@ -2130,7 +2166,11 @@ const state = {
   blockOperativoEditorIsNew: false,
   segnalazioni: [],          // note tra professionisti: {id, clienteId, schedaOsteopatiaId, daProfessionistaId, aProfessionistaId, testo, letta, createdAt}
   seenSegnalazioniIds: null,
-  schedaOsteopatiaDraft: null // scheda Area Human (Osteopatia) in compilazione, o null
+  schedaOsteopatiaDraft: null, // scheda Area Human (Osteopatia) in compilazione, o null
+  spazi: [],                 // spazi comuni prenotabili: {id, nome, colore, note}
+  spazioEditor: null,
+  calMultiDay: null,          // giorno mostrato nel multicalendario giornaliero (segreteria/admin)
+  calMultiHidden: new Set()   // id (professionista o "spazio:<id>") nascosti dal viewer, solo per la sessione corrente
 };
 
 const WEEKDAY_NAMES = ['Dom','Lun','Mar','Mer','Gio','Ven','Sab'];
@@ -2240,7 +2280,8 @@ function appuntamentoToRow(a){
     note_sessione: a.noteSessione || null, operatore: a.operatore || null, series_id: a.seriesId || null,
     colore: a.colore || null, esecuzione: a.esecuzione || null,
     professionista_id: a.professionistaId || null,
-    retest_data: a.retestData || null
+    retest_data: a.retestData || null,
+    spazio_id: a.spazioId || null
   };
 }
 function rowToAppuntamento(r){
@@ -2250,7 +2291,8 @@ function rowToAppuntamento(r){
     noteSessione: r.note_sessione || '', operatore: r.operatore || '', seriesId: r.series_id || null,
     colore: r.colore || null, esecuzione: r.esecuzione || null,
     professionistaId: r.professionista_id || null,
-    retestData: r.retest_data || null
+    retestData: r.retest_data || null,
+    spazioId: r.spazio_id || null
   };
 }
 function richiestaToRow(r){
@@ -2305,6 +2347,42 @@ function dispBlockAppliesTo(b, dateStr, dow){
 // admin o Segreteria: gestisce calendario/richieste/disponibilità di TUTTI i professionisti
 function canManageAll(){
   return !!(state.professionista && (state.professionista.ruolo==='admin' || state.professionista.area==='Segreteria'));
+}
+// vero se il professionista corrente è Segreteria (non admin): vede i calendari
+// di tutti ma NON le schede cliniche dei clienti (solo anagrafica/contatti)
+function isSegreteriaOnly(){
+  return !!(state.professionista && state.professionista.ruolo!=='admin' && state.professionista.area==='Segreteria');
+}
+// determina, in base al ruolo/area del professionista, quali tab clienti
+// (#cliTabs) può vedere e quale "sotto-area" di Area Human gli compete.
+// Le tab "universali" (valutazioni, sistema, storico, calendario) restano
+// visibili a tutti i professionisti clinici: solo le aree operative vere e
+// proprie (Area Performance / Area Fisioterapia / Area Human) sono filtrate
+// per competenza — sia per organizzazione del lavoro sia per privacy, come
+// richiesto. Segreteria non vede nessuna tab clinica (card cliente ridotta).
+function areaAccessForProfessionista(prof){
+  if(!prof) return {tabs:[], ahSub:null, isAdmin:false, isSegreteria:false};
+  if(prof.ruolo==='admin'){
+    return {tabs:['valutazioni','sistema','areaHuman','fisioterapia','pathway','storico','calendario'], ahSub:'all', isAdmin:true, isSegreteria:false};
+  }
+  const area = prof.area || '';
+  if(area==='Segreteria'){
+    return {tabs:[], ahSub:null, isAdmin:false, isSegreteria:true};
+  }
+  const tabs = ['valutazioni','sistema','storico','calendario'];
+  let ahSub = null;
+  if(area==='Preparatore' || area==='Chinesiologo') tabs.push('pathway');
+  else if(area==='Fisioterapista') tabs.push('fisioterapia');
+  else if(area==='Osteopata'){ tabs.push('areaHuman'); ahSub = 'Osteopata'; }
+  else if(area==='Nutrizionista'){ tabs.push('areaHuman'); ahSub = 'Nutrizionista'; }
+  else if(area==='Sleep Coach'){ tabs.push('areaHuman'); ahSub = 'Sleep Coach'; }
+  return {tabs, ahSub, isAdmin:false, isSegreteria:false};
+}
+function spazioToRow(s){
+  return { id: s.id, nome: s.nome, colore: s.colore || null, note: s.note || null };
+}
+function rowToSpazio(r){
+  return { id: r.id, nome: r.nome, colore: r.colore || '', note: r.note || '' };
 }
 function calSettingsToRow(cs){
   return { id: 1, start_hour: cs.startHour, end_hour: cs.endHour, min_allenamento: cs.minAllenamento, min_retest: cs.minRetest, active_days: cs.activeDays, readiness_threshold: cs.readinessThreshold };
@@ -2772,20 +2850,23 @@ const db = {
         sb.from('disponibilita_ricorrenti').select('*'),
         sb.from('notifiche_cliente').select('*'),
         sb.from('blocchi_operativi').select('*'),
-        sb.from('segnalazioni').select('*')
+        sb.from('segnalazioni').select('*'),
+        sb.from('spazi').select('*')
       ]);
     } catch(ex){
       console.error('Supabase load exception', ex);
       db.lastError = (ex && ex.message) ? ex.message : String(ex);
       return false;
     }
-    const [c,a,r,f,cs,t,ex,dr,nc,bop,seg] = results;
-    // "segnalazioni" è una tabella nuova: se Ale non ha ancora eseguito la
-    // relativa migrazione su Supabase, la select fallisce (tabella
-    // inesistente) — non deve bloccare il caricamento di tutto il resto,
-    // quindi il suo errore è tollerato a parte invece di finire in firstError
+    const [c,a,r,f,cs,t,ex,dr,nc,bop,seg,spz] = results;
+    // "segnalazioni" e "spazi" sono tabelle nuove: se Ale non ha ancora
+    // eseguito le relative migrazioni su Supabase, la select fallisce
+    // (tabella inesistente) — non deve bloccare il caricamento di tutto il
+    // resto, quindi il loro errore è tollerato a parte invece di finire in
+    // firstError
     const firstError = c.error || a.error || r.error || f.error || cs.error || t.error || ex.error || dr.error || nc.error || bop.error;
     if(seg.error) console.error('Supabase load segnalazioni (probabile migrazione mancante)', seg.error);
+    if(spz.error) console.error('Supabase load spazi (probabile migrazione mancante)', spz.error);
     if(firstError){
       console.error('Supabase load error', firstError);
       db.lastError = firstError.message || firstError.hint || firstError.code || JSON.stringify(firstError);
@@ -2801,6 +2882,7 @@ const db = {
     state.disponibilitaRicorrenti = (dr.data || []).map(rowToDispRicorrente);
     state.notificheCliente = (nc.data || []).map(rowToNotifica);
     state.segnalazioni = seg.error ? [] : (seg.data || []).map(rowToSegnalazione);
+    state.spazi = spz.error ? [] : (spz.data || []).map(rowToSpazio);
     if(bop.data && bop.data.length){
       state.blocchiOperativi = bop.data.map(rowToBlockOperativo);
     } else {
@@ -2821,6 +2903,8 @@ const db = {
   async deleteRichiesta(id){ if(!dbEnabled || !sb) return; const {error} = await sb.from('richieste').delete().eq('id',id); if(error) console.error('Supabase deleteRichiesta', error); },
   async saveNotifica(n){ if(!dbEnabled || !sb) return; const {error} = await sb.from('notifiche_cliente').upsert(notificaToRow(n)); if(error) console.error('Supabase saveNotifica', error); },
   async saveSegnalazione(s){ if(!dbEnabled || !sb) return true; const {error} = await sb.from('segnalazioni').upsert(segnalazioneToRow(s)); if(error){ console.error('Supabase saveSegnalazione', error); return false; } return true; },
+  async saveSpazio(s){ if(!dbEnabled || !sb) return true; const {error} = await sb.from('spazi').upsert(spazioToRow(s)); if(error){ console.error('Supabase saveSpazio', error); return false; } return true; },
+  async deleteSpazio(id){ if(!dbEnabled || !sb) return; const {error} = await sb.from('spazi').delete().eq('id',id); if(error) console.error('Supabase deleteSpazio', error); },
   async deleteNotifica(id){ if(!dbEnabled || !sb) return; const {error} = await sb.from('notifiche_cliente').delete().eq('id',id); if(error) console.error('Supabase deleteNotifica', error); },
   async saveFascia(f){ if(!dbEnabled || !sb) return; const {error} = await sb.from('fasce_disponibili').upsert(fasciaToRow(f)); if(error) console.error('Supabase saveFascia', error); },
   async deleteFascia(id){ if(!dbEnabled || !sb) return; const {error} = await sb.from('fasce_disponibili').delete().eq('id',id); if(error) console.error('Supabase deleteFascia', error); },
@@ -3185,6 +3269,67 @@ document.getElementById('btnTeam').onclick = ()=>{
 document.getElementById('closeTeam').onclick = ()=> document.getElementById('teamModal').classList.remove('open');
 document.getElementById('teamModal').onclick = (e)=>{ if(e.target.id==='teamModal') document.getElementById('teamModal').classList.remove('open'); };
 
+// ---------------- spazi comuni (admin/segreteria) ----------------
+function renderSpaziModal(){
+  const box = document.getElementById('spaziContent');
+  if(!box) return;
+  if(!state.spazi.length){
+    box.innerHTML = `<div class="team-empty">Nessuno spazio comune ancora creato.</div>`;
+    return;
+  }
+  box.innerHTML = state.spazi.map(s=>`
+    <div class="team-row" data-spazio-row="${s.id}">
+      <div style="flex:1;display:flex;gap:8px;align-items:center;">
+        <input class="editable" data-spazio-nome="${s.id}" value="${escAttr(s.nome)}" placeholder="Nome spazio" style="max-width:160px;">
+        <div class="color-swatches" style="margin:0;">
+          <div class="color-swatch none-swatch ${!s.colore?'sel':''}" data-spazio-colore="${s.id}" data-color="" title="Predefinito">—</div>
+          ${EVENT_COLORS.map(c=>`<div class="color-swatch ${s.colore===c?'sel':''}" data-spazio-colore="${s.id}" data-color="${c}" style="background:${c};"></div>`).join('')}
+        </div>
+      </div>
+      <button class="team-del" data-del-spazio="${s.id}" title="Elimina spazio">Elimina</button>
+    </div>`).join('');
+  box.querySelectorAll('[data-spazio-nome]').forEach(inp=>{
+    inp.onchange = ()=>{
+      const s = state.spazi.find(x=>x.id===inp.dataset.spazioNome);
+      if(!s) return;
+      s.nome = inp.value.trim() || s.nome;
+      db.saveSpazio(s);
+    };
+  });
+  box.querySelectorAll('[data-spazio-colore]').forEach(sw=>{
+    sw.onclick = ()=>{
+      const s = state.spazi.find(x=>x.id===sw.dataset.spazioColore);
+      if(!s) return;
+      s.colore = sw.dataset.color || '';
+      db.saveSpazio(s);
+      renderSpaziModal();
+    };
+  });
+  box.querySelectorAll('[data-del-spazio]').forEach(btn=>{
+    btn.onclick = ()=>{
+      const s = state.spazi.find(x=>x.id===btn.dataset.delSpazio);
+      if(!s) return;
+      if(confirm(`Eliminare lo spazio "${s.nome}"? Gli appuntamenti collegati resteranno ma senza spazio assegnato.`)){
+        state.spazi = state.spazi.filter(x=>x.id!==s.id);
+        db.deleteSpazio(s.id);
+        renderSpaziModal();
+      }
+    };
+  });
+}
+document.getElementById('btnSpazi').onclick = ()=>{
+  renderSpaziModal();
+  document.getElementById('spaziModal').classList.add('open');
+};
+document.getElementById('closeSpazi').onclick = ()=> document.getElementById('spaziModal').classList.remove('open');
+document.getElementById('spaziModal').onclick = (e)=>{ if(e.target.id==='spaziModal') document.getElementById('spaziModal').classList.remove('open'); };
+document.getElementById('btnNuovoSpazio').onclick = ()=>{
+  const s = { id: 'spz_' + Date.now() + '_' + Math.random().toString(36).slice(2,7), nome: 'Nuovo spazio', colore: '', note: '' };
+  state.spazi.push(s);
+  db.saveSpazio(s);
+  renderSpaziModal();
+};
+
 function renderProfBadge(){
   const wrap = document.getElementById('profBadgeWrap');
   if(!state.professionista){ wrap.style.display = 'none'; return; }
@@ -3193,6 +3338,8 @@ function renderProfBadge(){
   if(invBtn) invBtn.style.display = isAdmin ? 'inline-block' : 'none';
   const teamBtn = document.getElementById('btnTeam');
   if(teamBtn) teamBtn.style.display = isAdmin ? 'inline-block' : 'none';
+  const spaziBtn = document.getElementById('btnSpazi');
+  if(spaziBtn) spaziBtn.style.display = canManageAll() ? 'inline-block' : 'none';
   wrap.style.display = 'block';
   const initials = state.professionista.nome.split(' ').map(w=>w[0]).filter(Boolean).slice(0,2).join('').toUpperCase();
   wrap.innerHTML = `<div class="prof-badge">
@@ -3269,12 +3416,47 @@ function loadClientIntoWorkspace(id){
   state.schedaEditor = null;
   // tab di apertura: se il cliente non ha ancora un esito di valutazione va
   // dritto sulla valutazione; altrimenti si apre sull'area in cui si trova
-  // OGGI operativamente
-  if(!c.esitoValutazione) state.clientTab = 'valutazioni';
-  else if(c.areaAttiva==='sistema') state.clientTab = 'sistema';
-  else if(c.areaAttiva==='AH') state.clientTab = 'areaHuman';
-  else state.clientTab = 'pathway';
+  // OGGI operativamente — sempre che il professionista loggato possa vederla,
+  // altrimenti si scende sulla prima tab che gli compete
+  const access = areaAccessForProfessionista(state.professionista);
+  let preferredTab;
+  if(!c.esitoValutazione) preferredTab = 'valutazioni';
+  else if(c.areaAttiva==='sistema') preferredTab = 'sistema';
+  else if(c.areaAttiva==='AH') preferredTab = 'areaHuman';
+  else preferredTab = 'pathway';
+  state.clientTab = access.tabs.includes(preferredTab) ? preferredTab : (access.tabs[0] || 'valutazioni');
   state.pathwayEditMode = !c.pathway;
+}
+
+// punto unico da cui si apre un cliente: per la Segreteria (non admin) mostra
+// solo un riquadro anagrafica/contatti in sola lettura — vede e gestisce i
+// calendari di tutti, ma non le schede cliniche né il lavoro dei
+// professionisti, per questione di privacy; chiunque altro apre il normale
+// spazio di lavoro clinico
+function openClientForRole(id){
+  const c = state.clienti.find(x=>x.id===id);
+  if(!c) return;
+  if(isSegreteriaOnly()){
+    renderCliAnagraficaModal(c);
+    document.getElementById('cliAnagraficaModal').classList.add('open');
+    return;
+  }
+  loadClientIntoWorkspace(id);
+  showView('pathway');
+  renderContextBar();
+  activateClientTab(state.clientTab);
+}
+function renderCliAnagraficaModal(c){
+  const box = document.getElementById('cliAnagraficaContent');
+  if(!box) return;
+  const profs = clienteProfIds(c).map(id=>state.professionisti.find(p=>p.id===id)).filter(Boolean);
+  document.getElementById('cliAnagraficaTitle').textContent = c.nome;
+  box.innerHTML = `
+    ${c.dataNascita ? `<div class="ev-field"><label>Data di nascita</label><div>${c.dataNascita.split('-').reverse().join('/')}${clienteEtaAnni(c)!==null ? ' · ' + clienteEtaAnni(c) + ' anni' : ''}</div></div>` : ''}
+    ${c.email ? `<div class="ev-field"><label>Email</label><div>${escHtml(c.email)}</div></div>` : ''}
+    <div class="ev-field"><label>Professionisti assegnati</label><div>${profs.length ? profs.map(p=>escHtml(p.nome)+(p.area?' ('+escHtml(p.area)+')':'')).join(', ') : '— Nessuno —'}</div></div>
+    <div style="font-size:11.5px;color:var(--ink-mute);margin-top:14px;">La Segreteria vede e gestisce i calendari di tutti, ma non le schede cliniche dei clienti.</div>
+  `;
 }
 
 function renderPathwayView(){
@@ -3309,12 +3491,15 @@ function findSchedaById(c, schedaId){
 // click sulle tab, sia dall'apertura di un cliente dalla lista, sia dalla
 // creazione di un nuovo cliente, così restano sempre coerenti
 function activateClientTab(tab){
+  const access = areaAccessForProfessionista(state.professionista);
+  if(!access.tabs.includes(tab)) tab = access.tabs[0] || 'valutazioni';
   state.clientTab = tab;
   document.getElementById('pathwayWrap').style.display = tab==='pathway' ? 'grid' : 'none';
   document.getElementById('clientCalWrap').style.display = tab==='calendario' ? 'grid' : 'none';
   document.getElementById('valutazioniWrap').style.display = tab==='valutazioni' ? 'block' : 'none';
   document.getElementById('sistemaWrap').style.display = tab==='sistema' ? 'block' : 'none';
   document.getElementById('areaHumanWrap').style.display = tab==='areaHuman' ? 'block' : 'none';
+  document.getElementById('fisioterapiaWrap').style.display = tab==='fisioterapia' ? 'block' : 'none';
   document.getElementById('storicoWrap').style.display = tab==='storico' ? 'block' : 'none';
   renderCliTabs();
   if(tab==='pathway') renderPathwayView();
@@ -3322,11 +3507,20 @@ function activateClientTab(tab){
   if(tab==='valutazioni') renderValutazioni();
   if(tab==='sistema') renderSistemaTab();
   if(tab==='areaHuman') renderAreaHumanTab();
+  if(tab==='fisioterapia') renderFisioterapiaTab();
   if(tab==='storico') renderStoricoTab();
 }
 
+// nasconde dal cli-tabs le aree che non competono al professionista loggato
+// (in base a areaAccessForProfessionista): questione sia organizzativa sia
+// di privacy — ognuno vede/modifica solo la propria area operativa, mentre
+// le tab "universali" (Valutazione/Sistema/Storico/Calendario) restano
+// visibili a tutti i professionisti clinici
 function renderCliTabs(){
+  const access = areaAccessForProfessionista(state.professionista);
   document.querySelectorAll('#cliTabs .cli-tab').forEach(t=>{
+    const visible = access.tabs.includes(t.dataset.tab);
+    t.style.display = visible ? '' : 'none';
     t.classList.toggle('active', t.dataset.tab===state.clientTab);
     t.onclick = ()=> activateClientTab(t.dataset.tab);
   });
@@ -4154,8 +4348,25 @@ function renderSistemaTab(){
   };
 }
 
-// ==================== AREA HUMAN (scheda Osteopatia) ====================
+// ==================== AREA HUMAN ====================
+// smista il contenuto della tab "Area Human" in base alla competenza del
+// professionista loggato: solo Osteopatia è costruita finora, le altre
+// (Nutrizionista, Sleep Coach) mostrano un placeholder "in arrivo"; admin
+// vede comunque gli strumenti già disponibili (Osteopatia)
 function renderAreaHumanTab(){
+  const box = document.getElementById('areaHumanContent');
+  if(!box) return;
+  const prof = state.professionista;
+  const isAdmin = !!(prof && prof.ruolo==='admin');
+  const area = prof ? prof.area : '';
+  if(isAdmin || area==='Osteopata'){ renderAreaHumanOsteopatia(); return; }
+  if(area==='Nutrizionista' || area==='Sleep Coach'){
+    box.innerHTML = `<div class="val-empty">L'area Human dedicata a ${escHtml(area)} è in arrivo: per ora questa scheda cliente mostra solo gli strumenti di Osteopatia.</div>`;
+    return;
+  }
+  box.innerHTML = `<div class="val-empty">Nessuno strumento disponibile qui per la tua area.</div>`;
+}
+function renderAreaHumanOsteopatia(){
   const c = activeClient();
   const box = document.getElementById('areaHumanContent');
   if(!c || !box) return;
@@ -4298,6 +4509,15 @@ function renderAreaHumanTab(){
       renderAreaHumanTab();
     };
   });
+}
+
+// ==================== AREA FISIOTERAPIA (in costruzione) ====================
+// branchia dell'Area Performance dedicata al fisioterapista (es. fasi 1-2
+// degli LCA): per ora solo un placeholder, in attesa del modulo dedicato
+function renderFisioterapiaTab(){
+  const box = document.getElementById('fisioterapiaContent');
+  if(!box) return;
+  box.innerHTML = `<div class="val-empty">Area Fisioterapia in arrivo: qui troverai il percorso dedicato al fisioterapista (es. fasi iniziali di un rientro da LCA), collegato all'Area Performance.</div>`;
 }
 
 // ==================== STORICO (tutti i trattamenti del cliente) ====================
@@ -6105,10 +6325,7 @@ function renderClientiList(filter){
   box.querySelectorAll('[data-open-cliente]').forEach(card=>{
     card.onclick = (e)=>{
       if(e.target.closest('[data-del-cliente]')) return;
-      loadClientIntoWorkspace(card.dataset.openCliente);
-      showView('pathway');
-      renderContextBar();
-      activateClientTab(state.clientTab);
+      openClientForRole(card.dataset.openCliente);
     };
   });
   box.querySelectorAll('[data-del-cliente]').forEach(btn=>{
@@ -6181,6 +6398,8 @@ document.getElementById('btnNuovoCliente').onclick = ()=>{
 };
 document.getElementById('closeCli').onclick = ()=> document.getElementById('cliModal').classList.remove('open');
 document.getElementById('cliModal').onclick = (e)=>{ if(e.target.id==='cliModal') document.getElementById('cliModal').classList.remove('open'); };
+document.getElementById('closeCliAnagrafica').onclick = ()=> document.getElementById('cliAnagraficaModal').classList.remove('open');
+document.getElementById('cliAnagraficaModal').onclick = (e)=>{ if(e.target.id==='cliAnagraficaModal') document.getElementById('cliAnagraficaModal').classList.remove('open'); };
 document.getElementById('btnCreaCliente').onclick = ()=>{
   const nome = document.getElementById('cliNome').value.trim();
   if(!nome){ alert('Inserisci almeno il nome del cliente.'); return; }
@@ -6191,6 +6410,12 @@ document.getElementById('btnCreaCliente').onclick = ()=>{
     email: document.getElementById('cliEmail').value.trim()
   });
   document.getElementById('cliModal').classList.remove('open');
+  if(isSegreteriaOnly()){
+    renderCliAnagraficaModal(c);
+    document.getElementById('cliAnagraficaModal').classList.add('open');
+    renderClientiList(document.getElementById('cliSearchInput').value);
+    return;
+  }
   loadClientIntoWorkspace(c.id);
   showView('pathway');
   renderContextBar();
@@ -7265,19 +7490,156 @@ function computeBookableSlots(dateStr, professionistaId, excludeAppId){
 
 // ---------------- calendario: render ----------------
 function renderCalendar(){
+  const manageAll = canManageAll();
+  const modeMultiBtn = document.getElementById('calModeMulti');
+  if(modeMultiBtn) modeMultiBtn.style.display = manageAll ? 'inline-block' : 'none';
+  if(!manageAll && state.calViewMode==='multi') state.calViewMode = 'settimana';
   renderCalFilterProf();
-  if(state.calViewMode==='mese') renderCalendarMonth();
+  if(state.calViewMode==='multi' && manageAll) renderCalendarMulti();
+  else if(state.calViewMode==='mese') renderCalendarMonth();
   else renderCalendarWeek();
 }
 function renderCalFilterProf(){
   const sel = document.getElementById('calFilterProf');
-  if(!canManageAll()){ sel.style.display = 'none'; return; }
+  if(!canManageAll() || state.calViewMode==='multi'){ sel.style.display = 'none'; return; }
   sel.style.display = 'inline-block';
   const others = state.professionisti.filter(p=>p.id !== (state.professionista?state.professionista.id:null));
   sel.innerHTML = `<option value="">Tutti i professionisti</option>` +
     others.map(p=>`<option value="${p.id}" ${state.calFilterProfId===p.id?'selected':''}>${p.nome}${p.area?' ('+p.area+')':''}</option>`).join('');
   sel.value = state.calFilterProfId || '';
   sel.onchange = ()=>{ state.calFilterProfId = sel.value || null; renderCalendar(); };
+}
+// colonna del multicalendario: professionisti = "prof:<id>", spazi = "spazio:<id>"
+function multiColKey(kind, id){ return kind + ':' + id; }
+// multicalendario giornaliero (solo admin/segreteria): una colonna per ogni
+// professionista + una per ogni spazio comune, affiancate per un solo
+// giorno; per default sono tutte visibili, ma il singolo viewer può
+// nasconderne alcune per la sessione corrente (es. chi non lavora oggi) —
+// scelta non persistita, solo sua
+function renderCalendarMulti(){
+  if(!state.calMultiDay) state.calMultiDay = fmtDateISO(new Date());
+  const cs = state.calSettings;
+  const dateStr = state.calMultiDay;
+  const d = new Date(dateStr + 'T00:00:00');
+  const dow = d.getDay();
+  const dateLabel = `${WEEKDAY_NAMES[dow]} ${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()}`;
+  document.getElementById('calRangeLabel').textContent = dateLabel;
+  document.getElementById('calSettings').innerHTML = '';
+
+  const cols = [
+    ...state.professionisti.map(p=>({kind:'prof', id:p.id, label:p.nome, sub:p.area||'', obj:p})),
+    ...state.spazi.map(s=>({kind:'spazio', id:s.id, label:s.nome, sub:'Spazio comune', obj:s}))
+  ].filter(col=> !state.calMultiHidden.has(multiColKey(col.kind, col.id)));
+
+  renderCalMultiVisDropdown();
+
+  const PX = 1.2;
+  const totalMin = (cs.endHour - cs.startHour)*60;
+  const gridHeight = Math.max(totalMin*PX, 100);
+  const grid = document.getElementById('calMultiGrid');
+  if(!cols.length){
+    grid.style.gridTemplateColumns = '52px 1fr';
+    grid.innerHTML = `<div class="cal-axis-head"></div><div class="cal-col-head">Nessuna colonna visibile — usa "Colonne visibili" per mostrarne almeno una.</div>`;
+    return;
+  }
+  grid.style.gridTemplateColumns = `52px repeat(${cols.length}, minmax(160px, 1fr))`;
+
+  let html = `<div class="cal-axis-head"></div>`;
+  cols.forEach(col=>{
+    html += `<div class="cal-col-head ${col.kind==='spazio'?'spazio-head':''}">
+      <div class="dname">${escHtml(col.label)}</div>
+      <div class="cch-sub">${escHtml(col.sub)}</div>
+    </div>`;
+  });
+
+  html += `<div class="cal-axis" style="height:${gridHeight}px;">`;
+  for(let h=cs.startHour; h<=cs.endHour; h++){
+    html += `<div class="hr-label" style="top:${(h-cs.startHour)*60*PX}px;">${h}:00</div>`;
+  }
+  html += `</div>`;
+
+  cols.forEach(col=>{
+    html += `<div class="cal-day-col" data-multicol-kind="${col.kind}" data-multicol-id="${col.id}" style="height:${gridHeight}px;">`;
+    if(col.kind==='prof'){
+      state.disponibilitaRicorrenti.filter(b=>dispBlockAppliesTo(b,dateStr,dow) && b.professionistaId===col.id).forEach(b=>{
+        const s = timeToMinutes(b.start), e = timeToMinutes(b.end);
+        const top = (s - cs.startHour*60)*PX;
+        const height = Math.max((e-s)*PX, 4);
+        const isNd = b.tipo==='non_disponibile';
+        const blockCls = isNd ? 'cal-recv-block cal-nondisp-block' : 'cal-recv-block';
+        const labelTxt = isNd ? 'Non disponibile' : `Ricevi · ${b.posti} post${b.posti===1?'o':'i'}`;
+        html += `<div class="${blockCls}" style="top:${top}px;height:${height}px;"><span class="crb-label">${labelTxt}</span></div>`;
+      });
+    }
+    const colEvents = state.appuntamenti.filter(a=>{
+      if(a.day!==dateStr) return false;
+      if(col.kind==='spazio') return a.spazioId===col.id;
+      if(a.professionistaId) return a.professionistaId===col.id;
+      if(!a.clienteId) return false;
+      const c = state.clienti.find(x=>x.id===a.clienteId);
+      return c && clienteHasProf(c, col.id);
+    });
+    colEvents.forEach(ev=>{
+      const s = timeToMinutes(ev.start), e = timeToMinutes(ev.end);
+      const top = (s - cs.startHour*60)*PX;
+      const height = Math.max((e-s)*PX, 16);
+      const evClient = ev.clienteId ? state.clienti.find(c=>c.id===ev.clienteId) : null;
+      const colorStyle = ev.colore ? `border-color:${ev.colore};background:${ev.colore}22;` : '';
+      html += `<div class="cal-block tipo-${ev.tipo}" data-event-id="${ev.id}" style="top:${top}px;height:${height}px;${colorStyle}">
+        <div${ev.colore ? ` style="color:${ev.colore};"` : ''}>${escHtml(ev.titolo || tipoLabel(ev.tipo))}</div>
+        ${evClient ? `<div class="cb-time">${escHtml(evClient.nome)}</div>` : ''}
+        <div class="cb-time">${ev.start}–${ev.end}</div>
+      </div>`;
+    });
+    html += `</div>`;
+  });
+
+  grid.innerHTML = html;
+  grid.onclick = (e)=>{
+    const evEl = e.target.closest('[data-event-id]');
+    if(evEl){
+      const ev = state.appuntamenti.find(a=>a.id===evEl.dataset.eventId);
+      if(ev) openEventEditor(ev, true);
+      return;
+    }
+    const col = e.target.closest('[data-multicol-kind]');
+    if(!col) return;
+    const kind = col.dataset.multicolKind, id = col.dataset.multicolId;
+    const rect = col.getBoundingClientRect();
+    const offsetY = e.clientY - rect.top;
+    let startMin = cs.startHour*60 + Math.round(offsetY/PX/15)*15;
+    startMin = Math.max(cs.startHour*60, Math.min(startMin, cs.endHour*60 - 30));
+    const endMin = Math.min(startMin + 60, cs.endHour*60);
+    openEventEditor({
+      day: dateStr, start: minutesToTime(startMin), end: minutesToTime(endMin), tipo:'impegno',
+      professionistaId: kind==='prof' ? id : null,
+      spazioId: kind==='spazio' ? id : null
+    }, false);
+  };
+  renderRichBadge();
+}
+// popup "colonne visibili": un checkbox per professionista + uno per spazio,
+// per nascondere/mostrare colonne solo per la sessione corrente del viewer
+function renderCalMultiVisDropdown(){
+  const wrap = document.getElementById('calMultiVisWrap');
+  const dd = document.getElementById('calMultiVisDropdown');
+  if(!wrap || !dd) return;
+  wrap.style.display = state.calViewMode==='multi' ? 'inline-block' : 'none';
+  const items = [
+    ...state.professionisti.map(p=>({key:multiColKey('prof',p.id), label:p.nome+(p.area?' ('+p.area+')':'')})),
+    ...state.spazi.map(s=>({key:multiColKey('spazio',s.id), label:s.nome+' (spazio)'}))
+  ];
+  dd.innerHTML = items.length ? items.map(it=>`
+    <label class="prof-dropdown-item" style="display:flex;align-items:center;gap:8px;">
+      <input type="checkbox" data-multivis="${it.key}" ${state.calMultiHidden.has(it.key)?'':'checked'}> ${escHtml(it.label)}
+    </label>`).join('') : `<div class="prof-dropdown-empty">Nessun professionista o spazio</div>`;
+  dd.querySelectorAll('[data-multivis]').forEach(chk=>{
+    chk.onchange = ()=>{
+      if(chk.checked) state.calMultiHidden.delete(chk.dataset.multivis);
+      else state.calMultiHidden.add(chk.dataset.multivis);
+      renderCalendarMulti();
+    };
+  });
 }
 // appuntamento visibile nel calendario in base al filtro professionista attivo
 // (solo per admin/segreteria); un impegno senza cliente collegato non è
@@ -7450,9 +7812,10 @@ function openEventEditor(data, isEdit){
     titolo: '',
     clienteId: data.clienteId !== undefined ? data.clienteId : (activeClient() ? activeClient().id : ''),
     schedaId: '', noteSessione: '', operatore: '', seriesId: null, colore: data.colore || null, esecuzione: null,
-    professionistaId: null, retestData: null
+    professionistaId: data.professionistaId !== undefined ? data.professionistaId : null, retestData: null,
+    spazioId: data.spazioId || null
   };
-  if(!isEdit){
+  if(!isEdit && data.professionistaId===undefined){
     const initClient = state.eventEditor.clienteId ? state.clienti.find(c=>c.id===state.eventEditor.clienteId) : null;
     state.eventEditor.professionistaId = initClient ? (clienteProfIds(initClient)[0] || null) : (state.professionista ? state.professionista.id : null);
   }
@@ -7489,14 +7852,25 @@ function renderEventModal(){
       </select>
     </div>
     ${(()=>{
-      const profOptions = cliente ? clienteProfIds(cliente).map(id=>state.professionisti.find(p=>p.id===id)).filter(Boolean) : [];
-      if(profOptions.length<2) return '';
+      // admin/segreteria possono assegnare l'appuntamento a QUALSIASI
+      // professionista (serve per il multicalendario); gli altri professionisti
+      // vedono il selettore solo se il cliente ha più professionisti assegnati
+      const manageAll = canManageAll();
+      const profOptions = manageAll ? state.professionisti : (cliente ? clienteProfIds(cliente).map(id=>state.professionisti.find(p=>p.id===id)).filter(Boolean) : []);
+      if(!manageAll && profOptions.length<2) return '';
       return `<div class="ev-field"><label>Professionista per questo appuntamento</label>
         <select id="evProf" class="editable">
+          ${manageAll ? `<option value="">— Nessuno —</option>` : ''}
           ${profOptions.map(p=>`<option value="${p.id}" ${ed.professionistaId===p.id?'selected':''}>${p.nome}${p.area?' ('+p.area+')':''}</option>`).join('')}
         </select>
       </div>`;
     })()}
+    ${canManageAll() && state.spazi.length ? `<div class="ev-field"><label>Spazio comune (opzionale)</label>
+      <select id="evSpazio" class="editable">
+        <option value="">— Nessuno —</option>
+        ${state.spazi.map(s=>`<option value="${s.id}" ${ed.spazioId===s.id?'selected':''}>${s.nome}</option>`).join('')}
+      </select>
+    </div>` : ''}
     <div class="ev-row">
       <div class="ev-field"><label>Data</label><input class="editable" type="date" id="evDay" value="${ed.day}"></div>
       <div></div>
@@ -7588,7 +7962,9 @@ function renderEventModal(){
     renderEventModal();
   };
   const evProfSel = document.getElementById('evProf');
-  if(evProfSel) evProfSel.onchange = (e)=>{ ed.professionistaId = e.target.value; };
+  if(evProfSel) evProfSel.onchange = (e)=>{ ed.professionistaId = e.target.value || null; };
+  const evSpazioSel = document.getElementById('evSpazio');
+  if(evSpazioSel) evSpazioSel.onchange = (e)=>{ ed.spazioId = e.target.value || null; };
   const evSchedaSel = document.getElementById('evScheda');
   if(evSchedaSel) evSchedaSel.onchange = (e)=>{ ed.schedaId = e.target.value; };
   const evNoteSel = document.getElementById('evNoteSessione');
@@ -7748,6 +8124,8 @@ document.getElementById('btnBackToPathway').onclick = ()=>{
 document.getElementById('btnWeekPrev').onclick = ()=>{
   if(state.calViewMode==='mese'){
     state.calMonthStart = new Date(state.calMonthStart.getFullYear(), state.calMonthStart.getMonth()-1, 1);
+  } else if(state.calViewMode==='multi'){
+    state.calMultiDay = fmtDateISO(addDays(new Date(state.calMultiDay+'T00:00:00'), -1));
   } else {
     state.calWeekStart = addDays(state.calWeekStart,-7);
   }
@@ -7756,6 +8134,8 @@ document.getElementById('btnWeekPrev').onclick = ()=>{
 document.getElementById('btnWeekNext').onclick = ()=>{
   if(state.calViewMode==='mese'){
     state.calMonthStart = new Date(state.calMonthStart.getFullYear(), state.calMonthStart.getMonth()+1, 1);
+  } else if(state.calViewMode==='multi'){
+    state.calMultiDay = fmtDateISO(addDays(new Date(state.calMultiDay+'T00:00:00'), 1));
   } else {
     state.calWeekStart = addDays(state.calWeekStart,7);
   }
@@ -7764,13 +8144,26 @@ document.getElementById('btnWeekNext').onclick = ()=>{
 document.querySelectorAll('#calendarArea .cal-mode-opt').forEach(opt=>{
   opt.onclick = ()=>{
     state.calViewMode = opt.dataset.calmode;
+    if(state.calViewMode==='multi' && !state.calMultiDay) state.calMultiDay = fmtDateISO(new Date());
     document.querySelectorAll('#calendarArea .cal-mode-opt').forEach(o=>o.classList.toggle('active', o===opt));
     document.getElementById('calWeekWrap').style.display = state.calViewMode==='settimana' ? 'block' : 'none';
     document.getElementById('calMonthWrap').style.display = state.calViewMode==='mese' ? 'block' : 'none';
+    document.getElementById('calMultiWrap').style.display = state.calViewMode==='multi' ? 'block' : 'none';
     document.getElementById('calSettings').style.display = state.calViewMode==='settimana' ? 'flex' : 'none';
     document.getElementById('btnDisponibilita').style.display = state.calViewMode==='settimana' ? 'inline-block' : 'none';
     renderCalendar();
   };
+});
+document.getElementById('calMultiVisBtn').onclick = (e)=>{
+  e.stopPropagation();
+  const dd = document.getElementById('calMultiVisDropdown');
+  dd.style.display = dd.style.display==='none' ? 'block' : 'none';
+};
+document.addEventListener('click', (e)=>{
+  if(!e.target.closest('#calMultiVisWrap')){
+    const dd = document.getElementById('calMultiVisDropdown');
+    if(dd) dd.style.display = 'none';
+  }
 });
 document.getElementById('calMonthGrid').addEventListener('click', (e)=>{
   const evEl = e.target.closest('[data-event-id]');
