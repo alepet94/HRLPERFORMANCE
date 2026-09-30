@@ -937,6 +937,11 @@ header.top{
   repeating-linear-gradient(to bottom, transparent, transparent 59px, var(--line-soft) 60px);
 }
 .cal-day-col.off{background:repeating-linear-gradient(45deg, var(--navy-900), var(--navy-900) 6px, var(--navy-850) 6px, var(--navy-850) 12px);}
+/* fasce orarie fuori dal ricevimento di un professionista, dentro un giorno
+   altrimenti attivo: stessa grafica a righe dei giorni "off", ma solo per la
+   porzione di colonna interessata; non intercetta i click (si può comunque
+   cliccare per inserire un appuntamento/impegno lì) */
+.cal-off-hours{position:absolute;left:0;right:0;background:repeating-linear-gradient(45deg, var(--navy-900), var(--navy-900) 6px, var(--navy-850) 6px, var(--navy-850) 12px);pointer-events:none;}
 
 .cal-block{
   position:absolute;left:3px;right:3px;border-radius:3px;
@@ -2343,6 +2348,37 @@ function rowToDispRicorrente(r){
 function dispBlockAppliesTo(b, dateStr, dow){
   if(b.data) return b.data === dateStr;
   return b.weekday === dow;
+}
+// fasce orarie (in minuti, dentro l'orario giornata) in cui un professionista
+// NON riceve in quel giorno: usate per disegnarle come "fuori orario" (stessa
+// grafica a righe dei giorni non attivi) nel calendario. Se il professionista
+// non ha ancora impostato NESSUN blocco "disponibile" (in nessun giorno),
+// non si assume nulla e non si disegna nessuna fascia — stessa logica già
+// usata da checkDispConflict, per restare coerenti con l'avviso di conflitto
+function nonAvailableRangesForProfDay(profId, dateStr, dow){
+  if(!profId) return [];
+  const hasAnyDisp = state.disponibilitaRicorrenti.some(b=>b.professionistaId===profId && b.tipo==='disponibile');
+  if(!hasAnyDisp) return [];
+  const cs = state.calSettings;
+  const dayStart = cs.startHour*60, dayEnd = cs.endHour*60;
+  const dispToday = state.disponibilitaRicorrenti
+    .filter(b=>b.professionistaId===profId && b.tipo==='disponibile' && dispBlockAppliesTo(b,dateStr,dow))
+    .map(b=>({s: Math.max(dayStart, timeToMinutes(b.start)), e: Math.min(dayEnd, timeToMinutes(b.end))}))
+    .filter(r=>r.e>r.s)
+    .sort((a,b)=>a.s-b.s);
+  const merged = [];
+  dispToday.forEach(r=>{
+    if(merged.length && r.s <= merged[merged.length-1].e) merged[merged.length-1].e = Math.max(merged[merged.length-1].e, r.e);
+    else merged.push({...r});
+  });
+  const gaps = [];
+  let cursor = dayStart;
+  merged.forEach(r=>{
+    if(r.s > cursor) gaps.push({s:cursor, e:r.s});
+    cursor = Math.max(cursor, r.e);
+  });
+  if(cursor < dayEnd) gaps.push({s:cursor, e:dayEnd});
+  return gaps;
 }
 // admin o Segreteria: gestisce calendario/richieste/disponibilità di TUTTI i professionisti
 function canManageAll(){
@@ -7619,6 +7655,11 @@ function renderCalendarMulti(){
         const labelTxt = isNd ? 'Non disponibile' : `Ricevi · ${b.posti} post${b.posti===1?'o':'i'}`;
         html += `<div class="${blockCls}" style="top:${top}px;height:${height}px;"><span class="crb-label">${labelTxt}</span></div>`;
       });
+      nonAvailableRangesForProfDay(col.id, dateStr, dow).forEach(g=>{
+        const top = (g.s - cs.startHour*60)*PX;
+        const height = (g.e - g.s)*PX;
+        html += `<div class="cal-off-hours" style="top:${top}px;height:${height}px;"></div>`;
+      });
     }
     const colEvents = state.appuntamenti.filter(a=>{
       if(a.day!==dateStr) return false;
@@ -7766,6 +7807,15 @@ function renderCalendarWeek(){
         const blockCls = isNd ? 'cal-recv-block cal-nondisp-block' : 'cal-recv-block';
         const labelTxt = isNd ? 'Non disponibile' : `Ricevi · ${b.posti} post${b.posti===1?'o':'i'}`;
         html += `<div class="${blockCls}" style="top:${top}px;height:${height}px;"><span class="crb-label" data-recv-id="${b.id}">${labelTxt} ✎</span></div>`;
+      });
+      // fuori dagli orari di ricevimento impostati per questo professionista:
+      // stessa grafica a righe dei giorni non attivi, per far capire a colpo
+      // d'occhio dove non c'è ricevimento — resta comunque cliccabile per
+      // inserire un appuntamento/impegno, con avviso al salvataggio
+      nonAvailableRangesForProfDay(recvProfId, dateStr, dow).forEach(g=>{
+        const top = (g.s - cs.startHour*60)*PX;
+        const height = (g.e - g.s)*PX;
+        html += `<div class="cal-off-hours" style="top:${top}px;height:${height}px;"></div>`;
       });
     }
     state.appuntamenti.filter(a=>a.day===dateStr && apptMatchesCalFilter(a)).forEach(ev=>{
@@ -8417,11 +8467,21 @@ document.getElementById('calGrid').addEventListener('dragover', (e)=>{
 // ritorna un messaggio di avviso se c'è un conflitto, altrimenti null. Gli impegni
 // non collegati a un cliente (nessuna attribuzione a un professionista) non vengono
 // controllati.
+// controlla se un orario è compatibile con la disponibilità del
+// professionista (blocchi "non disponibile", fuori dai suoi orari di
+// ricevimento, o posti già pieni): funziona sia per appuntamenti legati a un
+// cliente sia per impegni personali senza cliente, purché l'evento abbia un
+// professionistaId (impostato di default sul professionista loggato quando
+// crea un impegno per sé). Se il professionista non ha MAI impostato nessun
+// blocco "disponibile", non si assume nulla (nessun controllo) — coerente
+// con nonAvailableRangesForProfDay, usata anche per il disegno "fuori
+// orario" nel calendario.
 function checkDispConflict(ev, day, startMin, endMin){
-  if(!ev.clienteId) return null;
-  const c = state.clienti.find(x=>x.id===ev.clienteId);
-  if(!c) return null;
-  const profId = ev.professionistaId || clienteProfIds(c)[0];
+  let profId = ev.professionistaId;
+  if(!profId && ev.clienteId){
+    const c = state.clienti.find(x=>x.id===ev.clienteId);
+    if(c) profId = clienteProfIds(c)[0];
+  }
   if(!profId) return null;
   const dow = new Date(day + 'T00:00:00').getDay();
   const mine = state.disponibilitaRicorrenti.filter(b=>b.professionistaId===profId && dispBlockAppliesTo(b,day,dow));
@@ -8430,13 +8490,15 @@ function checkDispConflict(ev, day, startMin, endMin){
     return s < endMin && e > startMin;
   });
   if(nonDispHit) return 'Questo orario è segnato come "non disponibile" per il professionista.';
+  const outsideHit = nonAvailableRangesForProfDay(profId, day, dow).some(g=> g.s < endMin && g.e > startMin);
+  if(outsideHit) return 'Questo orario è fuori dagli orari di ricevimento impostati per il professionista.';
   const dispBlocks = mine.filter(b=>b.tipo==='disponibile');
   if(dispBlocks.length===0) return null; // nessun blocco di ricevimento impostato, nessun controllo di capienza
   const covering = dispBlocks.find(b=>{
     const s = timeToMinutes(b.start), e = timeToMinutes(b.end);
     return s<=startMin && e>=endMin;
   });
-  if(!covering) return 'Questo orario è fuori dai blocchi di disponibilità impostati per il professionista.';
+  if(!covering) return null; // già segnalato sopra se davvero fuori orario (es. a cavallo tra due blocchi adiacenti)
   const overlapping = state.appuntamenti.filter(ap=>{
     if(ap.id===ev.id) return false;
     if(ap.day!==day) return false;
