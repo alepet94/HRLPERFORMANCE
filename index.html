@@ -3662,7 +3662,7 @@ function renderClientRichiesteInCorso(c){
     ${pending.map(r=>`<div class="upcoming-item">
       <div class="ui-info">
         <div class="uid">${r.servizio || 'Nuovo appuntamento'}</div>
-        <div class="uim">${r.day.split('-').reverse().join('/')} · ${r.start}–${r.end} · in attesa di conferma</div>
+        <div class="uim">${r.day.split('-').reverse().join('/')} · ore ${r.start} · in attesa di conferma</div>
       </div>
       <button class="btn-small danger" data-annulla-rich="${r.id}">Annulla</button>
     </div>`).join('')}
@@ -4453,7 +4453,7 @@ function notifyNuovaRichiesta(r){
   const azione = r.tipo==='cancellazione' ? 'ha chiesto di cancellare un appuntamento' : (r.appuntamentoId ? 'ha chiesto di spostare un appuntamento' : 'ha richiesto un nuovo appuntamento');
   const dettaglio = r.tipo==='cancellazione'
     ? `${r.day.split('-').reverse().join('/')} · ${r.start}–${r.end}${r.nota ? ' — motivo: ' + r.nota : ''}`
-    : `${r.day.split('-').reverse().join('/')} · ${r.start}–${r.end}${r.servizio ? ' — ' + r.servizio : ''}`;
+    : `${r.day.split('-').reverse().join('/')} · ore ${r.start}${r.servizio ? ' — ' + r.servizio : ''}`;
   showToast('Nuova richiesta', `${nome} ${azione}: ${dettaglio}`);
   if(window.Notification && Notification.permission==='granted'){
     try{ new Notification('HRL Performance Pathways — nuova richiesta', {body: `${nome} ${azione}: ${dettaglio}`}); }catch(ex){}
@@ -4744,7 +4744,7 @@ function renderRichiesteList(){
            <div class="ri-detail">Motivo: ${r.nota || '—'}</div>`
         : `<div class="ri-detail">${r.appuntamentoId ? `Attuale: ${a ? a.day.split('-').reverse().join('/') + ' · ' + a.start + '–' + a.end : '—'}` : '<b>Nessun appuntamento esistente</b> — richiesta di prenotazione ex novo'}</div>
            ${r.servizio ? `<div class="ri-detail">Tipo: <b>${r.servizio}</b></div>` : ''}
-           <div class="ri-detail">Proposto: <b>${r.day.split('-').reverse().join('/')} · ${r.start}–${r.end}</b></div>
+           <div class="ri-detail">Proposto: <b>${r.day.split('-').reverse().join('/')} · ore ${r.start}</b></div>
            ${r.nota ? `<div class="ri-detail">Nota: ${r.nota}</div>` : ''}`
       }
       <div class="ri-actions">
