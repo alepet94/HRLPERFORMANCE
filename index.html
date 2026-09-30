@@ -2249,7 +2249,10 @@ function clienteToRow(c){
     area_attiva: c.areaAttiva || null,
     ghi_storico: c.ghiStorico || [],
     sistema_test_selezionati: Array.from(c.sistemaTestSelezionati || []),
-    schede_osteopatia: c.schedeOsteopatia || []
+    schede_osteopatia: c.schedeOsteopatia || [],
+    schede_fisioterapia: c.schedeFisioterapia || [],
+    trattamenti_fisioterapia: c.trattamentiFisioterapia || [],
+    valutazioni_fisioterapia: c.valutazioniFisioterapia || []
   };
 }
 function rowToCliente(r){
@@ -2273,7 +2276,10 @@ function rowToCliente(r){
     areaAttiva: r.area_attiva || null,
     ghiStorico: r.ghi_storico || [],
     sistemaTestSelezionati: new Set(r.sistema_test_selezionati || []),
-    schedeOsteopatia: r.schede_osteopatia || []
+    schedeOsteopatia: r.schede_osteopatia || [],
+    schedeFisioterapia: r.schede_fisioterapia || [],
+    trattamentiFisioterapia: r.trattamenti_fisioterapia || [],
+    valutazioniFisioterapia: r.valutazioni_fisioterapia || []
   };
 }
 // elenco (eventualmente vuoto) dei professionisti assegnati a un cliente,
@@ -3588,6 +3594,7 @@ function clientSchedeFlat(c){
     const pathway = key.split('::')[1] || key;
     (arr||[]).forEach(s=> out.push({id:s.id, label:`${s.nome || '(senza nome)'} — ${pathway}`}));
   });
+  (c.schedeFisioterapia||[]).forEach(s=> out.push({id:s.id, label:`${s.nome || '(senza nome)'} — Fisioterapia`}));
   return out;
 }
 
@@ -3597,7 +3604,7 @@ function findSchedaById(c, schedaId){
     const hit = (arr||[]).find(s=>s.id===schedaId);
     if(hit) return hit;
   }
-  return null;
+  return (c.schedeFisioterapia||[]).find(s=>s.id===schedaId) || null;
 }
 
 // mostra la tab richiesta (una delle #cliTabs) e nasconde le altre,
@@ -4590,16 +4597,24 @@ function renderAreaHumanTab(){
 // checkbox sempre visibile nel form, un bottone che apre una finestra
 // dedicata (stesso pattern modal-bg/.modal già usato altrove, es. "Spazi
 // comuni") dove spuntare i colleghi da aggiungere/togliere; le modifiche
-// sono live sul draft (niente da "salvare" nel modale, si chiude e basta)
-function updateOsteoCondividiBtnLabel(){
-  const draft = state.schedaOsteopatiaDraft;
-  const btn = document.getElementById('btnOsteoCondividi');
+// sono live sul draft (niente da "salvare" nel modale, si chiude e basta).
+// Generico: riusato sia dalla scheda osteopatia che dal log trattamenti
+// fisioterapia (qualunque draft con un array condividiPrivateCon), tramite
+// state.condividiDraftRef/condividiBtnId invece di un riferimento fisso.
+function updateCondividiBtnLabel(draft, btnId){
+  const btn = document.getElementById(btnId);
   if(!btn || !draft) return;
   const n = draft.condividiPrivateCon.length;
   btn.textContent = n ? `🔓 Condivise con ${n} colleg${n===1?'a':'he'}` : '🔒 Condividi note private…';
 }
-function renderOsteoCondividiModal(){
-  const draft = state.schedaOsteopatiaDraft;
+function openCondividiModal(draft, btnId){
+  state.condividiDraftRef = draft;
+  state.condividiBtnId = btnId;
+  renderCondividiModalContent();
+  document.getElementById('osteoCondividiModal').classList.add('open');
+}
+function renderCondividiModalContent(){
+  const draft = state.condividiDraftRef;
   if(!draft) return;
   const profOptions = state.professionisti.filter(p=> !state.professionista || p.id!==state.professionista.id);
   const box = document.getElementById('osteoCondividiContent');
@@ -4611,7 +4626,7 @@ function renderOsteoCondividiModal(){
       const pid = chk.dataset.condividiProf;
       if(e.target.checked){ if(!draft.condividiPrivateCon.includes(pid)) draft.condividiPrivateCon.push(pid); }
       else { draft.condividiPrivateCon = draft.condividiPrivateCon.filter(x=>x!==pid); }
-      updateOsteoCondividiBtnLabel();
+      updateCondividiBtnLabel(draft, state.condividiBtnId);
     };
   });
 }
@@ -4739,11 +4754,8 @@ function renderAreaHumanOsteopatia(){
       renderAreaHumanTab();
     };
   });
-  updateOsteoCondividiBtnLabel();
-  document.getElementById('btnOsteoCondividi').onclick = ()=>{
-    renderOsteoCondividiModal();
-    document.getElementById('osteoCondividiModal').classList.add('open');
-  };
+  updateCondividiBtnLabel(draft, 'btnOsteoCondividi');
+  document.getElementById('btnOsteoCondividi').onclick = ()=> openCondividiModal(draft, 'btnOsteoCondividi');
   function wireCampo(idBase, campo){
     const rEl = document.getElementById(idBase+'Report'); if(rEl) rEl.oninput = (e)=>{ campo.report = e.target.value; };
     const pEl = document.getElementById(idBase+'Privata'); if(pEl) pEl.oninput = (e)=>{ campo.privata = e.target.value; };
@@ -4822,13 +4834,634 @@ function renderAreaHumanOsteopatia(){
   });
 }
 
-// ==================== AREA FISIOTERAPIA (in costruzione) ====================
-// branchia dell'Area Performance dedicata al fisioterapista (es. fasi 1-2
-// degli LCA): per ora solo un placeholder, in attesa del modulo dedicato
+// ==================== AREA FISIOTERAPIA ====================
+// branchia dell'Area Performance dedicata al fisioterapista: prima bozza
+// (30/9), da rifinire quando i fisioterapisti daranno indicazioni precise.
+// Tre sezioni: Valutazione fisioterapica (scheda dedicata), Trattamenti
+// (mobilizzazione/scarico/tecarterapia, stesso pattern della scheda
+// osteopatia — flag multipli + nota per il report/nota privata condivisibile)
+// e Schede esercizio (rinforzo: stesso sistema di schede di Area Performance,
+// ma come elenco flat per cliente, non legato a un profilo/pathway — vedi
+// c.schedeFisioterapia, mai keyed come state.schede).
+
+// ---------- Trattamenti fisioterapici (mobilizzazione/scarico/tecarterapia) ----------
+const TRATTAMENTO_FISIO_LABELS = { mobilizzazione:'Mobilizzazione', scarico:'Scarico', tecarterapia:'Tecarterapia' };
+function emptyTrattamentoFisio(){
+  return {
+    id: 'ft_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
+    data: fmtDateISO(new Date()),
+    tipi: [],                 // sottoinsieme di ['mobilizzazione','scarico','tecarterapia'], selezionabili insieme
+    mobilizzazione: emptyOsteoCampo(),
+    scarico: emptyOsteoCampo(),
+    tecarterapia: emptyOsteoCampo(),
+    condividiPrivateCon: [],  // id professionisti con cui sono condivise TUTTE le note private di questa seduta
+    professionistaId: null,
+    _privataOpen: {}
+  };
+}
+function canSeeFisioPrivata(s){
+  if(!state.professionista) return false;
+  if(state.professionista.ruolo==='admin') return true;
+  if(s.professionistaId===state.professionista.id) return true;
+  return Array.isArray(s.condividiPrivateCon) && s.condividiPrivateCon.includes(state.professionista.id);
+}
+function fisioTrattamentoBlocks(s){
+  const blocks = [];
+  if(s.tipi.includes('mobilizzazione')) blocks.push({ titolo:'Mobilizzazione', report:s.mobilizzazione.report, privata:s.mobilizzazione.privata });
+  if(s.tipi.includes('scarico')) blocks.push({ titolo:'Scarico', report:s.scarico.report, privata:s.scarico.privata });
+  if(s.tipi.includes('tecarterapia')) blocks.push({ titolo:'Tecarterapia', report:s.tecarterapia.report, privata:s.tecarterapia.privata });
+  return blocks;
+}
+// report stampabile (via "Stampa" del browser) di una seduta di trattamento
+// fisioterapico: stesso pattern di apriReportOsteopatia, solo note "per il
+// report" incluse, mai le private
+function apriReportTrattamentoFisio(c, s){
+  const prof = state.professionisti.find(p=>p.id===s.professionistaId);
+  const dataFmt = s.data ? s.data.split('-').reverse().join('/') : '—';
+  const logoSrc = (document.querySelector('.mark-logo') || document.querySelector('.auth-logo') || {}).src || '';
+  const blocks = fisioTrattamentoBlocks(s);
+  const sezioniHTML = blocks.length ? blocks.map(b=>
+    `<div class="rep-sezione"><h3>${escHtml(b.titolo)}</h3><div class="rep-testo">${b.report ? escHtml(b.report) : '<em>Nessuna nota</em>'}</div></div>`
+  ).join('') : `<div class="rep-sezione"><div class="rep-testo"><em>Nessun trattamento registrato.</em></div></div>`;
+  const tipiLbl = s.tipi.map(t=>TRATTAMENTO_FISIO_LABELS[t] || t).join(', ') || '—';
+  const html = `<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8">
+    <title>Report trattamento — ${escHtml(c.nome || '')}</title>
+    <style>
+      body{font-family:-apple-system,Segoe UI,Arial,sans-serif;background:#fff;color:#111;padding:36px;max-width:760px;margin:0 auto;}
+      .rep-head{display:flex;align-items:center;gap:18px;border-bottom:2px solid #8a6d1d;padding-bottom:16px;margin-bottom:20px;}
+      .rep-head img{height:52px;filter:invert(1);background:#1b1b1b;padding:8px;border-radius:6px;}
+      .rep-head h1{font-size:20px;margin:0;}
+      .rep-head .rep-sub{color:#555;font-size:12.5px;margin-top:2px;}
+      .rep-meta{display:grid;grid-template-columns:1fr 1fr;gap:10px 24px;margin-bottom:24px;font-size:13px;}
+      .rep-meta .rep-meta-label{color:#777;text-transform:uppercase;font-size:10.5px;letter-spacing:.04em;display:block;}
+      .rep-sezione{margin-bottom:18px;}
+      .rep-sezione h3{font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:#8a6d1d;margin:0 0 6px;border-bottom:1px solid #e0d3a8;padding-bottom:4px;}
+      .rep-testo{font-size:13.5px;white-space:pre-wrap;line-height:1.5;}
+      .rep-print-btn{margin-top:28px;padding:10px 18px;background:#8a6d1d;color:#fff;border:none;border-radius:4px;font-size:13px;cursor:pointer;}
+      @media print{ .rep-print-btn{display:none;} body{padding:0;} }
+    </style></head><body>
+    <div class="rep-head">
+      ${logoSrc ? `<img src="${logoSrc}" alt="HRL">` : ''}
+      <div><h1>Report trattamento — Fisioterapia</h1><div class="rep-sub">HRL Performance Pathways</div></div>
+    </div>
+    <div class="rep-meta">
+      <div><span class="rep-meta-label">Cliente</span>${escHtml(c.nome || '—')}</div>
+      <div><span class="rep-meta-label">Data seduta</span>${dataFmt}</div>
+      <div><span class="rep-meta-label">Operatore</span>${prof ? escHtml(prof.nome) : '—'}</div>
+      <div><span class="rep-meta-label">Trattamento</span>${escHtml(tipiLbl)}</div>
+    </div>
+    ${sezioniHTML}
+    <button class="rep-print-btn" onclick="window.print()">Stampa / Salva come PDF</button>
+    </body></html>`;
+  const win = window.open('', '_blank');
+  if(!win){ alert('Il browser ha bloccato l\'apertura della finestra di report. Consenti i popup per questo sito e riprova.'); return; }
+  win.document.open(); win.document.write(html); win.document.close();
+}
+function renderFisioTrattamentiSection(c){
+  if(!c.trattamentiFisioterapia) c.trattamentiFisioterapia = [];
+  if(!state.trattamentoFisioDraft) state.trattamentoFisioDraft = emptyTrattamentoFisio();
+  const draft = state.trattamentoFisioDraft;
+
+  const rows = c.trattamentiFisioterapia.slice().sort((a,b)=> (b.data||'').localeCompare(a.data||''));
+  const listHTML = rows.length ? rows.map(s=>{
+    const prof = state.professionisti.find(p=>p.id===s.professionistaId);
+    const vedePrivata = canSeeFisioPrivata(s);
+    const tipiLbl = s.tipi.map(t=>TRATTAMENTO_FISIO_LABELS[t] || t).join(', ') || '—';
+    const blocks = fisioTrattamentoBlocks(s);
+    const dettaglioHTML = blocks.length ? blocks.map(b=>{
+      const reportLine = `<div><b>${escHtml(b.titolo)}:</b> ${b.report ? escHtml(b.report) : '<em>nessuna nota</em>'}</div>`;
+      const privataLine = vedePrivata ? `<div style="color:var(--ink-mute);">🔒 <i>Privata:</i> ${b.privata ? escHtml(b.privata) : '<em>nessuna</em>'}</div>` : '';
+      return reportLine + privataLine;
+    }).join('') : '<div><em>Nessun trattamento registrato</em></div>';
+    return `<div class="val-card">
+      <div class="val-card-top">
+        <div class="val-card-date">${s.data ? s.data.split('-').reverse().join('/') : '—'}</div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button class="val-card-del" data-report-fisio="${s.id}" title="Report PDF" style="color:var(--ink-mute);">📄</button>
+          <button class="val-card-del" data-del-fisio="${s.id}" title="Elimina">×</button>
+        </div>
+      </div>
+      <div class="val-card-autore">${escHtml(tipiLbl)}${prof ? ' · ' + escHtml(prof.nome) : ''}${(s.condividiPrivateCon&&s.condividiPrivateCon.length) ? ' · <span title="Note private condivise">🔓 condivisa</span>' : ''}</div>
+      <div class="val-card-motivo">${dettaglioHTML}</div>
+    </div>`;
+  }).join('') : `<div class="val-empty">Nessun trattamento ancora registrato per questo cliente.</div>`;
+
+  if(!draft._privataOpen) draft._privataOpen = {};
+  function campoHTML(idBase, subLbl, campo){
+    const isOpen = draft._privataOpen[idBase] || !!campo.privata;
+    return `
+      <div class="client-section-label-row" style="margin-top:14px;"><div class="client-section-label" style="font-size:11px;">${escHtml(subLbl)}</div></div>
+      <div class="osteo-note-box osteo-note-report">
+        <label>Note per il report (nel PDF e nello storico del cliente)</label>
+        <textarea class="editable" id="${idBase}Report" rows="2" placeholder="Contenuto del trattamento, visibile nel report">${escHtml(campo.report)}</textarea>
+      </div>
+      <label class="osteo-privata-toggle"><input type="checkbox" data-privata-toggle-f="${idBase}" ${isOpen?'checked':''}> 🔒 Aggiungi nota privata</label>
+      ${isOpen ? `
+        <div class="osteo-note-box osteo-note-privata">
+          <label>Nota privata (solo per te, salvo condivisione)</label>
+          <textarea class="editable" id="${idBase}Privata" rows="2" placeholder="Note personali, non esportate nel report">${escHtml(campo.privata)}</textarea>
+        </div>
+      ` : ''}
+    `;
+  }
+
+  const html = `
+    <div class="client-section-label-row"><div class="client-section-label">Trattamenti svolti</div></div>
+    <div id="fisioTrattList" style="margin:14px 0 24px;">${listHTML}</div>
+
+    <div class="client-section-label-row"><div class="client-section-label">Nuovo trattamento</div></div>
+    <div class="ghi-draft-box">
+      <div class="ev-row">
+        <div class="ev-field"><label>Data seduta</label><input class="editable" type="date" id="fisioTrattData" value="${escAttr(draft.data)}"></div>
+      </div>
+      <div style="margin:10px 0 16px;">
+        <label style="font-size:11px;color:var(--ink-mute);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:6px;">Trattamento svolto (selezionabili insieme)</label>
+        <div style="display:flex;gap:18px;flex-wrap:wrap;">
+          <label style="display:flex;align-items:center;gap:6px;font-size:13.5px;"><input type="checkbox" data-tipo-fisio="mobilizzazione" ${draft.tipi.includes('mobilizzazione')?'checked':''}> Mobilizzazione</label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:13.5px;"><input type="checkbox" data-tipo-fisio="scarico" ${draft.tipi.includes('scarico')?'checked':''}> Scarico</label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:13.5px;"><input type="checkbox" data-tipo-fisio="tecarterapia" ${draft.tipi.includes('tecarterapia')?'checked':''}> Tecarterapia</label>
+        </div>
+      </div>
+      <div id="fisioTrattCampiWrap">
+        ${!draft.tipi.length ? `<div class="val-empty">Seleziona almeno un trattamento per continuare.</div>` : ''}
+        ${draft.tipi.includes('mobilizzazione') ? campoHTML('fisioMob', 'Mobilizzazione', draft.mobilizzazione) : ''}
+        ${draft.tipi.includes('scarico') ? campoHTML('fisioScar', 'Scarico', draft.scarico) : ''}
+        ${draft.tipi.includes('tecarterapia') ? campoHTML('fisioTecar', 'Tecarterapia', draft.tecarterapia) : ''}
+      </div>
+
+      <div class="osteo-flag-box" style="margin-top:16px;">
+        <label style="font-size:11px;color:var(--ink-mute);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:8px;">Note private</label>
+        <button type="button" class="osteo-condividi-btn" id="btnFisioCondividi"></button>
+      </div>
+
+      <button class="btn-gold" id="btnSaveFisioTratt" style="margin-top:16px;">Salva trattamento</button>
+    </div>
+  `;
+
+  const box = document.getElementById('fisioTrattContent');
+  box.innerHTML = html;
+
+  document.getElementById('fisioTrattData').onchange = (e)=>{ draft.data = e.target.value; };
+  box.querySelectorAll('[data-tipo-fisio]').forEach(chk=>{
+    chk.onchange = (e)=>{
+      const t = chk.dataset.tipoFisio;
+      if(e.target.checked){ if(!draft.tipi.includes(t)) draft.tipi.push(t); }
+      else { draft.tipi = draft.tipi.filter(x=>x!==t); }
+      renderFisioTrattamentiSection(c);
+    };
+  });
+  box.querySelectorAll('[data-privata-toggle-f]').forEach(chk=>{
+    chk.onchange = (e)=>{
+      draft._privataOpen[chk.dataset.privataToggleF] = e.target.checked;
+      renderFisioTrattamentiSection(c);
+    };
+  });
+  updateCondividiBtnLabel(draft, 'btnFisioCondividi');
+  document.getElementById('btnFisioCondividi').onclick = ()=> openCondividiModal(draft, 'btnFisioCondividi');
+  function wireCampo(idBase, campo){
+    const rEl = document.getElementById(idBase+'Report'); if(rEl) rEl.oninput = (e)=>{ campo.report = e.target.value; };
+    const pEl = document.getElementById(idBase+'Privata'); if(pEl) pEl.oninput = (e)=>{ campo.privata = e.target.value; };
+  }
+  wireCampo('fisioMob', draft.mobilizzazione);
+  wireCampo('fisioScar', draft.scarico);
+  wireCampo('fisioTecar', draft.tecarterapia);
+
+  document.getElementById('btnSaveFisioTratt').onclick = ()=>{
+    if(!draft.tipi.length){ alert('Seleziona almeno un trattamento.'); return; }
+    const trattamento = {
+      id: draft.id, data: draft.data, tipi: draft.tipi.slice(),
+      mobilizzazione: { report: draft.mobilizzazione.report, privata: draft.mobilizzazione.privata },
+      scarico: { report: draft.scarico.report, privata: draft.scarico.privata },
+      tecarterapia: { report: draft.tecarterapia.report, privata: draft.tecarterapia.privata },
+      condividiPrivateCon: draft.condividiPrivateCon.slice(),
+      professionistaId: state.professionista ? state.professionista.id : null
+    };
+    c.trattamentiFisioterapia.push(trattamento);
+    db.saveCliente(c);
+    state.trattamentoFisioDraft = emptyTrattamentoFisio();
+    renderFisioTrattamentiSection(c);
+  };
+
+  box.querySelectorAll('[data-del-fisio]').forEach(btn=>{
+    btn.onclick = ()=>{
+      c.trattamentiFisioterapia = c.trattamentiFisioterapia.filter(s=>s.id!==btn.dataset.delFisio);
+      db.saveCliente(c);
+      renderFisioTrattamentiSection(c);
+    };
+  });
+  box.querySelectorAll('[data-report-fisio]').forEach(btn=>{
+    btn.onclick = ()=>{
+      const s = c.trattamentiFisioterapia.find(x=>x.id===btn.dataset.reportFisio);
+      if(s) apriReportTrattamentoFisio(c, s);
+    };
+  });
+}
+
+// ---------- Valutazione fisioterapica ----------
+// scheda dedicata (separata dalla valutazione generale di smistamento):
+// struttura minima, volutamente semplice, da ampliare quando i
+// fisioterapisti indicheranno i campi che usano davvero
+function emptyValutazioneFisio(){
+  return {
+    id: 'vf_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
+    data: fmtDateISO(new Date()),
+    motivo: '', esameObiettivo: '', diagnosiFunzionale: '', obiettivi: '', note: '',
+    professionistaId: null
+  };
+}
+function renderFisioValutazioneSection(c){
+  if(!c.valutazioniFisioterapia) c.valutazioniFisioterapia = [];
+  if(!state.valutazioneFisioDraft) state.valutazioneFisioDraft = emptyValutazioneFisio();
+  const draft = state.valutazioneFisioDraft;
+
+  const rows = c.valutazioniFisioterapia.slice().sort((a,b)=> (b.data||'').localeCompare(a.data||''));
+  const listHTML = rows.length ? rows.map(v=>{
+    const prof = state.professionisti.find(p=>p.id===v.professionistaId);
+    return `<div class="val-card">
+      <div class="val-card-top">
+        <div class="val-card-date">${v.data ? v.data.split('-').reverse().join('/') : '—'}</div>
+        <button class="val-card-del" data-del-valfisio="${v.id}" title="Elimina">×</button>
+      </div>
+      <div class="val-card-autore">${prof ? escHtml(prof.nome) : '—'}</div>
+      <div class="val-card-motivo">${escHtml(v.motivo || 'Nessun motivo indicato')}</div>
+    </div>`;
+  }).join('') : `<div class="val-empty">Nessuna valutazione fisioterapica ancora registrata per questo cliente.</div>`;
+
+  const box = document.getElementById('fisioValContent');
+  box.innerHTML = `
+    <div class="client-section-label-row"><div class="client-section-label">Valutazioni svolte</div></div>
+    <div style="margin:14px 0 24px;">${listHTML}</div>
+
+    <div class="client-section-label-row"><div class="client-section-label">Nuova valutazione fisioterapica</div></div>
+    <div class="ghi-draft-box">
+      <div class="ev-row"><div class="ev-field"><label>Data</label><input class="editable" type="date" id="vfData" value="${escAttr(draft.data)}"></div></div>
+      <div class="ev-field"><label>Motivo di invio / anamnesi</label><textarea class="editable" id="vfMotivo" rows="3">${escHtml(draft.motivo)}</textarea></div>
+      <div class="ev-field"><label>Esame obiettivo</label><textarea class="editable" id="vfEsame" rows="3">${escHtml(draft.esameObiettivo)}</textarea></div>
+      <div class="ev-field"><label>Diagnosi funzionale / ipotesi di lavoro</label><textarea class="editable" id="vfDiagnosi" rows="3">${escHtml(draft.diagnosiFunzionale)}</textarea></div>
+      <div class="ev-field"><label>Obiettivi del trattamento</label><textarea class="editable" id="vfObiettivi" rows="3">${escHtml(draft.obiettivi)}</textarea></div>
+      <div class="ev-field"><label>Note</label><textarea class="editable" id="vfNote" rows="2">${escHtml(draft.note)}</textarea></div>
+      <button class="btn-gold" id="btnSaveValFisio" style="margin-top:8px;">Salva valutazione</button>
+    </div>
+  `;
+  document.getElementById('vfData').onchange = e=> draft.data = e.target.value;
+  document.getElementById('vfMotivo').oninput = e=> draft.motivo = e.target.value;
+  document.getElementById('vfEsame').oninput = e=> draft.esameObiettivo = e.target.value;
+  document.getElementById('vfDiagnosi').oninput = e=> draft.diagnosiFunzionale = e.target.value;
+  document.getElementById('vfObiettivi').oninput = e=> draft.obiettivi = e.target.value;
+  document.getElementById('vfNote').oninput = e=> draft.note = e.target.value;
+  document.getElementById('btnSaveValFisio').onclick = ()=>{
+    const v = { ...draft, professionistaId: state.professionista ? state.professionista.id : null };
+    c.valutazioniFisioterapia.push(v);
+    db.saveCliente(c);
+    state.valutazioneFisioDraft = emptyValutazioneFisio();
+    renderFisioValutazioneSection(c);
+  };
+  box.querySelectorAll('[data-del-valfisio]').forEach(btn=>{
+    btn.onclick = ()=>{
+      c.valutazioniFisioterapia = c.valutazioniFisioterapia.filter(v=>v.id!==btn.dataset.delValfisio);
+      db.saveCliente(c);
+      renderFisioValutazioneSection(c);
+    };
+  });
+}
+
+// ---------- Schede esercizio (rinforzo) ----------
+// mirror leggero del sistema di schede di Area Performance (stessa tabella
+// esercizi: drag&drop, superserie, "per serie", note, import CSV/PDF,
+// libreria template), ma su un elenco flat per cliente (c.schedeFisioterapia)
+// invece che tenuto per profilo/pathway come state.schede — un fisio non ha
+// necessariamente un profilo/pathway di Area Performance impostato. Stato
+// editor separato (state.schedaEditorFisio) per non toccare in alcun modo
+// l'editor/stato di Area Performance.
+function emptySchedaFisio(){
+  return { id:'scf_'+Date.now()+'_'+Math.random().toString(36).slice(2,7), nome:'', data:'', esercizi:[newEsercizioRow()], durataMin:'', rpeSessione:'', istruzioni:'' };
+}
+function openSchedaEditorFisio(existing){
+  state.schedaEditorFisio = existing ? JSON.parse(JSON.stringify(existing)) : emptySchedaFisio();
+  renderFisioSchedeSection();
+}
+function closeSchedaEditorFisio(){ state.schedaEditorFisio = null; renderFisioSchedeSection(); }
+function saveSchedaEditorFisio(){
+  const c = activeClient();
+  if(!c) return;
+  if(!c.schedeFisioterapia) c.schedeFisioterapia = [];
+  const idx = c.schedeFisioterapia.findIndex(s=>s.id===state.schedaEditorFisio.id);
+  if(idx>=0) c.schedeFisioterapia[idx] = state.schedaEditorFisio; else c.schedeFisioterapia.push(state.schedaEditorFisio);
+  state.schedaEditorFisio = null;
+  db.saveCliente(c);
+  renderFisioSchedeSection();
+}
+function deleteSchedaFisio(id){
+  const c = activeClient();
+  if(!c || !c.schedeFisioterapia) return;
+  c.schedeFisioterapia = c.schedeFisioterapia.filter(s=>s.id!==id);
+  db.saveCliente(c);
+  renderFisioSchedeSection();
+}
+function useTemplateForClientFisio(t){
+  openSchedaEditorFisio({
+    id: 'scf_' + Date.now(), nome: t.nome, data: '',
+    esercizi: JSON.parse(JSON.stringify(t.esercizi)),
+    durataMin: '', rpeSessione: '', istruzioni: ''
+  });
+}
+function schedaEditorFisioHTML(){
+  const ed = state.schedaEditorFisio;
+  const srpe = computeSRPE(ed.durataMin, ed.rpeSessione);
+  let html = `<div class="scheda-editor"><div>`;
+  html += `<div class="scheda-top-fields">
+    <div><label>Nome scheda</label><input class="editable" id="edfNome" placeholder="es. Rinforzo ginocchio — Seduta 1" value="${escAttr(ed.nome)}"></div>
+    <div><label>Data</label><input class="editable" id="edfData" placeholder="gg/mm/aaaa" value="${escAttr(ed.data)}"></div>
+  </div>`;
+  html += `<div class="ev-field"><label>Istruzioni per il cliente (opzionale)</label>
+    <input class="editable" id="edfIstruzioni" value="${escAttr(ed.istruzioni||'')}" placeholder="es. Esegui lentamente, fermati se compare dolore acuto"></div>`;
+  html += `<div style="margin:10px 0;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+    <button type="button" class="btn-small" id="btnImportSchedaFisioCsv">Importa esercizi da CSV</button>
+    <input type="file" id="schedaFisioCsvFile" accept=".csv,text/csv" style="display:none;">
+    <button type="button" class="btn-small" id="btnImportSchedaFisioPdf">Importa esercizi da PDF</button>
+    <input type="file" id="schedaFisioPdfFile" accept=".pdf,application/pdf" style="display:none;">
+  </div>`;
+
+  const exGroups = computeExerciseGroups(ed.esercizi);
+  const groupOfIdx = {};
+  exGroups.forEach((g,gi)=> g.forEach(idx=> groupOfIdx[idx]=gi));
+  html += `<table class="ex-table"><thead><tr>
+    <th></th><th>Esercizio</th><th>Serie</th><th>Reps</th><th>Carico</th><th>Tempo (ecc.iso.conc)</th><th>Per serie</th><th>Nota</th><th>Superserie</th><th></th>
+  </tr></thead><tbody id="exfBody">`;
+  ed.esercizi.forEach((e,i)=>{
+    const vid = findExerciseVideo(e.nome);
+    const inGroupOfMore = exGroups[groupOfIdx[i]] && exGroups[groupOfIdx[i]].length>1;
+    const isLast = i===ed.esercizi.length-1;
+    const tempoValid = !e.tempo || /^\d+\.\d+\.\d+$/.test(e.tempo.trim());
+    const varia = !!e.serieValori;
+    const dis = varia ? 'ex-disabled-by-serievalori' : '';
+    const hasNote = e.note!==null && e.note!==undefined;
+    html += `<tr class="${inGroupOfMore ? 'ex-row-grouped' : ''}" data-group="${groupOfIdx[i]}" data-exf-row="${i}" draggable="true">
+      <td class="col-drag"><span class="ex-drag-handle" title="Trascina per riordinare gli esercizi">⠿</span></td>
+      <td class="col-ex"><div class="col-ex-wrap">
+        ${inGroupOfMore ? `<span class="ex-super-tag" title="Superserie ${groupOfIdx[i]+1}">SS${groupOfIdx[i]+1}</span>` : ''}
+        <input data-exf="${i}|nome" list="exNameOptions" value="${escAttr(e.nome)}" placeholder="es. Squat">
+        ${vid ? `<a class="ex-video-link" href="${vid.youtube}" target="_blank" rel="noopener" title="${escAttr(vid.nome)}">▶</a>` : ''}
+      </div></td>
+      <td><input data-exf="${i}|serie" value="${escAttr(e.serie)}" placeholder="3"></td>
+      <td><input class="${dis}" ${varia?'tabindex="-1"':''} data-exf="${i}|reps" value="${escAttr(e.reps)}" placeholder="10"></td>
+      <td><input class="${dis}" ${varia?'tabindex="-1"':''} data-exf="${i}|carico" value="${escAttr(e.carico)}" placeholder="kg / peso corpo"></td>
+      <td><input class="${dis} ${tempoValid ? '' : 'tempo-invalid'}" ${varia?'tabindex="-1"':''} data-exf="${i}|tempo" value="${escAttr(e.tempo||'')}" placeholder="es. 3.1.1" title="Eccentrica.Isometrica.Concentrica"></td>
+      <td class="col-serievalori"><button class="btn-serievalori-toggle ${varia?'active':''}" data-toggle-serievalori-f="${i}">${varia ? '✓ per serie' : '+ per serie'}</button></td>
+      <td class="col-note"><button class="btn-note-toggle ${hasNote?'active':''}" data-toggle-note-f="${i}">${hasNote ? '✓ nota' : '+ nota'}</button></td>
+      <td class="col-super">${isLast ? '' : `<button class="btn-super-toggle ${e.superWithNext?'active':''}" data-super-exf="${i}">${e.superWithNext ? '🔗 collegato' : '+ collega'}</button>`}</td>
+      <td class="col-rm"><button class="ex-remove" data-rm-exf="${i}" title="Rimuovi">×</button></td>
+    </tr>`;
+    if(varia){
+      html += `<tr class="ex-serievalori-row"><td></td><td></td><td colspan="7">
+        <div class="ex-serie-grid">
+          ${e.serieValori.map((sv,si)=>`<div class="ex-serie-cell">
+            <span class="ex-serie-num">Serie ${si+1}</span>
+            <input data-exfsv="${i}|${si}|reps" value="${escAttr(sv.reps||'')}" placeholder="reps">
+            <input data-exfsv="${i}|${si}|carico" value="${escAttr(sv.carico||'')}" placeholder="kg">
+            <input data-exfsv="${i}|${si}|tempo" value="${escAttr(sv.tempo||'')}" placeholder="tempo">
+          </div>`).join('')}
+        </div>
+      </td></tr>`;
+    }
+    if(hasNote){
+      html += `<tr class="ex-note-row"><td></td><td></td><td colspan="7">
+        <textarea class="ex-note-input" data-exfnote="${i}" rows="2" placeholder="Nota per il cliente su questo esercizio">${escHtml(e.note||'')}</textarea>
+      </td></tr>`;
+    }
+  });
+  html += `</tbody></table>`;
+  html += `<button class="btn-add-row" id="btnAddExFisio">+ Aggiungi esercizio</button>`;
+
+  html += `<div class="srpe-box">
+    <div><label>Durata sessione (min)</label><input class="editable" id="edfDurata" value="${escAttr(ed.durataMin)}" placeholder="30"></div>
+    <div><label>RPE sessione (1-10)</label><input class="editable" id="edfRpeSess" value="${escAttr(ed.rpeSessione)}" placeholder="5"></div>
+    <div class="srpe-result">sRPE (Foster) <b id="srpeFisioValue">${srpe!==null ? srpe+' AU' : '—'}</b></div>
+  </div>`;
+
+  html += `<div class="editor-actions">
+    <button class="btn-small" id="btnCancelSchedaFisio">Annulla</button>
+    <button class="btn-gold" id="btnSaveSchedaFisio">Salva scheda</button>
+  </div>`;
+  html += `</div></div>`;
+  return html;
+}
+function bindSchedaEventsFisio(box){
+  const btnNewScheda = document.getElementById('btnNewSchedaFisio');
+  if(btnNewScheda) btnNewScheda.onclick = ()=> openSchedaEditorFisio(null);
+  const btnFromTemplate = document.getElementById('btnFromTemplateFisio');
+  if(btnFromTemplate) btnFromTemplate.onclick = ()=>{
+    state.templatePickForSchedaFisio = true;
+    renderTemplateLibrary();
+    document.getElementById('templateLibraryModal').classList.add('open');
+  };
+  box.querySelectorAll('[data-edit-scheda-f]').forEach(btn=>{
+    btn.onclick = ()=>{
+      const c = activeClient();
+      const s = (c.schedeFisioterapia||[]).find(x=>x.id===btn.dataset.editSchedaF);
+      if(s) openSchedaEditorFisio(s);
+    };
+  });
+  box.querySelectorAll('[data-del-scheda-f]').forEach(btn=>{
+    btn.onclick = ()=>{ if(confirm('Eliminare questa scheda?')) deleteSchedaFisio(btn.dataset.delSchedaF); };
+  });
+  box.querySelectorAll('[data-dl-scheda-f]').forEach(btn=>{
+    btn.onclick = ()=>{
+      const c = activeClient();
+      const s = (c.schedeFisioterapia||[]).find(x=>x.id===btn.dataset.dlSchedaF);
+      if(s) downloadScheda(s);
+    };
+  });
+
+  if(!state.schedaEditorFisio) return;
+  const ed = state.schedaEditorFisio;
+  const updateSrpeFisio = ()=>{ const s=computeSRPE(ed.durataMin, ed.rpeSessione); const sp=document.getElementById('srpeFisioValue'); if(sp) sp.textContent = s!==null? s+' AU':'—'; };
+  document.getElementById('edfNome').oninput = e=> ed.nome = e.target.value;
+  document.getElementById('edfData').oninput = e=> ed.data = e.target.value;
+  document.getElementById('edfDurata').oninput = e=>{ ed.durataMin = e.target.value; updateSrpeFisio(); };
+  document.getElementById('edfRpeSess').oninput = e=>{ ed.rpeSessione = e.target.value; updateSrpeFisio(); };
+  document.getElementById('edfIstruzioni').oninput = e=>{ ed.istruzioni = e.target.value; };
+
+  const btnImportCsv = document.getElementById('btnImportSchedaFisioCsv');
+  if(btnImportCsv) btnImportCsv.onclick = ()=> document.getElementById('schedaFisioCsvFile').click();
+  const csvFile = document.getElementById('schedaFisioCsvFile');
+  if(csvFile) csvFile.onchange = (e)=>{
+    const file = e.target.files[0]; if(!file) return;
+    const reader = new FileReader();
+    reader.onload = ()=>{
+      try{
+        const rowsCsv = parseCSV(String(reader.result||''));
+        if(!rowsCsv.length){ alert('Il file CSV non contiene righe valide.'); return; }
+        const nuovi = csvRowsToEsercizi(rowsCsv);
+        if(!nuovi.length){ alert('Non è stato possibile riconoscere esercizi nel CSV.'); return; }
+        const hasContent = ed.esercizi.some(x=>x.nome);
+        if(hasContent && !confirm(`Sostituire gli esercizi attuali con i ${nuovi.length} importati dal CSV?`)) return;
+        ed.esercizi = nuovi;
+        renderFisioSchedeSection();
+      } catch(ex){ alert('Errore nella lettura del CSV: ' + ((ex && ex.message) || ex)); }
+    };
+    reader.readAsText(file, 'UTF-8');
+    e.target.value = '';
+  };
+  const btnImportPdf = document.getElementById('btnImportSchedaFisioPdf');
+  if(btnImportPdf) btnImportPdf.onclick = ()=> document.getElementById('schedaFisioPdfFile').click();
+  const pdfFile = document.getElementById('schedaFisioPdfFile');
+  if(pdfFile) pdfFile.onchange = async (e)=>{
+    const file = e.target.files[0]; if(!file) return;
+    e.target.value = '';
+    try{
+      const text = await extractPdfText(file);
+      const nuovi = pdfTextToEsercizi(text);
+      if(!nuovi.length){ alert('Non è stato possibile riconoscere esercizi nel PDF.'); return; }
+      const hasContent = ed.esercizi.some(x=>x.nome);
+      if(hasContent && !confirm(`Sostituire gli esercizi attuali con i ${nuovi.length} riconosciuti nel PDF?`)) return;
+      ed.esercizi = nuovi;
+      renderFisioSchedeSection();
+    } catch(ex){ alert('Errore nella lettura del PDF: ' + ((ex && ex.message) || ex)); }
+  };
+
+  box.querySelectorAll('[data-exf]').forEach(inp=>{
+    inp.oninput = ()=>{
+      const [idx, field] = inp.dataset.exf.split('|');
+      const e = ed.esercizi[parseInt(idx,10)];
+      e[field] = inp.value;
+      if(field==='nome') updateExerciseVideoLink(inp);
+      if(field==='tempo') inp.classList.toggle('tempo-invalid', !!inp.value.trim() && !/^\d+\.\d+\.\d+$/.test(inp.value.trim()));
+      if(field==='serie' && e.serieValori){ syncSerieValori(e); renderFisioSchedeSection(); }
+    };
+  });
+  box.querySelectorAll('[data-toggle-serievalori-f]').forEach(btn=>{
+    btn.onclick = ()=>{ toggleSerieValori(ed.esercizi[parseInt(btn.dataset.toggleSerievaloriF,10)]); renderFisioSchedeSection(); };
+  });
+  box.querySelectorAll('[data-toggle-note-f]').forEach(btn=>{
+    btn.onclick = ()=>{
+      const ex = ed.esercizi[parseInt(btn.dataset.toggleNoteF,10)];
+      ex.note = (ex.note===null || ex.note===undefined) ? '' : null;
+      renderFisioSchedeSection();
+    };
+  });
+  box.querySelectorAll('[data-exfnote]').forEach(ta=>{
+    ta.oninput = ()=>{ ed.esercizi[parseInt(ta.dataset.exfnote,10)].note = ta.value; };
+  });
+  box.querySelectorAll('[data-exfsv]').forEach(inp=>{
+    inp.oninput = ()=>{
+      const [idx, si, field] = inp.dataset.exfsv.split('|');
+      const e = ed.esercizi[parseInt(idx,10)];
+      if(e.serieValori && e.serieValori[parseInt(si,10)]) e.serieValori[parseInt(si,10)][field] = inp.value;
+    };
+  });
+  box.querySelectorAll('[data-rm-exf]').forEach(btn=>{
+    btn.onclick = ()=>{
+      ed.esercizi.splice(parseInt(btn.dataset.rmExf,10),1);
+      if(ed.esercizi.length===0) ed.esercizi.push(newEsercizioRow());
+      renderFisioSchedeSection();
+    };
+  });
+  box.querySelectorAll('[data-super-exf]').forEach(btn=>{
+    btn.onclick = ()=>{
+      const idx = parseInt(btn.dataset.superExf,10);
+      ed.esercizi[idx].superWithNext = !ed.esercizi[idx].superWithNext;
+      renderFisioSchedeSection();
+    };
+  });
+
+  let dragSrcIdx = null;
+  box.querySelectorAll('[data-exf-row]').forEach(row=>{
+    row.addEventListener('dragstart', (e)=>{
+      dragSrcIdx = parseInt(row.dataset.exfRow,10);
+      row.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      try{ e.dataTransfer.setData('text/plain', String(dragSrcIdx)); }catch(ex){}
+    });
+    row.addEventListener('dragend', ()=>{
+      row.classList.remove('dragging');
+      box.querySelectorAll('.ex-drop-target').forEach(r=>r.classList.remove('ex-drop-target'));
+    });
+    row.addEventListener('dragover', (e)=>{
+      e.preventDefault(); e.dataTransfer.dropEffect = 'move';
+      if(dragSrcIdx!==null && parseInt(row.dataset.exfRow,10)!==dragSrcIdx) row.classList.add('ex-drop-target');
+    });
+    row.addEventListener('dragleave', ()=>{ row.classList.remove('ex-drop-target'); });
+    row.addEventListener('drop', (e)=>{
+      e.preventDefault(); row.classList.remove('ex-drop-target');
+      const targetIdx = parseInt(row.dataset.exfRow,10);
+      if(dragSrcIdx===null || dragSrcIdx===targetIdx) return;
+      const [moved] = ed.esercizi.splice(dragSrcIdx,1);
+      ed.esercizi.splice(targetIdx,0,moved);
+      dragSrcIdx = null;
+      renderFisioSchedeSection();
+    });
+  });
+
+  const btnAddEx = document.getElementById('btnAddExFisio');
+  if(btnAddEx) btnAddEx.onclick = ()=>{ ed.esercizi.push(newEsercizioRow()); renderFisioSchedeSection(); };
+  const btnCancel = document.getElementById('btnCancelSchedaFisio');
+  if(btnCancel) btnCancel.onclick = closeSchedaEditorFisio;
+  const btnSave = document.getElementById('btnSaveSchedaFisio');
+  if(btnSave) btnSave.onclick = saveSchedaEditorFisio;
+}
+function renderFisioSchedeSection(){
+  const c = activeClient();
+  const box = document.getElementById('fisioSchedeContent');
+  if(!c || !box) return;
+  if(!c.schedeFisioterapia) c.schedeFisioterapia = [];
+  const list = c.schedeFisioterapia;
+  let html = `<div class="scheda-section-head">
+     <div class="section-label" style="margin-bottom:0;">Schede esercizio</div>
+     ${state.schedaEditorFisio ? '' : `<div style="display:flex;gap:8px;align-items:center;">
+       <button class="btn-add-scheda" id="btnFromTemplateFisio">+ Da template</button>
+       <button class="btn-add-scheda" id="btnNewSchedaFisio">+ Nuova scheda</button>
+     </div>`}
+   </div>`;
+  if(state.schedaEditorFisio){
+    html += schedaEditorFisioHTML();
+  } else if(list.length===0){
+    html += `<div class="scheda-empty">Nessuna scheda creata. Usa "Nuova scheda" per costruirla con esercizi, carichi e RPE.</div>`;
+  } else {
+    html += `<div class="scheda-list">`;
+    list.slice().sort((a,b)=>(b.data||'').localeCompare(a.data||'')).forEach(s=>{
+      const srpe = computeSRPE(s.durataMin, s.rpeSessione);
+      html += `<div class="scheda-card">
+        <div class="info">
+          <b>${escHtml(s.nome || '(senza nome)')}${s.data ? ' — ' + escHtml(s.data) : ''}</b>
+          <span>${s.esercizi.length} esercizi${srpe!==null ? ' · sRPE ' + srpe + ' AU' : ''}</span>
+        </div>
+        <div class="actions">
+          <button class="btn-download" data-dl-scheda-f="${s.id}">Scarica</button>
+          <button class="btn-small" data-edit-scheda-f="${s.id}">Modifica</button>
+          <button class="btn-small danger" data-del-scheda-f="${s.id}">Elimina</button>
+        </div>
+      </div>`;
+    });
+    html += `</div>`;
+  }
+  box.innerHTML = html;
+  bindSchedaEventsFisio(box);
+}
+
+// ---------- orchestratore tab Area Fisioterapia (3 sotto-sezioni) ----------
 function renderFisioterapiaTab(){
+  const c = activeClient();
   const box = document.getElementById('fisioterapiaContent');
-  if(!box) return;
-  box.innerHTML = `<div class="val-empty">Area Fisioterapia in arrivo: qui troverai il percorso dedicato al fisioterapista (es. fasi iniziali di un rientro da LCA), collegato all'Area Performance.</div>`;
+  if(!c || !box) return;
+  if(!state.fisioSubTab) state.fisioSubTab = 'valutazione';
+
+  box.innerHTML = `
+    <div class="cal-mode-toggle" style="margin-bottom:18px;">
+      <div class="cal-mode-opt ${state.fisioSubTab==='valutazione'?'active':''}" data-fisiosubtab="valutazione">Valutazione</div>
+      <div class="cal-mode-opt ${state.fisioSubTab==='trattamenti'?'active':''}" data-fisiosubtab="trattamenti">Trattamenti</div>
+      <div class="cal-mode-opt ${state.fisioSubTab==='schede'?'active':''}" data-fisiosubtab="schede">Schede esercizio</div>
+    </div>
+    <div id="fisioValContent" style="${state.fisioSubTab==='valutazione'?'':'display:none;'}"></div>
+    <div id="fisioTrattContent" style="${state.fisioSubTab==='trattamenti'?'':'display:none;'}"></div>
+    <div id="fisioSchedeContent" style="${state.fisioSubTab==='schede'?'':'display:none;'}"></div>
+  `;
+  box.querySelectorAll('[data-fisiosubtab]').forEach(btn=>{
+    btn.onclick = ()=>{ state.fisioSubTab = btn.dataset.fisiosubtab; renderFisioterapiaTab(); };
+  });
+  if(state.fisioSubTab==='valutazione') renderFisioValutazioneSection(c);
+  else if(state.fisioSubTab==='trattamenti') renderFisioTrattamentiSection(c);
+  else renderFisioSchedeSection();
 }
 
 // ==================== STORICO (tutti i trattamenti del cliente) ====================
@@ -7770,7 +8403,7 @@ function downloadScheda(scheda){
       .box{background:#f7f3e8;border:1px solid #e0d3a8;border-radius:4px;padding:12px 14px;font-size:13px;margin-bottom:16px;}
     </style></head><body>
     <h1>${scheda.nome || '(scheda senza nome)'}</h1>
-    <div class="meta">${state.pathway} · Fase: ${scheda.fase}${scheda.data ? ' · ' + scheda.data : ''}</div>
+    <div class="meta">${[state.pathway, scheda.fase ? 'Fase: '+scheda.fase : null, scheda.data || null].filter(Boolean).join(' · ')}</div>
     <table><thead><tr><th>Esercizio</th><th>Serie</th><th>Reps</th><th>Carico</th><th>Tempo</th></tr></thead>
     <tbody>${rows}</tbody></table>
     ${srpe!==null ? `<div class="box">Durata: ${scheda.durataMin} min · RPE sessione: ${scheda.rpeSessione} · <b>sRPE (Foster): ${srpe} AU</b></div>` : ''}
