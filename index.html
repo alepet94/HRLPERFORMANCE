@@ -607,8 +607,9 @@ header.top{
 .btn-serievalori-toggle.active{border-color:var(--gold-line);color:var(--gold-bright);background:var(--gold-dim);}
 .ex-table input.ex-disabled-by-serievalori{opacity:.35;pointer-events:none;}
 .ex-serievalori-row td{padding:0 6px 10px;}
-.ex-serie-grid{display:flex;flex-wrap:wrap;gap:8px;background:var(--navy-800);border:1px solid var(--line);border-radius:3px;padding:10px;}
-.ex-serie-cell{display:flex;flex-direction:column;gap:4px;min-width:84px;}
+.ex-serie-grid{display:grid;grid-template-columns:repeat(5, minmax(84px, 1fr));gap:8px;background:var(--navy-800);border:1px solid var(--line);border-radius:3px;padding:10px;}
+@media (max-width:700px){.ex-serie-grid{grid-template-columns:repeat(3, minmax(84px, 1fr));}}
+.ex-serie-cell{display:flex;flex-direction:column;gap:4px;}
 .ex-serie-num{font-size:9.5px;color:var(--gold);text-transform:uppercase;letter-spacing:.04em;}
 .ex-serie-cell input{background:var(--navy-900,#0e1420);border:1px solid var(--line);border-radius:2px;color:var(--ink);font-family:var(--sans);font-size:12px;padding:5px 6px;width:100%;}
 .ex-serie-cell input:focus{outline:none;border-color:var(--gold-line);}
