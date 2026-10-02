@@ -1793,8 +1793,8 @@ body[data-theme="light"]{
     <div class="cli-tab active" data-tab="valutazioni">Valutazione</div>
     <div class="cli-tab" data-tab="sistema">Sistema</div>
     <div class="cli-tab" data-tab="areaHuman">Area Human</div>
-    <div class="cli-tab" data-tab="pathway">Area Performance</div>
     <div class="cli-tab" data-tab="fisioterapia">Area Fisioterapia</div>
+    <div class="cli-tab" data-tab="pathway">Area Performance</div>
     <div class="cli-tab" data-tab="storico">Storico</div>
     <div class="cli-tab" data-tab="calendario">Calendario cliente</div>
   </div>
@@ -4246,6 +4246,21 @@ function valPercorsoPointerHTML(c){
   return `${summary || '<div class="val-view-text">Percorso non ancora impostato.</div>'}
     <div style="font-size:11.5px;color:var(--ink-mute);margin-top:8px;">Le aree attive, i professionisti assegnati e il "via libera" si gestiscono dalla tab Sistema.</div>`;
 }
+// controllo di qualità: oltre a chi la compila, un admin o la Nutrizionista
+// deve poter "visionare e avvallare" la prima valutazione — un singolo
+// passaggio esplicito (non implicito nel percorso), registrato con chi e
+// quando, e visibile anche nello Storico (Ale: "deve esserci scritto chi e
+// quando l'ha fatta, e dopo quando è stata visionata e avvallata da un
+// admin"). Stessa competenza di canEditPersonaValutazione (admin/Nutrizionista).
+function valRevisioneApprovazioneHTML(v){
+  if(v.revisionatoDa){
+    return `<div class="val-view-text">✓ Visionata e avvallata da ${escHtml(v.revisionatoDa)}${v.revisionatoIl ? ' il ' + v.revisionatoIl.split('-').reverse().join('/') : ''}</div>`;
+  }
+  if(canEditPersonaValutazione()){
+    return `<div class="val-view-text" style="margin-bottom:8px;">Non ancora revisionata.</div><button type="button" class="btn-gold" id="btnApprovaValutazione">✓ Segna come visionata e avvallata</button>`;
+  }
+  return `<div class="val-view-text">In attesa di revisione da parte di un admin o della Nutrizionista.</div>`;
+}
 
 function valAlimentazioneHTML(v){
   const a = v.alimentazione;
@@ -4351,6 +4366,10 @@ function renderValutazioneView(){
   </div>
   <div class="val-view-meta"><div>Data valutazione <b>${dataFmt}</b></div><div>Fatta da <b>${escHtml(v.autore||'—')}</b></div></div>`;
 
+  html += `<div class="val-section val-esito-section"><div class="val-section-title">Revisione</div>
+    ${valRevisioneApprovazioneHTML(v)}
+  </div>`;
+
   VAL_SEZIONI.slice(0,2).forEach(sez=>{
     const fieldsHtml = sez.campi.map(c=>valFieldViewHTML(v,c)).join('');
     html += `<div class="val-section"><div class="val-section-title">${sez.title}</div><div class="ev-row val-field-grid">
@@ -4411,6 +4430,13 @@ function renderValutazioneView(){
   document.getElementById('btnValReportPdf').onclick = ()=>{
     const c = activeClient();
     if(c) apriReportValutazione(c, v);
+  };
+  const btnApprova = document.getElementById('btnApprovaValutazione');
+  if(btnApprova) btnApprova.onclick = ()=>{
+    v.revisionatoDa = state.professionista ? state.professionista.nome : null;
+    v.revisionatoIl = fmtDateISO(new Date());
+    syncClientFromState();
+    renderValutazioneView();
   };
 }
 
@@ -6218,7 +6244,7 @@ function renderStoricoTab(){
   const c = activeClient();
   const box = document.getElementById('storicoContent');
   if(!c || !box) return;
-  if(!state.storicoFiltri) state.storicoFiltri = { area:'', profId:'', da:'', a:'' };
+  if(!state.storicoFiltri) state.storicoFiltri = { area:'', profId:'', da:'', a:'', nascondiTrattamenti:false };
   const f = state.storicoFiltri;
   const todayStr = fmtDateISO(new Date());
   const tuttiApp = state.appuntamenti.filter(a=>a.clienteId===c.id);
@@ -6231,14 +6257,19 @@ function renderStoricoTab(){
   const giorniConTrattamentoSvolto = new Set(schedeOsteo.map(s=>s.data).filter(Boolean));
   const svoltiApp = tuttiApp.filter(a=>a.day < todayStr);
   const prossimi = tuttiApp.filter(a=>a.day >= todayStr && !giorniConTrattamentoSvolto.has(a.day));
+  const valutazioniGenerali = c.valutazioni || [];
+  const valutazioniFisio = c.valutazioniFisioterapia || [];
+  const trattamentiFisio = c.trattamentiFisioterapia || [];
 
   const profIds = new Set();
   tuttiApp.forEach(a=>{ if(a.professionistaId) profIds.add(a.professionistaId); });
   schedeOsteo.forEach(s=>{ if(s.professionistaId) profIds.add(s.professionistaId); });
+  trattamentiFisio.forEach(s=>{ if(s.professionistaId) profIds.add(s.professionistaId); });
+  valutazioniFisio.forEach(v=>{ if(v.professionistaId) profIds.add(v.professionistaId); });
   const profOptions = state.professionisti.filter(p=> profIds.has(p.id));
 
   box.innerHTML = `
-    <div class="client-section-label-row"><div class="client-section-label">Storico trattamenti</div></div>
+    <div class="client-section-label-row"><div class="client-section-label">Storico — ogni passaggio svolto dai professionisti</div></div>
     <div class="storico-filtri">
       <select class="editable" id="stFiltroArea">
         <option value="">Tutte le aree</option>
@@ -6253,9 +6284,10 @@ function renderStoricoTab(){
       </select>
       <input class="editable" type="date" id="stFiltroDa" placeholder="Da">
       <input class="editable" type="date" id="stFiltroA" placeholder="A">
+      <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--ink-mute);"><input type="checkbox" id="stNascondiTrattamenti" ${f.nascondiTrattamenti?'checked':''}> Nascondi trattamenti</label>
       <button class="btn-ghost" id="btnStFiltriReset">Azzera filtri</button>
     </div>
-    <div class="client-section-label-row" style="margin-top:20px;"><div class="client-section-label">Trattamenti svolti</div></div>
+    <div class="client-section-label-row" style="margin-top:20px;"><div class="client-section-label">Passaggi svolti</div></div>
     <div id="stListaSvolti" style="margin-top:10px;"></div>
     <div class="client-section-label-row" style="margin-top:24px;"><div class="client-section-label">Prossimi appuntamenti</div></div>
     <div id="stListaProssimi" style="margin-top:10px;"></div>
@@ -6271,6 +6303,64 @@ function renderStoricoTab(){
       <div class="ui-info">
         <div class="uid"><span class="tipo-tag tipo-tag-${a.tipo}">${tipoLabel(a.tipo)}</span> ${escHtml(a.titolo || tipoLabel(a.tipo))}</div>
         <div class="uim">${a.day.split('-').reverse().join('/')} · ${a.start}–${a.end} · ${STORICO_AREA_LBL[storicoAreaOf(a)]}${prof ? ' · '+escHtml(prof.nome) : ''}</div>
+      </div>
+    </div>`;
+  }
+  // la prima valutazione e le eventuali valutazioni successive (smistamento
+  // generale) e le valutazioni di Area Fisioterapia compaiono anch'esse nello
+  // storico, come richiesto — ognuna taggata con l'area di competenza così i
+  // filtri esistenti ('sistema'/'fisioterapia') le intercettano già
+  function valGeneraleHTML(v){
+    return `<div class="upcoming-item tipo-border-retest">
+      <div class="ui-info">
+        <div class="uid"><span class="tipo-tag tipo-tag-retest">Valutazione</span> ${escHtml(v.autore || '—')}</div>
+        <div class="uim">${v.data ? v.data.split('-').reverse().join('/') : '—'} · Sistema (smistamento)</div>
+      </div>
+      <div style="display:flex;align-items:center;">
+        <button class="btn-small" data-storico-apri-val="${v.id}">Apri</button>
+      </div>
+    </div>`;
+  }
+  function valFisioHTML(v){
+    const prof = v.professionistaId ? state.professionisti.find(p=>p.id===v.professionistaId) : null;
+    return `<div class="upcoming-item tipo-border-retest">
+      <div class="ui-info">
+        <div class="uid"><span class="tipo-tag tipo-tag-retest">Valutazione fisioterapica</span> ${escHtml(v.motivo || 'Nessun motivo indicato')}</div>
+        <div class="uim">${v.data ? v.data.split('-').reverse().join('/') : '—'} · Area Fisioterapia${prof ? ' · '+escHtml(prof.nome) : ''}</div>
+      </div>
+    </div>`;
+  }
+  // il passaggio successivo alla compilazione — "visionata e avvallata" da un
+  // admin/Nutrizionista — è un evento a sé nello storico, non solo un testo
+  // dentro la valutazione: compare dopo la valutazione stessa quando c'è
+  function revisioneHTML(v){
+    return `<div class="upcoming-item tipo-border-retest">
+      <div class="ui-info">
+        <div class="uid"><span class="tipo-tag tipo-tag-retest">Revisione valutazione</span> ${escHtml(v.revisionatoDa || '—')}</div>
+        <div class="uim">${v.revisionatoIl ? v.revisionatoIl.split('-').reverse().join('/') : '—'} · Visionata e avvallata</div>
+      </div>
+    </div>`;
+  }
+  // i trattamenti di Area Fisioterapia (mobilizzazione/scarico/tecarterapia)
+  // mancavano dallo Storico — stesso trattamento dato alle schede osteopatia
+  function fisioTrattHTML(s){
+    const prof = s.professionistaId ? state.professionisti.find(p=>p.id===s.professionistaId) : null;
+    const tipiLbl = s.tipi.map(t=>TRATTAMENTO_FISIO_LABELS[t] || t).join(', ') || '—';
+    const vedePrivata = canSeeFisioPrivata(s);
+    const blocks = fisioTrattamentoBlocks(s);
+    const dettaglioHTML = blocks.length ? blocks.map(b=>{
+      const reportPart = `<b>${escHtml(b.titolo)}:</b> ${b.report ? escHtml(b.report) : 'nessuna nota'}`;
+      const privataPart = vedePrivata && b.privata ? ` <span style="color:var(--ink-mute);">(🔒 ${escHtml(b.privata)})</span>` : '';
+      return `<div>${reportPart}${privataPart}</div>`;
+    }).join('') : '<div>Nessuna nota</div>';
+    return `<div class="upcoming-item tipo-border-allenamento">
+      <div class="ui-info">
+        <div class="uid"><span class="tipo-tag tipo-tag-allenamento">Fisioterapia</span> ${escHtml(tipiLbl)}</div>
+        <div class="uim">${s.data ? s.data.split('-').reverse().join('/') : '—'} · Area Fisioterapia${prof ? ' · '+escHtml(prof.nome) : ''}</div>
+        <div class="uim" style="margin-top:4px;">${dettaglioHTML}</div>
+      </div>
+      <div style="display:flex;align-items:center;">
+        <button class="btn-small" data-storico-report-fisiotratt="${s.id}">📄 Report PDF</button>
       </div>
     </div>`;
   }
@@ -6303,29 +6393,69 @@ function renderStoricoTab(){
       if(f.da && a.day < f.da) return false;
       if(f.a && a.day > f.a) return false;
       return true;
-    }).map(a=>({ key: a.day+a.start, html: appHTML(a) }));
+    }).map(a=>({ key: a.day+a.start, html: appHTML(a), kind:'trattamento' }));
     const svoltiOsteo = (f.area && f.area!=='areaHuman') ? [] : schedeOsteo.filter(s=>{
       if(f.profId && s.professionistaId!==f.profId) return false;
       if(f.da && (s.data||'') < f.da) return false;
       if(f.a && (s.data||'') > f.a) return false;
       return true;
-    }).map(s=>({ key: (s.data||'')+'z', html: osteoHTML(s) }));
-    const svoltiAll = svoltiRows.concat(svoltiOsteo).sort((a,b)=> b.key.localeCompare(a.key));
+    }).map(s=>({ key: (s.data||'')+'z', html: osteoHTML(s), kind:'trattamento' }));
+    const svoltiFisioTratt = (f.area && f.area!=='fisioterapia') ? [] : trattamentiFisio.filter(s=>{
+      if(f.profId && s.professionistaId!==f.profId) return false;
+      if(f.da && (s.data||'') < f.da) return false;
+      if(f.a && (s.data||'') > f.a) return false;
+      return true;
+    }).map(s=>({ key: (s.data||'')+'y', html: fisioTrattHTML(s), kind:'trattamento' }));
+    const svoltiValGenerali = (f.area && f.area!=='sistema') ? [] : valutazioniGenerali.filter(v=>{
+      if(f.da && (v.data||'') < f.da) return false;
+      if(f.a && (v.data||'') > f.a) return false;
+      return true;
+    }).map(v=>({ key: (v.data||'')+'a', html: valGeneraleHTML(v), kind:'valutazione' }));
+    // il "visionata e avvallata" compare come riga propria, datata col giorno
+    // della revisione (non della valutazione), così appare DOPO in ordine
+    // cronologico quando la revisione arriva giorni/settimane più tardi
+    const svoltiRevisioni = (f.area && f.area!=='sistema') ? [] : valutazioniGenerali.filter(v=> v.revisionatoDa).filter(v=>{
+      if(f.da && (v.revisionatoIl||'') < f.da) return false;
+      if(f.a && (v.revisionatoIl||'') > f.a) return false;
+      return true;
+    }).map(v=>({ key: (v.revisionatoIl||'')+'a2', html: revisioneHTML(v), kind:'revisione' }));
+    const svoltiValFisio = (f.area && f.area!=='fisioterapia') ? [] : valutazioniFisio.filter(v=>{
+      if(f.profId && v.professionistaId!==f.profId) return false;
+      if(f.da && (v.data||'') < f.da) return false;
+      if(f.a && (v.data||'') > f.a) return false;
+      return true;
+    }).map(v=>({ key: (v.data||'')+'b', html: valFisioHTML(v), kind:'valutazione' }));
+    let svoltiAll = svoltiRows.concat(svoltiOsteo).concat(svoltiFisioTratt).concat(svoltiValGenerali).concat(svoltiRevisioni).concat(svoltiValFisio);
+    if(f.nascondiTrattamenti) svoltiAll = svoltiAll.filter(r=> r.kind!=='trattamento');
+    svoltiAll = svoltiAll.sort((a,b)=> b.key.localeCompare(a.key));
 
-    const prossimiRows = prossimi.filter(a=>{
+    let prossimiRows = prossimi.filter(a=>{
       if(f.area && storicoAreaOf(a)!==f.area) return false;
       if(f.profId && a.professionistaId!==f.profId) return false;
       if(f.da && a.day < f.da) return false;
       if(f.a && a.day > f.a) return false;
       return true;
     }).sort((a,b)=> (a.day+a.start).localeCompare(b.day+b.start));
+    if(f.nascondiTrattamenti) prossimiRows = [];
 
     const svBox = document.getElementById('stListaSvolti');
-    svBox.innerHTML = svoltiAll.length ? svoltiAll.map(r=>r.html).join('') : `<div class="val-empty">Nessun trattamento svolto trovato con questi filtri.</div>`;
+    svBox.innerHTML = svoltiAll.length ? svoltiAll.map(r=>r.html).join('') : `<div class="val-empty">Nessun passaggio trovato con questi filtri.</div>`;
     svBox.querySelectorAll('[data-storico-report-osteo]').forEach(btn=>{
       btn.onclick = ()=>{
         const s = schedeOsteo.find(x=>x.id===btn.dataset.storicoReportOsteo);
         if(s) apriReportOsteopatia(c, s);
+      };
+    });
+    svBox.querySelectorAll('[data-storico-report-fisiotratt]').forEach(btn=>{
+      btn.onclick = ()=>{
+        const s = trattamentiFisio.find(x=>x.id===btn.dataset.storicoReportFisiotratt);
+        if(s) apriReportTrattamentoFisio(c, s);
+      };
+    });
+    svBox.querySelectorAll('[data-storico-apri-val]').forEach(btn=>{
+      btn.onclick = ()=>{
+        const v = valutazioniGenerali.find(x=>x.id===btn.dataset.storicoApriVal);
+        if(v){ activateClientTab('valutazioni'); openValutazioneEditor(v, false); }
       };
     });
 
@@ -6338,8 +6468,9 @@ function renderStoricoTab(){
   document.getElementById('stFiltroProf').onchange = (e)=>{ f.profId = e.target.value; renderListe(); };
   document.getElementById('stFiltroDa').onchange = (e)=>{ f.da = e.target.value; renderListe(); };
   document.getElementById('stFiltroA').onchange = (e)=>{ f.a = e.target.value; renderListe(); };
+  document.getElementById('stNascondiTrattamenti').onchange = (e)=>{ f.nascondiTrattamenti = e.target.checked; renderListe(); };
   document.getElementById('btnStFiltriReset').onclick = ()=>{
-    state.storicoFiltri = { area:'', profId:'', da:'', a:'' };
+    state.storicoFiltri = { area:'', profId:'', da:'', a:'', nascondiTrattamenti:false };
     renderStoricoTab();
   };
 }
