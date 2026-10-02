@@ -1187,10 +1187,24 @@ header.top{
 }
 .val-scale-btn.sel{border-color:var(--client-accent);background:var(--client-accent);color:#08211F;}
 .val-editor-actions{border-top:1px solid var(--line-soft);padding-top:18px;margin-top:8px;}
+.val-legacy-note{
+  font-size:11.5px;color:var(--ink-mute);background:var(--navy-850);border:1px solid var(--line);
+  border-radius:8px;padding:8px 10px;margin-bottom:12px;font-style:italic;
+}
+.val-pasti-grid{display:flex;flex-direction:column;gap:10px;}
+.val-pasto-row{display:grid;grid-template-columns:110px 1fr 110px;gap:10px;align-items:start;}
+.val-pasto-label{font-size:11px;color:var(--ink-mute);text-transform:uppercase;letter-spacing:.04em;padding-top:8px;}
+.val-pasto-row textarea{width:100%;}
+.val-pasto-orario{align-self:start;}
+.val-energia-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px 20px;}
+.val-energia-item label{display:block;font-size:11px;color:var(--ink-mute);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;}
 @media (max-width:640px){
   .val-field-grid{grid-template-columns:1fr;}
   .val-persona-grid{grid-template-columns:1fr;}
   .val-ruota-sliders{grid-template-columns:1fr;}
+  .val-pasto-row{grid-template-columns:1fr;}
+  .val-pasto-label{padding-top:0;}
+  .val-energia-grid{grid-template-columns:1fr;}
 }
 
 /* ---------- vista cliente: identità visiva distinta (accento blu) ---------- */
@@ -3726,12 +3740,9 @@ const VAL_SEZIONI = [
   {title:'Metabolismo', campi:[
     {key:'allergie', label:'Allergie'},
     {key:'alcol', label:'Alcol'},
-    {key:'sonno', label:'Sonno (ora add., sveglia, turni, risvegli, orario)', full:true, textarea:true},
-    {key:'energiaGiorno', label:'Energia (al risveglio, mattina, pomeriggio, sera)', full:true, textarea:true},
     {key:'attivitaFisica', label:'Attività fisica (tipo, fr. sett., tempo, orario)', full:true, textarea:true},
     {key:'sistemaDigestivo', label:'Sistema digestivo'},
-    {key:'situazioneOrmonale', label:'Situazione ormonale'},
-    {key:'alimentazione', label:'Alimentazione (colazione, pranzo, cena, orari)', full:true, textarea:true}
+    {key:'situazioneOrmonale', label:'Situazione ormonale'}
   ]},
   {title:'Emozionale', campi:[
     {key:'emozionaleNote', label:'Osservazioni generali', full:true, textarea:true},
@@ -3759,6 +3770,54 @@ const VAL_PERSONA_ASSI = [
   {key:'asse4', a:'devo', b:'scelgo'}
 ];
 
+// alimentazione/sonno/energia: in origine erano 3 campi a testo libero dentro
+// Metabolismo (VAL_SEZIONI); su richiesta di Ale sono diventati mini-form
+// strutturati con blocchi più piccoli (pasto+orario, orari del sonno, un
+// livello scelto a chip per 4 momenti della giornata). normalizeValutazione()
+// crea questi oggetti al volo per le valutazioni salvate prima di questa
+// modifica (nessuna migrazione dati: il vecchio testo libero resta nel
+// relativo v.campi.* e viene comunque mostrato, in lettura, sopra il nuovo
+// mini-form, così non si perde nulla di già scritto).
+const VAL_PASTI = [
+  {key:'colazione', label:'Colazione'},
+  {key:'pranzo', label:'Pranzo'},
+  {key:'cena', label:'Cena'},
+  {key:'snack', label:'Snack / fuori pasto'}
+];
+const ENERGIA_MOMENTI = [
+  {key:'risveglio', label:'Al risveglio'},
+  {key:'mattina', label:'Mattina'},
+  {key:'pomeriggio', label:'Pomeriggio'},
+  {key:'sera', label:'Sera'}
+];
+const ENERGIA_LIVELLO_OPZIONI = [
+  {v:'scarica', l:'Scarica'},
+  {v:'stanco', l:'Stanco'},
+  {v:'ok', l:'Ok'},
+  {v:'carico', l:'Carico'},
+  {v:'top', l:'Al top'}
+];
+function emptyAlimentazione(){
+  const o = {};
+  VAL_PASTI.forEach(p=> o[p.key] = {cibi:'', orario:''});
+  return o;
+}
+function emptySonno(){
+  return { addormentamento:'', risveglioNotturno:'', risveglioOrario:'', note:'' };
+}
+function emptyEnergiaLivelli(){
+  const o = {};
+  ENERGIA_MOMENTI.forEach(m=> o[m.key] = null);
+  return o;
+}
+function normalizeValutazione(v){
+  if(!v.alimentazione) v.alimentazione = emptyAlimentazione();
+  if(!v.sonno) v.sonno = emptySonno();
+  if(!v.energiaLivelli) v.energiaLivelli = emptyEnergiaLivelli();
+  if(v.dialogoFocusNote===undefined) v.dialogoFocusNote = '';
+  return v;
+}
+
 function emptyValutazione(){
   const campi = {};
   VAL_SEZIONI.forEach(s=> s.campi.forEach(c=> campi[c.key] = ''));
@@ -3771,10 +3830,14 @@ function emptyValutazione(){
     data: new Date().toISOString().slice(0,10),
     autore: state.professionista ? state.professionista.nome : '',
     campi,
+    alimentazione: emptyAlimentazione(),
+    sonno: emptySonno(),
+    energiaLivelli: emptyEnergiaLivelli(),
     traumi: [],
     ruota,
     persona,
     dialogoFocus: null,     // 'io' | 'vita' | 'altri'
+    dialogoFocusNote: '',
     coerenza: null,         // 'bassa' | 'alta' | 'norma'
     tensRelax: null,        // 'tens' | 'relax'
     desiderioMigliorarsi: null, // 1-10
@@ -3828,6 +3891,7 @@ document.getElementById('btnNuovaValutazione').onclick = ()=>{
 };
 
 function openValutazioneEditor(v, isNew){
+  normalizeValutazione(v);
   state.valutazioneEditor = v;
   state.valutazioneEditorIsNew = isNew;
   document.getElementById('valutazioniListView').style.display = 'none';
@@ -3928,6 +3992,46 @@ function valChipGroupHTML(name, options, current){
   </div>`;
 }
 
+function valAlimentazioneHTML(v){
+  const a = v.alimentazione;
+  const legacy = (v.campi && v.campi.alimentazione) ? `<div class="val-legacy-note">Testo inserito in precedenza (formato libero): “${escHtml(v.campi.alimentazione)}”</div>` : '';
+  return `${legacy}<div class="val-pasti-grid">
+    ${VAL_PASTI.map(p=>`<div class="val-pasto-row">
+      <label class="val-pasto-label">${p.label}</label>
+      <textarea class="editable" rows="2" placeholder="Alimenti" data-alimentof="${p.key}|cibi">${escHtml(a[p.key].cibi)}</textarea>
+      <input class="editable val-pasto-orario" type="time" data-alimentof="${p.key}|orario" value="${escAttr(a[p.key].orario)}">
+    </div>`).join('')}
+  </div>`;
+}
+
+function valSonnoHTML(v){
+  const s = v.sonno;
+  const legacy = (v.campi && v.campi.sonno) ? `<div class="val-legacy-note">Testo inserito in precedenza (formato libero): “${escHtml(v.campi.sonno)}”</div>` : '';
+  return `${legacy}<div class="ev-row val-field-grid">
+    <div class="ev-field val-field"><label>Orario di addormentamento</label><input class="editable" type="time" data-sonnof="addormentamento" value="${escAttr(s.addormentamento)}"></div>
+    <div class="ev-field val-field"><label>Orario risveglio notturno</label><input class="editable" type="time" data-sonnof="risveglioOrario" value="${escAttr(s.risveglioOrario)}"></div>
+    <div class="ev-field val-field val-field-full"><label>Risveglio notturno (quante volte, durata, causa)</label><input class="editable" data-sonnof="risveglioNotturno" value="${escAttr(s.risveglioNotturno)}"></div>
+    <div class="ev-field val-field val-field-full"><label>Altre note (sveglia, turni, altro)</label><textarea class="editable" rows="2" data-sonnof="note">${escHtml(s.note)}</textarea></div>
+  </div>`;
+}
+
+function valEnergiaChipGroupHTML(momento, current){
+  return `<div class="val-chip-group" data-energiagroup="${momento}">
+    ${ENERGIA_LIVELLO_OPZIONI.map(o=>`<button type="button" class="val-chip ${current===o.v?'sel':''}" data-chipval="${o.v}">${o.l}</button>`).join('')}
+  </div>`;
+}
+
+function valEnergiaHTML(v){
+  const e = v.energiaLivelli;
+  const legacy = (v.campi && v.campi.energiaGiorno) ? `<div class="val-legacy-note">Testo inserito in precedenza (formato libero): “${escHtml(v.campi.energiaGiorno)}”</div>` : '';
+  return `${legacy}<div class="val-energia-grid">
+    ${ENERGIA_MOMENTI.map(m=>`<div class="val-energia-item">
+      <label>${m.label}</label>
+      ${valEnergiaChipGroupHTML(m.key, e[m.key])}
+    </div>`).join('')}
+  </div>`;
+}
+
 function renderValutazioneEditor(){
   const v = state.valutazioneEditor;
   const box = document.getElementById('valutazioneEditorView');
@@ -3966,6 +4070,14 @@ function renderValutazioneEditor(){
     html += `<div class="val-section"><div class="val-section-title">${sez.title}</div><div class="ev-row val-field-grid">
       ${sez.campi.map(c=>valFieldHTML(v,c)).join('')}
     </div></div>`;
+    // alimentazione/sonno/energia sono mini-form a parte (pasto+orario,
+    // orari del sonno, livello a scelta per momento), agganciati subito
+    // dopo i campi semplici di Metabolismo nello stesso punto della scheda
+    if(sez.title==='Metabolismo'){
+      html += `<div class="val-section"><div class="val-section-title">Alimentazione</div>${valAlimentazioneHTML(v)}</div>`;
+      html += `<div class="val-section"><div class="val-section-title">Sonno</div>${valSonnoHTML(v)}</div>`;
+      html += `<div class="val-section"><div class="val-section-title">Energia nella giornata</div>${valEnergiaHTML(v)}</div>`;
+    }
   });
 
   html += `<div class="val-section"><div class="val-section-title">Desiderio di migliorarsi e affrontare il percorso</div>
@@ -3976,6 +4088,9 @@ function renderValutazioneEditor(){
 
   html += `<div class="val-section"><div class="val-section-title">Focus del dialogo interiore</div>
     ${valChipGroupHTML('dialogoFocus', [{v:'io',l:'Io'},{v:'vita',l:'Vita'},{v:'altri',l:'Altri'}], v.dialogoFocus)}
+    <div class="ev-field val-field val-field-full" style="margin-top:12px;"><label>Note</label>
+      <textarea class="editable" rows="2" id="valDialogoFocusNote" placeholder="Note aggiuntive sul dialogo interiore">${escHtml(v.dialogoFocusNote)}</textarea>
+    </div>
   </div>`;
 
   html += `<div class="val-section"><div class="val-section-title">La persona è</div>
@@ -4029,6 +4144,27 @@ function bindValutazioneEditorEvents(){
   document.querySelectorAll('[data-valfield]').forEach(inp=>{
     inp.onblur = ()=>{ v.campi[inp.dataset.valfield] = inp.value; };
   });
+
+  document.querySelectorAll('[data-alimentof]').forEach(inp=>{
+    const [pasto, field] = inp.dataset.alimentof.split('|');
+    inp.onblur = ()=>{ v.alimentazione[pasto][field] = inp.value; };
+  });
+  document.querySelectorAll('[data-sonnof]').forEach(inp=>{
+    const key = inp.dataset.sonnof;
+    inp.onblur = ()=>{ v.sonno[key] = inp.value; };
+  });
+  document.querySelectorAll('[data-energiagroup]').forEach(group=>{
+    const momento = group.dataset.energiagroup;
+    group.querySelectorAll('[data-chipval]').forEach(chip=>{
+      chip.onclick = ()=>{
+        v.energiaLivelli[momento] = (v.energiaLivelli[momento]===chip.dataset.chipval) ? null : chip.dataset.chipval;
+        group.querySelectorAll('[data-chipval]').forEach(c=> c.classList.toggle('sel', c.dataset.chipval===v.energiaLivelli[momento]));
+      };
+    });
+  });
+  const dialogoFocusNoteEl = document.getElementById('valDialogoFocusNote');
+  if(dialogoFocusNoteEl) dialogoFocusNoteEl.onblur = ()=>{ v.dialogoFocusNote = dialogoFocusNoteEl.value; };
+
   document.querySelectorAll('[data-valevid]').forEach(btn=>{
     btn.onclick = ()=>{
       const key = btn.dataset.valevid;
@@ -4096,6 +4232,13 @@ function bindValutazioneEditorEvents(){
   document.getElementById('btnSalvaValutazione').onclick = ()=>{
     // forza il commit di eventuali campi ancora a fuoco (blur non ancora scattato)
     document.querySelectorAll('[data-valfield]').forEach(inp=>{ v.campi[inp.dataset.valfield] = inp.value; });
+    document.querySelectorAll('[data-alimentof]').forEach(inp=>{
+      const [pasto, field] = inp.dataset.alimentof.split('|');
+      v.alimentazione[pasto][field] = inp.value;
+    });
+    document.querySelectorAll('[data-sonnof]').forEach(inp=>{ v.sonno[inp.dataset.sonnof] = inp.value; });
+    const dialogoFocusNoteEl2 = document.getElementById('valDialogoFocusNote');
+    if(dialogoFocusNoteEl2) v.dialogoFocusNote = dialogoFocusNoteEl2.value;
     const valData = document.getElementById('valData'); if(valData) v.data = valData.value;
     const valAutore = document.getElementById('valAutore'); if(valAutore) v.autore = valAutore.value;
     if(state.valutazioneEditorIsNew){
