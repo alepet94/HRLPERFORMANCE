@@ -1144,6 +1144,12 @@ header.top{
 .val-editor-header{border-bottom:1px solid var(--line-soft);padding-bottom:16px;margin-bottom:20px;}
 .val-section{margin-bottom:26px;}
 .val-esito-section{padding:16px;border:1px solid var(--gold-line);border-radius:8px;background:var(--gold-bg-10, rgba(253,112,35,.06));}
+.percorso-aree-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;}
+.percorso-area-block{border:1px solid var(--line);border-radius:8px;padding:12px;background:var(--navy-800);}
+.percorso-area-block.on{border-color:var(--gold-line);}
+.percorso-area-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;}
+.percorso-area-profs{margin-top:10px;padding-top:10px;border-top:1px solid var(--line);}
+.percorso-live-badge{font-size:11px;color:#8FCF9F;white-space:nowrap;}
 .val-section-title{
   font-family:var(--serif);font-size:14px;font-weight:700;color:var(--client-accent-bright);
   margin-bottom:12px;padding-bottom:6px;border-bottom:1px solid var(--client-accent-line);
@@ -2283,6 +2289,7 @@ function clienteToRow(c){
     area_target: c.areaTarget || [],
     area_attiva: c.areaAttiva || null,
     acuto_info: c.acutoInfo || null,
+    percorso: c.percorso || null,
     ghi_storico: c.ghiStorico || [],
     sistema_test_selezionati: Array.from(c.sistemaTestSelezionati || []),
     schede_osteopatia: c.schedeOsteopatia || [],
@@ -2311,6 +2318,7 @@ function rowToCliente(r){
     areaTarget: r.area_target || [],
     areaAttiva: r.area_attiva || null,
     acutoInfo: r.acuto_info || null,
+    percorso: r.percorso || null,
     ghiStorico: r.ghi_storico || [],
     sistemaTestSelezionati: new Set(r.sistema_test_selezionati || []),
     schedeOsteopatia: r.schede_osteopatia || [],
@@ -2330,6 +2338,74 @@ function clienteProfIds(c){
 function clienteHasProf(c, profId){
   if(!profId) return false;
   return clienteProfIds(c).includes(profId);
+}
+
+// ---------------- Percorso del paziente (Round FFF) ----------------
+// Dopo la prima valutazione il paziente può seguire fino a 3 percorsi in
+// PARALLELO — Area Sistemica, Area Human, Area Performance — ognuno con i
+// propri professionisti assegnati; un admin può attivarne uno, due o tutti e
+// tre, e modificare la scelta in qualsiasi momento (non solo alla prima
+// revisione). Human/Performance restano "in attesa" finché l'admin non dà
+// il via libera (stesso giudizio manuale di prima, legato ai GHI). Sostituisce
+// il vecchio modello a esito singolo (acuto/performance/sistema) dei giri
+// precedenti: c.percorso viene creato al volo da ensurePercorso() migrando,
+// la prima volta, i vecchi campi c.esitoValutazione/areaAttiva/areaTarget/
+// acutoInfo (che restano nei dati per compatibilità ma non vengono più letti
+// una volta che c.percorso esiste).
+const PERCORSO_AREA_LABELS = { sistema:'Area Sistemica', human:'Area Human', performance:'Area Performance' };
+function emptyPercorso(){
+  return {
+    sistema: { attiva:false, professionistiIds:[] },
+    human: { attiva:false, professionistiIds:[], viaLibera:false },
+    performance: { attiva:false, professionistiIds:[], viaLibera:false }
+  };
+}
+function ensurePercorso(c){
+  if(!c) return emptyPercorso();
+  if(c.percorso) return c.percorso;
+  const p = emptyPercorso();
+  if(c.esitoValutazione){
+    p.sistema.attiva = true;
+    if(c.esitoValutazione==='acuto'){
+      p.human.attiva = true;
+      p.human.viaLibera = true;
+      if(c.acutoInfo && c.acutoInfo.professionistaId) p.human.professionistiIds = [c.acutoInfo.professionistaId];
+    } else if(c.esitoValutazione==='performance'){
+      const targets = (c.areaTarget && c.areaTarget.length) ? c.areaTarget : ['AP'];
+      const live = !!(c.areaAttiva && c.areaAttiva!=='sistema');
+      if(targets.includes('AH')){ p.human.attiva = true; p.human.viaLibera = live; }
+      if(targets.includes('AP')){ p.performance.attiva = true; p.performance.viaLibera = live; }
+    }
+    // esito 'sistema' (solo sistemico): basta l'attivazione sopra
+  }
+  c.percorso = p;
+  return p;
+}
+// tiene c.professionistiIds (usato ovunque nell'app per calendario/accesso
+// generale) in sync come UNIONE dei professionisti assegnati nelle singole
+// aree — solo in aggiunta, non toglie mai qualcuno assegnato a mano altrove
+function syncPercorsoProfIntoFlat(c){
+  const p = ensurePercorso(c);
+  const union = new Set(clienteProfIds(c));
+  ['sistema','human','performance'].forEach(k=> (p[k].professionistiIds||[]).forEach(id=> union.add(id)));
+  c.professionistiIds = Array.from(union);
+}
+// riga/e di sintesi in sola lettura delle aree attive (usata nel badge, nella
+// valutazione e nel report PDF) — null se nessuna area è ancora attiva
+function percorsoSummaryHTML(c){
+  const p = ensurePercorso(c);
+  const lines = [];
+  if(p.sistema.attiva){
+    const names = (p.sistema.professionistiIds||[]).map(id=>state.professionisti.find(x=>x.id===id)).filter(Boolean).map(x=>x.nome);
+    lines.push(`<div class="val-view-text">✓ Area Sistemica${names.length?' — '+escHtml(names.join(', ')):''}</div>`);
+  }
+  ['human','performance'].forEach(k=>{
+    const a = p[k];
+    if(!a.attiva) return;
+    const names = (a.professionistiIds||[]).map(id=>state.professionisti.find(x=>x.id===id)).filter(Boolean).map(x=>x.nome);
+    lines.push(`<div class="val-view-text">${a.viaLibera?'✓':'…'} ${PERCORSO_AREA_LABELS[k]}${a.viaLibera?'':' (in attesa del via libera)'}${names.length?' — '+escHtml(names.join(', ')):''}</div>`);
+  });
+  return lines.length ? lines.join('') : null;
 }
 // età del cliente: calcolata dalla data di nascita quando presente (nuovo
 // campo), altrimenti dal vecchio campo numerico "eta" per i clienti creati
@@ -2465,11 +2541,13 @@ function isSegreteriaOnly(){
 function canEditPersonaValutazione(){
   return !!(state.professionista && (state.professionista.ruolo==='admin' || state.professionista.area==='Nutrizionista'));
 }
-// la "Revisione" (ex "Esito valutazione — smistamento") è la decisione di
-// percorso presa da un admin DOPO che la prima valutazione è stata
-// compilata, non dal valutatore stesso — solo un admin può impostarla/
-// modificarla; tutti gli altri la vedono in sola lettura
-function canReviewValutazione(){
+// il "Percorso del paziente" (ex "Revisione — smistamento" del giro
+// precedente) è la gestione delle aree attive (Sistema/Human/Performance) e
+// dei professionisti assegnati a ciascuna, fatta DOPO che la prima
+// valutazione è stata compilata; solo un admin può impostarla/modificarla,
+// in qualsiasi momento (non solo alla prima revisione) — tutti gli altri la
+// vedono in sola lettura
+function canManagePercorso(){
   return !!(state.professionista && state.professionista.ruolo==='admin');
 }
 // determina, in base al ruolo/area del professionista, quali tab clienti
@@ -3585,16 +3663,13 @@ function loadClientIntoWorkspace(id){
   state.valutazioni = c.valutazioni || [];
   state.valutazioneEditor = null;
   state.schedaEditor = null;
-  // tab di apertura: se il cliente non ha ancora un esito di valutazione va
-  // dritto sulla valutazione; altrimenti si apre sull'area in cui si trova
-  // OGGI operativamente — sempre che il professionista loggato possa vederla,
-  // altrimenti si scende sulla prima tab che gli compete
+  // tab di apertura: se manca ancora la prima valutazione si va dritti lì;
+  // altrimenti, dato che il percorso può avere più aree attive in parallelo
+  // (niente più una singola "area operativa" preferita), si apre sempre sulla
+  // tab Sistema, l'hub da cui si gestisce/vede tutto il percorso — sempre che
+  // il professionista loggato possa vederla, altrimenti la prima tab che gli compete
   const access = areaAccessForProfessionista(state.professionista);
-  let preferredTab;
-  if(!c.esitoValutazione) preferredTab = 'valutazioni';
-  else if(c.areaAttiva==='sistema') preferredTab = 'sistema';
-  else if(c.areaAttiva==='AH') preferredTab = 'areaHuman';
-  else preferredTab = 'pathway';
+  const preferredTab = (c.valutazioni && c.valutazioni.length) ? 'sistema' : 'valutazioni';
   state.clientTab = access.tabs.includes(preferredTab) ? preferredTab : (access.tabs[0] || 'valutazioni');
   state.pathwayEditMode = !c.pathway;
 }
@@ -3699,43 +3774,34 @@ function renderCliTabs(){
   renderCliAreaBadgeRow();
 }
 
-// riga di badge che mostra a colpo d'occhio lo smistamento attuale del
-// cliente (esito valutazione, stato lavoro Sistema, area attiva)
+// riga di badge che mostra a colpo d'occhio il percorso attuale del cliente:
+// quali aree (Sistema/Human/Performance) sono attive in parallelo, e per
+// Human/Performance se sono già "via libera" o ancora in attesa
 function renderCliAreaBadgeRow(){
   const box = document.getElementById('cliAreaBadgeRow');
   if(!box) return;
   const c = activeClient();
   if(!c){ box.innerHTML = ''; return; }
-  const labels = {
-    fisioterapia: 'Fisioterapista (acuto)',
-    AH: 'Area Human',
-    AP: 'Area Performance',
-    'AH+AP': 'Area Human + Area Performance',
-    sistema: 'Lavoro Sistema in corso'
-  };
-  if(!c.esitoValutazione){
-    const hasValutazione = c.valutazioni && c.valutazioni.length>0;
-    box.innerHTML = hasValutazione
-      ? `<span class="cli-area-badge">Valutazione compilata — in attesa di revisione admin</span>`
-      : `<span class="cli-area-badge">Prima valutazione da completare</span>`;
+  if(!c.valutazioni || !c.valutazioni.length){
+    box.innerHTML = `<span class="cli-area-badge">Prima valutazione da completare</span>`;
     return;
   }
-  let html = `<span class="cli-area-badge on">Controllo Sistema</span>`;
-  if(c.esitoValutazione==='acuto' && c.acutoInfo){
-    const area = c.acutoInfo.area;
-    const prof = c.acutoInfo.professionistaId ? state.professionisti.find(p=>p.id===c.acutoInfo.professionistaId) : null;
-    const areaLabel = area==='AH' ? 'Osteopata' : (area==='fisioterapia' ? 'Fisioterapista' : '—');
-    html += `<span class="cli-area-badge on">Acuto → ${areaLabel}${prof ? ' — ' + escHtml(prof.nome) : ''}</span>`;
-  } else if(c.esitoValutazione==='performance'){
-    if(c.areaAttiva==='sistema' && c.areaTarget && c.areaTarget.length){
-      const targetLabel = c.areaTarget.length>1 ? 'Area Human + Area Performance' : (labels[c.areaTarget[0]] || c.areaTarget[0]);
-      html += `<span class="cli-area-badge">In attesa → ${targetLabel}</span>`;
-    } else if(c.areaAttiva && c.areaAttiva!=='sistema'){
-      html += `<span class="cli-area-badge on">${labels[c.areaAttiva] || c.areaAttiva}</span>`;
-    }
-  } else if(c.esitoValutazione==='sistema'){
-    html += `<span class="cli-area-badge">Percorso unicamente sistemico</span>`;
+  const p = ensurePercorso(c);
+  const anyActive = ['sistema','human','performance'].some(k=> p[k].attiva);
+  if(!anyActive){
+    box.innerHTML = `<span class="cli-area-badge">Valutazione compilata — percorso da impostare</span>`;
+    return;
   }
+  let html = '';
+  if(p.sistema.attiva) html += `<span class="cli-area-badge on">Area Sistemica</span>`;
+  ['human','performance'].forEach(k=>{
+    const a = p[k];
+    if(!a.attiva) return;
+    const profNames = (a.professionistiIds||[]).map(id=>state.professionisti.find(x=>x.id===id)).filter(Boolean).map(x=>x.nome).join(', ');
+    html += a.viaLibera
+      ? `<span class="cli-area-badge on">${PERCORSO_AREA_LABELS[k]}${profNames?' — '+escHtml(profNames):''}</span>`
+      : `<span class="cli-area-badge">${PERCORSO_AREA_LABELS[k]} — in attesa</span>`;
+  });
   box.innerHTML = html;
 }
 
@@ -3906,8 +3972,10 @@ function emptyValutazione(){
     tensRelax: null,        // 'tens' | 'relax'
     desiderioMigliorarsi: null, // 1-10
     evidenziati: [],        // chiavi campo marcate importanti per questo cliente
-    // "Revisione": decisione di percorso presa da un admin dopo la
-    // compilazione, non dal valutatore — vedi canReviewValutazione()
+    // campi del vecchio modello "Revisione" a esito singolo (giro precedente),
+    // tenuti solo per compatibilità/storico col PDF di valutazioni già
+    // revisionate così — il percorso vero e proprio ora si gestisce dalla tab
+    // Sistema con più aree in parallelo (vedi ensurePercorso/c.percorso)
     esito: null,                  // 'acuto' | 'performance' | 'sistema' (solo sistemico)
     fisioOsteoScelta: null,       // se esito 'acuto': 'fisioterapia' | 'osteopata'
     professionistaAssegnatoId: null, // professionista scelto per il caso acuto
@@ -4158,59 +4226,25 @@ function valChipGroupHTML(name, options, current){
   </div>`;
 }
 
-const VAL_ESITO_OPZIONI = [
-  {v:'acuto', l:'Acuto → fisio/osteopata'},
-  {v:'performance', l:'Performance → Area Performance'},
-  {v:'sistema', l:'Solo percorso sistemico'}
-];
+// etichette storiche (giro precedente, esito singolo acuto/performance/
+// sistema) — tenute solo per mostrare correttamente il PDF/i dati di
+// valutazioni già revisionate con quel modello prima del passaggio al
+// percorso a più aree in parallelo
 const VAL_ESITO_LABELS = {
   acuto: 'Acuto → valutazione fisio/osteopata',
   performance: 'Performance → valutazione qualitativa Area Performance',
   sistema: 'Percorso unicamente sistemico'
 };
 const VAL_FISIO_OSTEO_LABELS = { fisioterapia:'Fisioterapista', osteopata:'Osteopata' };
-// sezione "Revisione" (ex "Esito valutazione — smistamento"): decisione di
-// percorso presa da un admin dopo che la valutazione è stata compilata (non
-// dal valutatore), vedi canReviewValutazione(). editable=true mostra i chip
-// e il select del professionista (solo quando l'admin sta effettivamente
-// revisionando); editable=false mostra solo il risultato in lettura, usato
-// sia dagli altri professionisti nell'editor sia nella vista e nel report.
-function valRevisioneHTML(v, editable, c){
-  const revisioneStamp = v.revisionatoDa
-    ? `<div class="val-view-text" style="margin-top:10px;color:var(--ink-mute);font-size:11.5px;">Revisionato da ${escHtml(v.revisionatoDa)}${v.revisionatoIl ? ' il ' + v.revisionatoIl.split('-').reverse().join('/') : ''}</div>`
-    : '';
-  if(!editable){
-    if(!v.esito) return `<div class="val-view-text">In attesa di revisione da parte di un admin.</div>`;
-    let txt = `<div class="val-view-text">${escHtml(VAL_ESITO_LABELS[v.esito] || v.esito)}</div>`;
-    if(v.esito==='acuto'){
-      const prof = v.professionistaAssegnatoId ? state.professionisti.find(p=>p.id===v.professionistaAssegnatoId) : null;
-      txt += `<div class="val-view-text" style="margin-top:6px;">Presa in carico: ${v.fisioOsteoScelta ? escHtml(VAL_FISIO_OSTEO_LABELS[v.fisioOsteoScelta]) : '—'}${prof ? ' — ' + escHtml(prof.nome) : ''}</div>`;
-    }
-    return txt + revisioneStamp;
-  }
-  const fisioOsteoArea = v.fisioOsteoScelta==='osteopata' ? 'Osteopata' : (v.fisioOsteoScelta==='fisioterapia' ? 'Fisioterapista' : null);
-  const profOptions = fisioOsteoArea ? state.professionisti.filter(p=>p.area===fisioOsteoArea) : [];
-  return `
-    <div style="font-size:12px;color:var(--ink-mute);margin-bottom:10px;">Tutti i percorsi iniziano con il controllo sistemico. In più: se acuto, una valutazione con fisio/osteopata; se performance, una valutazione qualitativa dell'area performance; se solo sistemico, nessun'altra area.</div>
-    ${valChipGroupHTML('esito', VAL_ESITO_OPZIONI, v.esito)}
-    <div id="valAcutoWrap" style="margin-top:12px;${v.esito==='acuto'?'':'display:none;'}">
-      <label style="font-size:12px;color:var(--ink-mute);display:block;margin-bottom:6px;">Chi prende in carico il caso?</label>
-      ${valChipGroupHTML('fisioOsteoScelta', [{v:'fisioterapia',l:'Fisioterapista'},{v:'osteopata',l:'Osteopata'}], v.fisioOsteoScelta)}
-      <div style="margin-top:10px;">
-        <label style="font-size:12px;color:var(--ink-mute);display:block;margin-bottom:6px;">Professionista assegnato</label>
-        <select class="editable" id="valProfessionistaAssegnato" ${profOptions.length?'':'disabled'}>
-          <option value="">${profOptions.length ? '— Seleziona —' : 'Scegli prima fisio/osteopata'}</option>
-          ${profOptions.map(p=>`<option value="${p.id}" ${v.professionistaAssegnatoId===p.id?'selected':''}>${escHtml(p.nome)}</option>`).join('')}
-        </select>
-      </div>
-    </div>
-    ${c && dbEnabled && state.professionisti.length>0 ? `
-    <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line);">
-      <label style="font-size:12px;color:var(--ink-mute);display:block;margin-bottom:6px;">Professionisti assegnati al paziente (per il controllo Sistema e il resto del percorso)</label>
-      <div id="valRevProfAssignBox">${profAssignHTML(c,'valRev')}</div>
-    </div>` : ''}
-    ${revisioneStamp}
-  `;
+// puntatore in sola lettura dalla valutazione al "Percorso del paziente"
+// (ora gestito dalla tab Sistema, dove si possono attivare Area Sistemica/
+// Human/Performance in parallelo e assegnare i professionisti per ciascuna):
+// qui si mostra solo un riepilogo, nessun controllo editabile
+function valPercorsoPointerHTML(c){
+  if(!c) return '';
+  const summary = percorsoSummaryHTML(c);
+  return `${summary || '<div class="val-view-text">Percorso non ancora impostato.</div>'}
+    <div style="font-size:11.5px;color:var(--ink-mute);margin-top:8px;">Le aree attive, i professionisti assegnati e il "via libera" si gestiscono dalla tab Sistema.</div>`;
 }
 
 function valAlimentazioneHTML(v){
@@ -4306,6 +4340,7 @@ function valTraumiViewHTML(v){
 function renderValutazioneView(){
   const v = state.valutazioneEditor;
   const box = document.getElementById('valutazioneEditorView');
+  const valViewClient = activeClient();
   const dataFmt = v.data ? v.data.split('-').reverse().join('/') : '—';
   let html = `<div class="val-view-header">
     <button class="btn-ghost" id="btnValBack">← Torna all'elenco</button>
@@ -4366,8 +4401,8 @@ function renderValutazioneView(){
     </div></div>`;
   });
 
-  html += `<div class="val-section val-esito-section"><div class="val-section-title">Revisione — smistamento</div>
-    ${valRevisioneHTML(v, false)}
+  html += `<div class="val-section val-esito-section"><div class="val-section-title">Percorso del paziente</div>
+    ${valPercorsoPointerHTML(valViewClient)}
   </div>`;
 
   box.innerHTML = html;
@@ -4459,10 +4494,9 @@ function renderValutazioneEditor(){
     </div></div>`;
   });
 
-  const canReview = canReviewValutazione();
   const valRevClient = activeClient();
-  html += `<div class="val-section val-esito-section"><div class="val-section-title">Revisione — smistamento</div>
-    ${canReview ? valRevisioneHTML(v, true, valRevClient) : `<div class="val-legacy-note">La revisione (decisione del percorso) è compilabile solo da un admin.</div>${valRevisioneHTML(v, false)}`}
+  html += `<div class="val-section val-esito-section"><div class="val-section-title">Percorso del paziente</div>
+    ${valPercorsoPointerHTML(valRevClient)}
   </div>`;
 
   html += `<div class="ev-actions val-editor-actions"><div></div><button class="btn-gold" id="btnSalvaValutazione">Salva valutazione</button></div>`;
@@ -4536,37 +4570,9 @@ function bindValutazioneEditorEvents(){
       chip.onclick = ()=>{
         v[name] = (v[name]===chip.dataset.chipval) ? null : chip.dataset.chipval;
         group.querySelectorAll('[data-chipval]').forEach(c=> c.classList.toggle('sel', c.dataset.chipval===v[name]));
-        if(name==='esito'){
-          if(v.esito!=='acuto'){ v.fisioOsteoScelta = null; v.professionistaAssegnatoId = null; }
-          const wrap = document.getElementById('valAcutoWrap');
-          if(wrap) wrap.style.display = v.esito==='acuto' ? '' : 'none';
-        }
-        if(name==='fisioOsteoScelta'){
-          v.professionistaAssegnatoId = null;
-          renderValutazioneEditor();
-        }
       };
     });
   });
-
-  const valProfSelect = document.getElementById('valProfessionistaAssegnato');
-  if(valProfSelect){
-    valProfSelect.onchange = ()=>{ v.professionistaAssegnatoId = valProfSelect.value || null; };
-  }
-
-  // professionisti assegnati al paziente, modificabile direttamente dalla
-  // Revisione (stesso componente della context bar in alto)
-  const valRevClientForAssign = activeClient();
-  if(valRevClientForAssign && document.getElementById('valRevAssignMulti')){
-    const refreshValRevProfAssign = ()=>{
-      const box = document.getElementById('valRevProfAssignBox');
-      if(box){
-        box.innerHTML = profAssignHTML(valRevClientForAssign, 'valRev');
-        bindProfAssign(valRevClientForAssign, 'valRev', ()=>{ refreshValRevProfAssign(); renderContextBar(); });
-      }
-    };
-    bindProfAssign(valRevClientForAssign, 'valRev', ()=>{ refreshValRevProfAssign(); renderContextBar(); });
-  }
 
   if(canEditPersonaValutazione()) document.querySelectorAll('[data-persona]').forEach(group=>{
     const key = group.dataset.persona;
@@ -4597,38 +4603,10 @@ function bindValutazioneEditorEvents(){
       if(i>=0) state.valutazioni[i] = v; else state.valutazioni.push(v);
     }
     syncClientFromState();
-    // la revisione di QUESTA valutazione (solo admin) aggiorna lo smistamento
-    // del cliente: in ogni caso il percorso parte dal controllo Sistema; in
-    // più, se acuto, viene assegnato subito un fisioterapista/osteopata, se
-    // performance l'area Performance entra "in attesa" finché i GHI non sono
-    // validi (vedi "via libera" nella tab Sistema), se solo sistema nessuna
-    // area ulteriore viene aperta
-    const c = activeClient();
-    if(c && v.esito && canReviewValutazione()){
-      c.esitoValutazione = v.esito;
-      c.areaAttiva = 'sistema';
-      if(v.esito==='acuto'){
-        const area = v.fisioOsteoScelta==='osteopata' ? 'AH' : (v.fisioOsteoScelta==='fisioterapia' ? 'fisioterapia' : null);
-        c.acutoInfo = { area: area, professionistaId: v.professionistaAssegnatoId || null };
-        c.areaTarget = [];
-        if(v.professionistaAssegnatoId){
-          const ids = clienteProfIds(c);
-          if(!ids.includes(v.professionistaAssegnatoId)) ids.push(v.professionistaAssegnatoId);
-          c.professionistiIds = ids;
-        }
-      } else if(v.esito==='performance'){
-        c.acutoInfo = null;
-        c.areaTarget = (v.areaScelta && v.areaScelta.length) ? v.areaScelta.slice() : ['AP'];
-      } else if(v.esito==='sistema'){
-        c.acutoInfo = null;
-        c.areaTarget = [];
-      }
-      v.revisionatoDa = state.professionista ? state.professionista.nome : null;
-      v.revisionatoIl = fmtDateISO(new Date());
-      db.saveCliente(c);
-      renderContextBar();
-      renderCliTabs();
-    }
+    // il percorso (aree attive Sistema/Human/Performance + professionisti) non
+    // si decide più qui: si gestisce sempre dalla tab Sistema (vedi
+    // ensurePercorso/renderPercorsoSection), modificabile in ogni momento
+    // dall'admin e non solo alla prima revisione
     // dopo il salvataggio si torna in sola visualizzazione (non si resta a
     // compilare/modificare): per intervenire di nuovo serve "✎ Modifica"
     state.valutazioneEditorIsNew = false;
@@ -4866,7 +4844,11 @@ function apriReportValutazione(c, v){
       esitoExtra = `<div style="font-size:13px;margin-top:4px;">Presa in carico: ${v.fisioOsteoScelta ? escHtml(VAL_FISIO_OSTEO_LABELS[v.fisioOsteoScelta]) : '—'}${prof ? ' — ' + escHtml(prof.nome) : ''}</div>`;
     }
     const revisioneTxt = v.revisionatoDa ? `<div style="font-size:12px;margin-top:4px;color:#666;">Revisionato da ${escHtml(v.revisionatoDa)}${v.revisionatoIl ? ' il ' + v.revisionatoIl.split('-').reverse().join('/') : ''}</div>` : '';
-    sections += `<div class="rep-sezione"><h3>Revisione — smistamento</h3><div style="font-size:13px;">${esitoLbl}</div>${esitoExtra}${revisioneTxt}</div>`;
+    sections += `<div class="rep-sezione"><h3>Revisione — smistamento (storico)</h3><div style="font-size:13px;">${esitoLbl}</div>${esitoExtra}${revisioneTxt}</div>`;
+  }
+  const percorsoSummary = percorsoSummaryHTML(c);
+  if(percorsoSummary){
+    sections += `<div class="rep-sezione"><h3>Percorso attuale</h3><div style="font-size:13px;">${percorsoSummary.replace(/class="val-view-text"/g,'')}</div></div>`;
   }
 
   const html = `<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8">
@@ -5097,6 +5079,84 @@ async function extractGhiWithColors(file){
   }
   return null;
 }
+// sezione "Percorso del paziente" in cima alla tab Sistema: fino a 3 aree
+// (Sistema/Human/Performance) attivabili in parallelo, ognuna coi propri
+// professionisti assegnati; editabile solo da admin (canManagePercorso), in
+// qualsiasi momento — non solo alla prima revisione. Chi non è admin vede lo
+// stesso riepilogo di sola lettura usato anche in valutazione (Round FFF,
+// sostituisce l'esito singolo acuto/performance/sistema dei giri precedenti).
+function renderPercorsoSectionHTML(){
+  const c = activeClient();
+  if(!c) return '';
+  if(!c.valutazioni || !c.valutazioni.length){
+    return `<div class="val-esito-section" style="margin-bottom:26px;"><div class="val-section-title">Percorso del paziente</div>
+      <div class="val-view-text">Prima valutazione da completare prima di poter impostare il percorso.</div>
+    </div>`;
+  }
+  if(!canManagePercorso()){
+    const summary = percorsoSummaryHTML(c);
+    return `<div class="val-esito-section" style="margin-bottom:26px;"><div class="val-section-title">Percorso del paziente</div>
+      ${summary || '<div class="val-view-text">Percorso da impostare (solo admin).</div>'}
+    </div>`;
+  }
+  const p = ensurePercorso(c);
+  const areaBlockHTML = (key, hasGate)=>{
+    const a = p[key];
+    return `<div class="percorso-area-block ${a.attiva?'on':''}">
+      <div class="percorso-area-head">
+        <button type="button" class="val-chip ${a.attiva?'sel':''}" data-percorsotoggle="${key}">${PERCORSO_AREA_LABELS[key]}</button>
+        ${hasGate && a.attiva ? (a.viaLibera ? `<span class="percorso-live-badge">● attiva</span>` : `<button type="button" class="btn-gold btn-small" data-percorsovialibera="${key}">Via libera</button>`) : ''}
+      </div>
+      ${a.attiva ? `<div class="percorso-area-profs" id="percorso${key}ProfBox">${profAssignHTML(a.professionistiIds, 'percorso'+key)}</div>` : ''}
+    </div>`;
+  };
+  return `<div class="val-esito-section" style="margin-bottom:26px;"><div class="val-section-title">Percorso del paziente</div>
+    <div style="font-size:12px;color:var(--ink-mute);margin-bottom:12px;">Puoi attivare una, due o tutte e tre le aree in parallelo, e assegnare i professionisti per ciascuna. Human e Performance restano "in attesa" finché non dai il via libera.</div>
+    <div class="percorso-aree-grid">
+      ${areaBlockHTML('sistema', false)}
+      ${areaBlockHTML('human', true)}
+      ${areaBlockHTML('performance', true)}
+    </div>
+  </div>`;
+}
+function bindPercorsoSection(){
+  const c = activeClient();
+  if(!c || !canManagePercorso() || !c.valutazioni || !c.valutazioni.length) return;
+  const p = ensurePercorso(c);
+  document.querySelectorAll('[data-percorsotoggle]').forEach(btn=>{
+    btn.onclick = ()=>{
+      const key = btn.dataset.percorsotoggle;
+      p[key].attiva = !p[key].attiva;
+      if(!p[key].attiva && key!=='sistema') p[key].viaLibera = false;
+      db.saveCliente(c);
+      renderSistemaTab();
+      renderCliTabs();
+    };
+  });
+  document.querySelectorAll('[data-percorsovialibera]').forEach(btn=>{
+    btn.onclick = ()=>{
+      p[btn.dataset.percorsovialibera].viaLibera = true;
+      db.saveCliente(c);
+      renderSistemaTab();
+      renderCliTabs();
+    };
+  });
+  ['sistema','human','performance'].forEach(key=>{
+    if(!p[key].attiva) return;
+    bindProfAssign(
+      ()=> p[key].professionistiIds,
+      (ids)=>{ p[key].professionistiIds = ids; syncPercorsoProfIntoFlat(c); db.saveCliente(c); },
+      'percorso'+key,
+      ()=>{
+        const box = document.getElementById('percorso'+key+'ProfBox');
+        if(box) box.innerHTML = profAssignHTML(p[key].professionistiIds, 'percorso'+key);
+        bindPercorsoSection();
+        renderContextBar();
+      }
+    );
+  });
+}
+
 function renderSistemaTab(){
   const c = activeClient();
   const box = document.getElementById('sistemaContent');
@@ -5139,10 +5199,9 @@ function renderSistemaTab(){
       ${t}
     </label>`).join('');
 
-  const canGoLive = c.areaAttiva==='sistema' && c.areaTarget && c.areaTarget.length>0;
-  const targetLabel = canGoLive ? (c.areaTarget.length>1 ? 'Area Human + Area Performance' : (c.areaTarget[0]==='AH' ? 'Area Human' : 'Area Performance')) : '';
-
   box.innerHTML = `
+    ${renderPercorsoSectionHTML()}
+
     <div class="client-section-label-row"><div class="client-section-label">Storico GHI</div></div>
     <div id="ghiList" style="margin:14px 0 20px;">${ghiTableHTML}</div>
 
@@ -5174,14 +5233,9 @@ function renderSistemaTab(){
       <button class="btn-ghost" id="btnPianificaRetest">Pianifica retest in calendario</button>
       <button class="btn-ghost" id="btnPianificaAns">Pianifica percorso ANS in calendario</button>
     </div>
-
-    ${canGoLive ? `<div class="val-esito-section">
-      <div class="val-section-title">Via libera</div>
-      <div style="font-size:12.5px;color:var(--ink-mute);margin-bottom:10px;">Quando i valori GHI sono validi, sposta il cliente all'area scelta in valutazione: <b>${targetLabel}</b>.</div>
-      <button class="btn-gold" id="btnViaLibera">Via libera → ${targetLabel}</button>
-    </div>` : ''}
   `;
 
+  bindPercorsoSection();
   document.getElementById('ghiDraftData').onchange = (e)=>{ draft.data = e.target.value; };
   document.getElementById('ghiDraftNota').oninput = (e)=>{ draft.nota = e.target.value; };
   box.querySelectorAll('[data-ghidraftval]').forEach(inp=>{
@@ -5251,13 +5305,6 @@ function renderSistemaTab(){
   };
   document.getElementById('btnPianificaAns').onclick = ()=>{
     openEventEditor({day: fmtDateISO(new Date()), start:'09:00', end:'10:00', tipo:'ans', clienteId:c.id}, false);
-  };
-  const btnVia = document.getElementById('btnViaLibera');
-  if(btnVia) btnVia.onclick = ()=>{
-    c.areaAttiva = c.areaTarget.length>1 ? 'AH+AP' : c.areaTarget[0];
-    db.saveCliente(c);
-    renderCliTabs();
-    activateClientTab(c.areaAttiva==='AH' ? 'areaHuman' : 'pathway');
   };
 }
 
@@ -7839,13 +7886,13 @@ function createCliente(data){
     professionistiIds: state.professionista ? [state.professionista.id] : [],
     authUserId: null,
     valutazioni: [],
-    // macro-aree: esito della prima valutazione (null finché non revisionata
-    // da un admin), 'acuto' (-> fisio/osteopata), 'performance' (-> lavoro
-    // sistema poi Area Performance/Human) o 'sistema' (solo sistemico);
-    // areaTarget è l'area (o le aree) scelte a cui destinare il cliente una
-    // volta che il lavoro sistema è concluso; areaAttiva è l'area in cui il
-    // cliente si trova OPERATIVAMENTE oggi (aggiornata anche col "via libera");
-    // acutoInfo = {area, professionistaId} quando l'esito è 'acuto'
+    // percorso del paziente (Round FFF): fino a 3 aree — Sistema/Human/
+    // Performance — attivabili in parallelo, ognuna coi propri professionisti,
+    // creato al volo da ensurePercorso() quando serve (vedi lì). I campi
+    // esitoValutazione/areaTarget/areaAttiva/acutoInfo sono il vecchio modello
+    // a esito singolo dei giri precedenti, tenuti solo per compatibilità con
+    // i dati già migrati in c.percorso al primo utilizzo.
+    percorso: null,
     esitoValutazione: null,
     areaTarget: [],
     areaAttiva: null,
@@ -7897,14 +7944,16 @@ function clientPathwaySummary(c){
 }
 
 // componente riusabile "professionisti assegnati" (tag + dropdown aggiungi):
-// nato nella context bar del cliente, ora usato anche nella Revisione della
-// valutazione cosi da poter scegliere subito i professionisti a cui viene
-// passato il paziente mentre si imposta il percorso, senza dover tornare su
-// in alto. idPrefix tiene gli id unici quando compaiono più istanze insieme.
-function profAssignHTML(c, idPrefix){
-  const assignedIds = clienteProfIds(c);
-  const assigned = assignedIds.map(id=>state.professionisti.find(p=>p.id===id)).filter(Boolean);
-  const others = state.professionisti.filter(p=>!assignedIds.includes(p.id));
+// nato nella context bar del cliente come lista generale ("Seguito da"), ora
+// usato anche per ogni singola area del percorso (Round FFF) cosi da poter
+// assegnare professionisti diversi ad Area Sistemica/Human/Performance in
+// parallelo. Generico: lavora su un array di id qualsiasi (non solo
+// c.professionistiIds), passato/aggiornato tramite getIds()/setIds(ids) così
+// il chiamante decide dove va salvato. idPrefix tiene gli id DOM unici quando
+// compaiono più istanze insieme nella stessa pagina.
+function profAssignHTML(ids, idPrefix){
+  const assigned = ids.map(id=>state.professionisti.find(p=>p.id===id)).filter(Boolean);
+  const others = state.professionisti.filter(p=>!ids.includes(p.id));
   return `<div class="prof-assign" id="${idPrefix}AssignMulti">
     <div class="prof-tags" id="${idPrefix}AssignTags">
       ${assigned.map(p=>`<span class="prof-tag">${escHtml(p.nome)}${p.area?' ('+escHtml(p.area)+')':''}<button type="button" class="prof-tag-x" data-remove-prof="${p.id}" title="Rimuovi dall'incarico">×</button></span>`).join('') || '<span class="ccb-meta" style="font-style:italic;">Nessuno</span>'}
@@ -7917,14 +7966,13 @@ function profAssignHTML(c, idPrefix){
     </div>
   </div>`;
 }
-function bindProfAssign(c, idPrefix, onChange){
+function bindProfAssign(getIds, setIds, idPrefix, onChange){
   const assignBox = document.getElementById(idPrefix+'AssignMulti');
   if(!assignBox) return;
   assignBox.querySelectorAll('[data-remove-prof]').forEach(btn=>{
     btn.onclick = ()=>{
-      const ids = clienteProfIds(c).filter(id=>id!==btn.dataset.removeProf);
-      c.professionistiIds = ids;
-      db.saveCliente(c);
+      const ids = getIds().filter(id=>id!==btn.dataset.removeProf);
+      setIds(ids);
       if(onChange) onChange();
     };
   });
@@ -7938,10 +7986,9 @@ function bindProfAssign(c, idPrefix, onChange){
     };
     dropdown.querySelectorAll('[data-add-prof]').forEach(item=>{
       item.onclick = ()=>{
-        const ids = clienteProfIds(c);
+        const ids = getIds();
         if(!ids.includes(item.dataset.addProf)) ids.push(item.dataset.addProf);
-        c.professionistiIds = ids;
-        db.saveCliente(c);
+        setIds(ids);
         if(onChange) onChange();
       };
     });
@@ -7977,14 +8024,19 @@ function renderContextBar(){
       ${dbEnabled ? `<span class="ccb-meta">Email accesso</span>
       <input id="ccbEmail" class="editable" style="font-size:12px;padding:5px 8px;max-width:200px;" value="${c.email||''}" placeholder="email del cliente" title="${c.authUserId ? 'Il cliente ha già effettuato il primo accesso con questa email' : 'Il cliente potrà accedere con questa email una volta creato il suo account'}">
       ${c.authUserId ? '<span style="color:#8FCF9F;font-size:11px;" title="Accesso già collegato">✓ collegato</span>' : ''}` : ''}
-      ${showAssign ? `<span class="ccb-meta">Seguito da</span>${profAssignHTML(c,'ccb')}` : ''}
+      ${showAssign ? `<span class="ccb-meta">Seguito da</span>${profAssignHTML(clienteProfIds(c),'ccb')}` : ''}
     </div>
   `;
   document.getElementById('btnBackToClienti').onclick = ()=>{
     showView('clienti');
     renderClientiList(document.getElementById('cliSearchInput').value);
   };
-  if(showAssign) bindProfAssign(c, 'ccb', ()=> renderContextBar());
+  if(showAssign) bindProfAssign(
+    ()=> clienteProfIds(c),
+    (ids)=>{ c.professionistiIds = ids; db.saveCliente(c); },
+    'ccb',
+    ()=> renderContextBar()
+  );
   const emailInp = document.getElementById('ccbEmail');
   if(emailInp) emailInp.onchange = ()=>{
     c.email = emailInp.value.trim();
