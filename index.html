@@ -4175,7 +4175,7 @@ const VAL_FISIO_OSTEO_LABELS = { fisioterapia:'Fisioterapista', osteopata:'Osteo
 // e il select del professionista (solo quando l'admin sta effettivamente
 // revisionando); editable=false mostra solo il risultato in lettura, usato
 // sia dagli altri professionisti nell'editor sia nella vista e nel report.
-function valRevisioneHTML(v, editable){
+function valRevisioneHTML(v, editable, c){
   const revisioneStamp = v.revisionatoDa
     ? `<div class="val-view-text" style="margin-top:10px;color:var(--ink-mute);font-size:11.5px;">Revisionato da ${escHtml(v.revisionatoDa)}${v.revisionatoIl ? ' il ' + v.revisionatoIl.split('-').reverse().join('/') : ''}</div>`
     : '';
@@ -4204,6 +4204,11 @@ function valRevisioneHTML(v, editable){
         </select>
       </div>
     </div>
+    ${c && dbEnabled && state.professionisti.length>0 ? `
+    <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line);">
+      <label style="font-size:12px;color:var(--ink-mute);display:block;margin-bottom:6px;">Professionisti assegnati al paziente (per il controllo Sistema e il resto del percorso)</label>
+      <div id="valRevProfAssignBox">${profAssignHTML(c,'valRev')}</div>
+    </div>` : ''}
     ${revisioneStamp}
   `;
 }
@@ -4455,8 +4460,9 @@ function renderValutazioneEditor(){
   });
 
   const canReview = canReviewValutazione();
+  const valRevClient = activeClient();
   html += `<div class="val-section val-esito-section"><div class="val-section-title">Revisione — smistamento</div>
-    ${canReview ? valRevisioneHTML(v, true) : `<div class="val-legacy-note">La revisione (decisione del percorso) è compilabile solo da un admin.</div>${valRevisioneHTML(v, false)}`}
+    ${canReview ? valRevisioneHTML(v, true, valRevClient) : `<div class="val-legacy-note">La revisione (decisione del percorso) è compilabile solo da un admin.</div>${valRevisioneHTML(v, false)}`}
   </div>`;
 
   html += `<div class="ev-actions val-editor-actions"><div></div><button class="btn-gold" id="btnSalvaValutazione">Salva valutazione</button></div>`;
@@ -4546,6 +4552,20 @@ function bindValutazioneEditorEvents(){
   const valProfSelect = document.getElementById('valProfessionistaAssegnato');
   if(valProfSelect){
     valProfSelect.onchange = ()=>{ v.professionistaAssegnatoId = valProfSelect.value || null; };
+  }
+
+  // professionisti assegnati al paziente, modificabile direttamente dalla
+  // Revisione (stesso componente della context bar in alto)
+  const valRevClientForAssign = activeClient();
+  if(valRevClientForAssign && document.getElementById('valRevAssignMulti')){
+    const refreshValRevProfAssign = ()=>{
+      const box = document.getElementById('valRevProfAssignBox');
+      if(box){
+        box.innerHTML = profAssignHTML(valRevClientForAssign, 'valRev');
+        bindProfAssign(valRevClientForAssign, 'valRev', ()=>{ refreshValRevProfAssign(); renderContextBar(); });
+      }
+    };
+    bindProfAssign(valRevClientForAssign, 'valRev', ()=>{ refreshValRevProfAssign(); renderContextBar(); });
   }
 
   if(canEditPersonaValutazione()) document.querySelectorAll('[data-persona]').forEach(group=>{
@@ -7876,6 +7896,69 @@ function clientPathwaySummary(c){
   return `${label} · ${c.pathway}`;
 }
 
+// componente riusabile "professionisti assegnati" (tag + dropdown aggiungi):
+// nato nella context bar del cliente, ora usato anche nella Revisione della
+// valutazione cosi da poter scegliere subito i professionisti a cui viene
+// passato il paziente mentre si imposta il percorso, senza dover tornare su
+// in alto. idPrefix tiene gli id unici quando compaiono più istanze insieme.
+function profAssignHTML(c, idPrefix){
+  const assignedIds = clienteProfIds(c);
+  const assigned = assignedIds.map(id=>state.professionisti.find(p=>p.id===id)).filter(Boolean);
+  const others = state.professionisti.filter(p=>!assignedIds.includes(p.id));
+  return `<div class="prof-assign" id="${idPrefix}AssignMulti">
+    <div class="prof-tags" id="${idPrefix}AssignTags">
+      ${assigned.map(p=>`<span class="prof-tag">${escHtml(p.nome)}${p.area?' ('+escHtml(p.area)+')':''}<button type="button" class="prof-tag-x" data-remove-prof="${p.id}" title="Rimuovi dall'incarico">×</button></span>`).join('') || '<span class="ccb-meta" style="font-style:italic;">Nessuno</span>'}
+    </div>
+    <div class="prof-add-wrap">
+      <button type="button" class="btn-small" id="${idPrefix}AddProfBtn">+ Aggiungi</button>
+      <div class="prof-dropdown" id="${idPrefix}ProfDropdown" style="display:none;">
+        ${others.length ? others.map(p=>`<div class="prof-dropdown-item" data-add-prof="${p.id}">${escHtml(p.nome)}${p.area?' ('+escHtml(p.area)+')':''}</div>`).join('') : `<div class="prof-dropdown-empty">Nessun altro professionista disponibile</div>`}
+      </div>
+    </div>
+  </div>`;
+}
+function bindProfAssign(c, idPrefix, onChange){
+  const assignBox = document.getElementById(idPrefix+'AssignMulti');
+  if(!assignBox) return;
+  assignBox.querySelectorAll('[data-remove-prof]').forEach(btn=>{
+    btn.onclick = ()=>{
+      const ids = clienteProfIds(c).filter(id=>id!==btn.dataset.removeProf);
+      c.professionistiIds = ids;
+      db.saveCliente(c);
+      if(onChange) onChange();
+    };
+  });
+  const addBtn = document.getElementById(idPrefix+'AddProfBtn');
+  const dropdown = document.getElementById(idPrefix+'ProfDropdown');
+  if(addBtn && dropdown){
+    addBtn.onclick = (e)=>{
+      e.stopPropagation();
+      document.querySelectorAll('.prof-dropdown').forEach(d=>{ if(d!==dropdown) d.style.display='none'; });
+      dropdown.style.display = dropdown.style.display==='none' ? 'block' : 'none';
+    };
+    dropdown.querySelectorAll('[data-add-prof]').forEach(item=>{
+      item.onclick = ()=>{
+        const ids = clienteProfIds(c);
+        if(!ids.includes(item.dataset.addProf)) ids.push(item.dataset.addProf);
+        c.professionistiIds = ids;
+        db.saveCliente(c);
+        if(onChange) onChange();
+      };
+    });
+  }
+  if(!window.__profDropdownGlobalClick){
+    window.__profDropdownGlobalClick = true;
+    document.addEventListener('click', (e)=>{
+      document.querySelectorAll('.prof-assign').forEach(wrap=>{
+        const dd = wrap.querySelector('.prof-dropdown');
+        if(dd && dd.style.display!=='none' && !wrap.contains(e.target)){
+          dd.style.display = 'none';
+        }
+      });
+    });
+  }
+}
+
 function renderContextBar(){
   const box = document.getElementById('cliContextBar');
   const c = activeClient();
@@ -7894,65 +7977,14 @@ function renderContextBar(){
       ${dbEnabled ? `<span class="ccb-meta">Email accesso</span>
       <input id="ccbEmail" class="editable" style="font-size:12px;padding:5px 8px;max-width:200px;" value="${c.email||''}" placeholder="email del cliente" title="${c.authUserId ? 'Il cliente ha già effettuato il primo accesso con questa email' : 'Il cliente potrà accedere con questa email una volta creato il suo account'}">
       ${c.authUserId ? '<span style="color:#8FCF9F;font-size:11px;" title="Accesso già collegato">✓ collegato</span>' : ''}` : ''}
-      ${showAssign ? (()=>{
-        const assignedIds = clienteProfIds(c);
-        const assigned = assignedIds.map(id=>state.professionisti.find(p=>p.id===id)).filter(Boolean);
-        const others = state.professionisti.filter(p=>!assignedIds.includes(p.id));
-        return `<span class="ccb-meta">Seguito da</span>
-        <div class="prof-assign" id="ccbAssignMulti">
-          <div class="prof-tags" id="ccbAssignTags">
-            ${assigned.map(p=>`<span class="prof-tag">${p.nome}${p.area?' ('+p.area+')':''}<button type="button" class="prof-tag-x" data-remove-prof="${p.id}" title="Rimuovi dall'incarico">×</button></span>`).join('')}
-          </div>
-          <div class="prof-add-wrap">
-            <button type="button" class="btn-small" id="ccbAddProfBtn">+ Aggiungi</button>
-            <div class="prof-dropdown" id="ccbProfDropdown" style="display:none;">
-              ${others.length ? others.map(p=>`<div class="prof-dropdown-item" data-add-prof="${p.id}">${p.nome}${p.area?' ('+p.area+')':''}</div>`).join('') : `<div class="prof-dropdown-empty">Nessun altro professionista disponibile</div>`}
-            </div>
-          </div>
-        </div>`;
-      })() : ''}
+      ${showAssign ? `<span class="ccb-meta">Seguito da</span>${profAssignHTML(c,'ccb')}` : ''}
     </div>
   `;
   document.getElementById('btnBackToClienti').onclick = ()=>{
     showView('clienti');
     renderClientiList(document.getElementById('cliSearchInput').value);
   };
-  const assignBox = document.getElementById('ccbAssignMulti');
-  if(assignBox){
-    assignBox.querySelectorAll('[data-remove-prof]').forEach(btn=>{
-      btn.onclick = ()=>{
-        const ids = clienteProfIds(c).filter(id=>id!==btn.dataset.removeProf);
-        c.professionistiIds = ids;
-        db.saveCliente(c);
-        renderContextBar();
-      };
-    });
-    const addBtn = document.getElementById('ccbAddProfBtn');
-    const dropdown = document.getElementById('ccbProfDropdown');
-    addBtn.onclick = (e)=>{
-      e.stopPropagation();
-      dropdown.style.display = dropdown.style.display==='none' ? 'block' : 'none';
-    };
-    dropdown.querySelectorAll('[data-add-prof]').forEach(item=>{
-      item.onclick = ()=>{
-        const ids = clienteProfIds(c);
-        if(!ids.includes(item.dataset.addProf)) ids.push(item.dataset.addProf);
-        c.professionistiIds = ids;
-        db.saveCliente(c);
-        renderContextBar();
-      };
-    });
-  }
-  if(!window.__profDropdownGlobalClick){
-    window.__profDropdownGlobalClick = true;
-    document.addEventListener('click', (e)=>{
-      const box = document.getElementById('ccbProfDropdown');
-      const wrap = document.getElementById('ccbAssignMulti');
-      if(box && box.style.display!=='none' && (!wrap || !wrap.contains(e.target))){
-        box.style.display = 'none';
-      }
-    });
-  }
+  if(showAssign) bindProfAssign(c, 'ccb', ()=> renderContextBar());
   const emailInp = document.getElementById('ccbEmail');
   if(emailInp) emailInp.onchange = ()=>{
     c.email = emailInp.value.trim();
