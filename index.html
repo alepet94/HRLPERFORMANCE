@@ -2282,6 +2282,7 @@ function clienteToRow(c){
     esito_valutazione: c.esitoValutazione || null,
     area_target: c.areaTarget || [],
     area_attiva: c.areaAttiva || null,
+    acuto_info: c.acutoInfo || null,
     ghi_storico: c.ghiStorico || [],
     sistema_test_selezionati: Array.from(c.sistemaTestSelezionati || []),
     schede_osteopatia: c.schedeOsteopatia || [],
@@ -2309,6 +2310,7 @@ function rowToCliente(r){
     esitoValutazione: r.esito_valutazione || null,
     areaTarget: r.area_target || [],
     areaAttiva: r.area_attiva || null,
+    acutoInfo: r.acuto_info || null,
     ghiStorico: r.ghi_storico || [],
     sistemaTestSelezionati: new Set(r.sistema_test_selezionati || []),
     schedeOsteopatia: r.schede_osteopatia || [],
@@ -2462,6 +2464,13 @@ function isSegreteriaOnly(){
 // vedono ma non possono modificarla
 function canEditPersonaValutazione(){
   return !!(state.professionista && (state.professionista.ruolo==='admin' || state.professionista.area==='Nutrizionista'));
+}
+// la "Revisione" (ex "Esito valutazione — smistamento") è la decisione di
+// percorso presa da un admin DOPO che la prima valutazione è stata
+// compilata, non dal valutatore stesso — solo un admin può impostarla/
+// modificarla; tutti gli altri la vedono in sola lettura
+function canReviewValutazione(){
+  return !!(state.professionista && state.professionista.ruolo==='admin');
 }
 // determina, in base al ruolo/area del professionista, quali tab clienti
 // (#cliTabs) può vedere e quale "sotto-area" di Area Human gli compete.
@@ -3698,21 +3707,34 @@ function renderCliAreaBadgeRow(){
   const c = activeClient();
   if(!c){ box.innerHTML = ''; return; }
   const labels = {
-    fisioterapia: 'Fisioterapia (acuto)',
-    sistema: 'Lavoro Sistema in corso',
+    fisioterapia: 'Fisioterapista (acuto)',
     AH: 'Area Human',
     AP: 'Area Performance',
-    'AH+AP': 'Area Human + Area Performance'
+    'AH+AP': 'Area Human + Area Performance',
+    sistema: 'Lavoro Sistema in corso'
   };
   if(!c.esitoValutazione){
-    box.innerHTML = `<span class="cli-area-badge">Prima valutazione da completare</span>`;
+    const hasValutazione = c.valutazioni && c.valutazioni.length>0;
+    box.innerHTML = hasValutazione
+      ? `<span class="cli-area-badge">Valutazione compilata — in attesa di revisione admin</span>`
+      : `<span class="cli-area-badge">Prima valutazione da completare</span>`;
     return;
   }
-  const attivaLabel = labels[c.areaAttiva] || '—';
-  let html = `<span class="cli-area-badge on">${attivaLabel}</span>`;
-  if(c.areaAttiva==='sistema' && c.areaTarget && c.areaTarget.length){
-    const targetLabel = c.areaTarget.length>1 ? 'Area Human + Area Performance' : (labels[c.areaTarget[0]] || c.areaTarget[0]);
-    html += `<span class="cli-area-badge">In attesa → ${targetLabel}</span>`;
+  let html = `<span class="cli-area-badge on">Controllo Sistema</span>`;
+  if(c.esitoValutazione==='acuto' && c.acutoInfo){
+    const area = c.acutoInfo.area;
+    const prof = c.acutoInfo.professionistaId ? state.professionisti.find(p=>p.id===c.acutoInfo.professionistaId) : null;
+    const areaLabel = area==='AH' ? 'Osteopata' : (area==='fisioterapia' ? 'Fisioterapista' : '—');
+    html += `<span class="cli-area-badge on">Acuto → ${areaLabel}${prof ? ' — ' + escHtml(prof.nome) : ''}</span>`;
+  } else if(c.esitoValutazione==='performance'){
+    if(c.areaAttiva==='sistema' && c.areaTarget && c.areaTarget.length){
+      const targetLabel = c.areaTarget.length>1 ? 'Area Human + Area Performance' : (labels[c.areaTarget[0]] || c.areaTarget[0]);
+      html += `<span class="cli-area-badge">In attesa → ${targetLabel}</span>`;
+    } else if(c.areaAttiva && c.areaAttiva!=='sistema'){
+      html += `<span class="cli-area-badge on">${labels[c.areaAttiva] || c.areaAttiva}</span>`;
+    }
+  } else if(c.esitoValutazione==='sistema'){
+    html += `<span class="cli-area-badge">Percorso unicamente sistemico</span>`;
   }
   box.innerHTML = html;
 }
@@ -3843,6 +3865,20 @@ function normalizeValutazione(v){
   if(!v.sonno) v.sonno = emptySonno();
   if(!v.energiaLivelli) v.energiaLivelli = emptyEnergiaLivelli();
   if(v.dialogoFocusNote===undefined) v.dialogoFocusNote = '';
+  if(v.fisioOsteoScelta===undefined) v.fisioOsteoScelta = null;
+  if(v.professionistaAssegnatoId===undefined) v.professionistaAssegnatoId = null;
+  if(v.revisionatoDa===undefined) v.revisionatoDa = null;
+  if(v.revisionatoIl===undefined) v.revisionatoIl = null;
+  if(!Array.isArray(v.areaScelta)) v.areaScelta = [];
+  // vecchio esito "sistema" + area scelta non vuota significava, prima di
+  // questo giro, "non acuto ma destinato a un'area" (Area Human e/o Area
+  // Performance) — con la nuova tassonomia a 3 esiti quel caso corrisponde a
+  // "performance" (sistema ESITO "solo sistema" ora ha un significato più
+  // stretto: nessuna area successiva). Si migra solo l'etichetta dell'esito,
+  // l'area scelta resta quella già indicata per non perdere il target
+  // storico, anche se le nuove revisioni non la useranno più (vanno sempre
+  // su Area Performance)
+  if(v.esito==='sistema' && v.areaScelta.length) v.esito = 'performance';
   return v;
 }
 
@@ -3870,8 +3906,14 @@ function emptyValutazione(){
     tensRelax: null,        // 'tens' | 'relax'
     desiderioMigliorarsi: null, // 1-10
     evidenziati: [],        // chiavi campo marcate importanti per questo cliente
-    esito: null,            // 'acuto' (-> Fisioterapia) | 'sistema' (-> lavoro Sistema)
-    areaScelta: [],         // se esito è 'sistema': ['AH'] | ['AP'] | ['AH','AP']
+    // "Revisione": decisione di percorso presa da un admin dopo la
+    // compilazione, non dal valutatore — vedi canReviewValutazione()
+    esito: null,                  // 'acuto' | 'performance' | 'sistema' (solo sistemico)
+    fisioOsteoScelta: null,       // se esito 'acuto': 'fisioterapia' | 'osteopata'
+    professionistaAssegnatoId: null, // professionista scelto per il caso acuto
+    revisionatoDa: null,          // nome dell'admin che ha fatto l'ultima revisione
+    revisionatoIl: null,          // data (ISO) dell'ultima revisione
+    areaScelta: [],         // retrocompatibilità: vecchio target di esito 'sistema' pre-migrazione
     createdAt: Date.now()
   };
 }
@@ -4116,6 +4158,56 @@ function valChipGroupHTML(name, options, current){
   </div>`;
 }
 
+const VAL_ESITO_OPZIONI = [
+  {v:'acuto', l:'Acuto → fisio/osteopata'},
+  {v:'performance', l:'Performance → Area Performance'},
+  {v:'sistema', l:'Solo percorso sistemico'}
+];
+const VAL_ESITO_LABELS = {
+  acuto: 'Acuto → valutazione fisio/osteopata',
+  performance: 'Performance → valutazione qualitativa Area Performance',
+  sistema: 'Percorso unicamente sistemico'
+};
+const VAL_FISIO_OSTEO_LABELS = { fisioterapia:'Fisioterapista', osteopata:'Osteopata' };
+// sezione "Revisione" (ex "Esito valutazione — smistamento"): decisione di
+// percorso presa da un admin dopo che la valutazione è stata compilata (non
+// dal valutatore), vedi canReviewValutazione(). editable=true mostra i chip
+// e il select del professionista (solo quando l'admin sta effettivamente
+// revisionando); editable=false mostra solo il risultato in lettura, usato
+// sia dagli altri professionisti nell'editor sia nella vista e nel report.
+function valRevisioneHTML(v, editable){
+  const revisioneStamp = v.revisionatoDa
+    ? `<div class="val-view-text" style="margin-top:10px;color:var(--ink-mute);font-size:11.5px;">Revisionato da ${escHtml(v.revisionatoDa)}${v.revisionatoIl ? ' il ' + v.revisionatoIl.split('-').reverse().join('/') : ''}</div>`
+    : '';
+  if(!editable){
+    if(!v.esito) return `<div class="val-view-text">In attesa di revisione da parte di un admin.</div>`;
+    let txt = `<div class="val-view-text">${escHtml(VAL_ESITO_LABELS[v.esito] || v.esito)}</div>`;
+    if(v.esito==='acuto'){
+      const prof = v.professionistaAssegnatoId ? state.professionisti.find(p=>p.id===v.professionistaAssegnatoId) : null;
+      txt += `<div class="val-view-text" style="margin-top:6px;">Presa in carico: ${v.fisioOsteoScelta ? escHtml(VAL_FISIO_OSTEO_LABELS[v.fisioOsteoScelta]) : '—'}${prof ? ' — ' + escHtml(prof.nome) : ''}</div>`;
+    }
+    return txt + revisioneStamp;
+  }
+  const fisioOsteoArea = v.fisioOsteoScelta==='osteopata' ? 'Osteopata' : (v.fisioOsteoScelta==='fisioterapia' ? 'Fisioterapista' : null);
+  const profOptions = fisioOsteoArea ? state.professionisti.filter(p=>p.area===fisioOsteoArea) : [];
+  return `
+    <div style="font-size:12px;color:var(--ink-mute);margin-bottom:10px;">Tutti i percorsi iniziano con il controllo sistemico. In più: se acuto, una valutazione con fisio/osteopata; se performance, una valutazione qualitativa dell'area performance; se solo sistemico, nessun'altra area.</div>
+    ${valChipGroupHTML('esito', VAL_ESITO_OPZIONI, v.esito)}
+    <div id="valAcutoWrap" style="margin-top:12px;${v.esito==='acuto'?'':'display:none;'}">
+      <label style="font-size:12px;color:var(--ink-mute);display:block;margin-bottom:6px;">Chi prende in carico il caso?</label>
+      ${valChipGroupHTML('fisioOsteoScelta', [{v:'fisioterapia',l:'Fisioterapista'},{v:'osteopata',l:'Osteopata'}], v.fisioOsteoScelta)}
+      <div style="margin-top:10px;">
+        <label style="font-size:12px;color:var(--ink-mute);display:block;margin-bottom:6px;">Professionista assegnato</label>
+        <select class="editable" id="valProfessionistaAssegnato" ${profOptions.length?'':'disabled'}>
+          <option value="">${profOptions.length ? '— Seleziona —' : 'Scegli prima fisio/osteopata'}</option>
+          ${profOptions.map(p=>`<option value="${p.id}" ${v.professionistaAssegnatoId===p.id?'selected':''}>${escHtml(p.nome)}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+    ${revisioneStamp}
+  `;
+}
+
 function valAlimentazioneHTML(v){
   const a = v.alimentazione;
   const legacy = (v.campi && v.campi.alimentazione) ? `<div class="val-legacy-note">Testo inserito in precedenza (formato libero): “${escHtml(v.campi.alimentazione)}”</div>` : '';
@@ -4269,11 +4361,8 @@ function renderValutazioneView(){
     </div></div>`;
   });
 
-  const esitoLbl = {acuto:'Acuto → Fisioterapia', sistema:'Non acuto → Sistema'}[v.esito] || '—';
-  const areaSceltaLbl = {AH:'Area Human', AP:'Area Performance'};
-  html += `<div class="val-section val-esito-section"><div class="val-section-title">Esito valutazione — smistamento</div>
-    <div class="val-view-text">${esitoLbl}</div>
-    ${v.esito==='sistema' && v.areaScelta.length ? `<div class="val-view-text" style="margin-top:6px;">Area di destinazione: ${v.areaScelta.map(a=>areaSceltaLbl[a]||a).join(', ')}</div>` : ''}
+  html += `<div class="val-section val-esito-section"><div class="val-section-title">Revisione — smistamento</div>
+    ${valRevisioneHTML(v, false)}
   </div>`;
 
   box.innerHTML = html;
@@ -4365,16 +4454,9 @@ function renderValutazioneEditor(){
     </div></div>`;
   });
 
-  html += `<div class="val-section val-esito-section"><div class="val-section-title">Esito valutazione — smistamento</div>
-    <div style="font-size:12px;color:var(--ink-mute);margin-bottom:10px;">In acuto va indirizzato in Fisioterapia; altrimenti entra nel lavoro Sistema, per poi essere indirizzato all'area scelta una volta che i GHI sono validi.</div>
-    ${valChipGroupHTML('esito', [{v:'acuto',l:'Acuto → Fisioterapia'},{v:'sistema',l:'Non acuto → Sistema'}], v.esito)}
-    <div id="valAreaSceltaWrap" style="margin-top:10px;${v.esito==='sistema'?'':'display:none;'}">
-      <label style="font-size:12px;color:var(--ink-mute);">Area di destinazione (al termine del lavoro Sistema)</label>
-      <div class="val-chip-group" id="valAreaScelta">
-        <button type="button" class="val-chip ${v.areaScelta.includes('AH')?'sel':''}" data-areaval="AH">Area Human</button>
-        <button type="button" class="val-chip ${v.areaScelta.includes('AP')?'sel':''}" data-areaval="AP">Area Performance</button>
-      </div>
-    </div>
+  const canReview = canReviewValutazione();
+  html += `<div class="val-section val-esito-section"><div class="val-section-title">Revisione — smistamento</div>
+    ${canReview ? valRevisioneHTML(v, true) : `<div class="val-legacy-note">La revisione (decisione del percorso) è compilabile solo da un admin.</div>${valRevisioneHTML(v, false)}`}
   </div>`;
 
   html += `<div class="ev-actions val-editor-actions"><div></div><button class="btn-gold" id="btnSalvaValutazione">Salva valutazione</button></div>`;
@@ -4449,23 +4531,21 @@ function bindValutazioneEditorEvents(){
         v[name] = (v[name]===chip.dataset.chipval) ? null : chip.dataset.chipval;
         group.querySelectorAll('[data-chipval]').forEach(c=> c.classList.toggle('sel', c.dataset.chipval===v[name]));
         if(name==='esito'){
-          const wrap = document.getElementById('valAreaSceltaWrap');
-          if(wrap) wrap.style.display = v.esito==='sistema' ? '' : 'none';
+          if(v.esito!=='acuto'){ v.fisioOsteoScelta = null; v.professionistaAssegnatoId = null; }
+          const wrap = document.getElementById('valAcutoWrap');
+          if(wrap) wrap.style.display = v.esito==='acuto' ? '' : 'none';
+        }
+        if(name==='fisioOsteoScelta'){
+          v.professionistaAssegnatoId = null;
+          renderValutazioneEditor();
         }
       };
     });
   });
 
-  const areaSceltaBox = document.getElementById('valAreaScelta');
-  if(areaSceltaBox){
-    areaSceltaBox.querySelectorAll('[data-areaval]').forEach(chip=>{
-      chip.onclick = ()=>{
-        const val = chip.dataset.areaval;
-        const idx = v.areaScelta.indexOf(val);
-        if(idx>=0) v.areaScelta.splice(idx,1); else v.areaScelta.push(val);
-        chip.classList.toggle('sel');
-      };
-    });
+  const valProfSelect = document.getElementById('valProfessionistaAssegnato');
+  if(valProfSelect){
+    valProfSelect.onchange = ()=>{ v.professionistaAssegnatoId = valProfSelect.value || null; };
   }
 
   if(canEditPersonaValutazione()) document.querySelectorAll('[data-persona]').forEach(group=>{
@@ -4497,20 +4577,34 @@ function bindValutazioneEditorEvents(){
       if(i>=0) state.valutazioni[i] = v; else state.valutazioni.push(v);
     }
     syncClientFromState();
-    // l'esito di QUESTA valutazione (se indicato) aggiorna lo smistamento
-    // corrente del cliente: acuto -> Fisioterapia subito; sistema -> lavoro
-    // Sistema, con l'area di destinazione scelta messa "in attesa" finché i
-    // GHI non sono validi (vedi "via libera" nella tab Sistema)
+    // la revisione di QUESTA valutazione (solo admin) aggiorna lo smistamento
+    // del cliente: in ogni caso il percorso parte dal controllo Sistema; in
+    // più, se acuto, viene assegnato subito un fisioterapista/osteopata, se
+    // performance l'area Performance entra "in attesa" finché i GHI non sono
+    // validi (vedi "via libera" nella tab Sistema), se solo sistema nessuna
+    // area ulteriore viene aperta
     const c = activeClient();
-    if(c && v.esito){
+    if(c && v.esito && canReviewValutazione()){
       c.esitoValutazione = v.esito;
+      c.areaAttiva = 'sistema';
       if(v.esito==='acuto'){
-        c.areaAttiva = 'fisioterapia';
+        const area = v.fisioOsteoScelta==='osteopata' ? 'AH' : (v.fisioOsteoScelta==='fisioterapia' ? 'fisioterapia' : null);
+        c.acutoInfo = { area: area, professionistaId: v.professionistaAssegnatoId || null };
         c.areaTarget = [];
+        if(v.professionistaAssegnatoId){
+          const ids = clienteProfIds(c);
+          if(!ids.includes(v.professionistaAssegnatoId)) ids.push(v.professionistaAssegnatoId);
+          c.professionistiIds = ids;
+        }
+      } else if(v.esito==='performance'){
+        c.acutoInfo = null;
+        c.areaTarget = (v.areaScelta && v.areaScelta.length) ? v.areaScelta.slice() : ['AP'];
       } else if(v.esito==='sistema'){
-        c.areaAttiva = 'sistema';
-        c.areaTarget = v.areaScelta.slice();
+        c.acutoInfo = null;
+        c.areaTarget = [];
       }
+      v.revisionatoDa = state.professionista ? state.professionista.nome : null;
+      v.revisionatoIl = fmtDateISO(new Date());
       db.saveCliente(c);
       renderContextBar();
       renderCliTabs();
@@ -4744,10 +4838,15 @@ function apriReportValutazione(c, v){
     const f = sez.campi.map(c2=>valFieldReportHTML(v,c2)).join('');
     if(f) sections += `<div class="rep-sezione"><h3>${escHtml(sez.title)}</h3>${f}</div>`;
   });
-  const esitoLbl = {acuto:'Acuto → Fisioterapia', sistema:'Non acuto → Sistema'}[v.esito];
+  const esitoLbl = VAL_ESITO_LABELS[v.esito];
   if(esitoLbl){
-    const areaSceltaLbl = {AH:'Area Human', AP:'Area Performance'};
-    sections += `<div class="rep-sezione"><h3>Esito valutazione</h3><div style="font-size:13px;">${esitoLbl}</div>${v.esito==='sistema'&&v.areaScelta.length ? `<div style="font-size:13px;margin-top:4px;">Area di destinazione: ${v.areaScelta.map(a=>areaSceltaLbl[a]||a).join(', ')}</div>` : ''}</div>`;
+    let esitoExtra = '';
+    if(v.esito==='acuto'){
+      const prof = v.professionistaAssegnatoId ? state.professionisti.find(p=>p.id===v.professionistaAssegnatoId) : null;
+      esitoExtra = `<div style="font-size:13px;margin-top:4px;">Presa in carico: ${v.fisioOsteoScelta ? escHtml(VAL_FISIO_OSTEO_LABELS[v.fisioOsteoScelta]) : '—'}${prof ? ' — ' + escHtml(prof.nome) : ''}</div>`;
+    }
+    const revisioneTxt = v.revisionatoDa ? `<div style="font-size:12px;margin-top:4px;color:#666;">Revisionato da ${escHtml(v.revisionatoDa)}${v.revisionatoIl ? ' il ' + v.revisionatoIl.split('-').reverse().join('/') : ''}</div>` : '';
+    sections += `<div class="rep-sezione"><h3>Revisione — smistamento</h3><div style="font-size:13px;">${esitoLbl}</div>${esitoExtra}${revisioneTxt}</div>`;
   }
 
   const html = `<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8">
@@ -7720,14 +7819,17 @@ function createCliente(data){
     professionistiIds: state.professionista ? [state.professionista.id] : [],
     authUserId: null,
     valutazioni: [],
-    // macro-aree: esito della prima valutazione (null finché non fatta),
-    // 'acuto' (-> Fisioterapia) o 'sistema' (-> lavoro sistema, poi AH/AP);
+    // macro-aree: esito della prima valutazione (null finché non revisionata
+    // da un admin), 'acuto' (-> fisio/osteopata), 'performance' (-> lavoro
+    // sistema poi Area Performance/Human) o 'sistema' (solo sistemico);
     // areaTarget è l'area (o le aree) scelte a cui destinare il cliente una
     // volta che il lavoro sistema è concluso; areaAttiva è l'area in cui il
-    // cliente si trova OPERATIVAMENTE oggi (aggiornata anche col "via libera")
+    // cliente si trova OPERATIVAMENTE oggi (aggiornata anche col "via libera");
+    // acutoInfo = {area, professionistaId} quando l'esito è 'acuto'
     esitoValutazione: null,
     areaTarget: [],
     areaAttiva: null,
+    acutoInfo: null,
     ghiStorico: [],
     sistemaTestSelezionati: new Set(),
     schedeOsteopatia: []
