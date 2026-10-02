@@ -1127,6 +1127,32 @@ header.top{
 .osteo-privata-toggle{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-mute);cursor:pointer;margin:2px 0 10px;}
 .osteo-privata-toggle input{cursor:pointer;}
 .osteo-condividi-btn{background:none;border:1px solid var(--line);border-radius:20px;padding:6px 14px;font-size:12.5px;color:var(--ink-dim);cursor:pointer;}
+
+/* mappa corporea + scala dolore NRS (Area Fisioterapia) */
+.body-map-wrap{display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start;margin:10px 0 16px;}
+.body-map-canvas{position:relative;width:140px;flex:0 0 140px;cursor:crosshair;}
+.body-map-svg{width:100%;height:auto;display:block;fill:var(--navy-700);stroke:var(--line);stroke-width:2;}
+.body-map-marker{
+  position:absolute;width:22px;height:22px;border-radius:50%;transform:translate(-50%,-50%);
+  background:var(--pcolor);color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;
+  cursor:pointer;border:2px solid var(--navy-900);box-shadow:0 0 0 1px rgba(255,255,255,.15);
+}
+.body-map-marker.sel{box-shadow:0 0 0 2px var(--gold);}
+.body-map-side{flex:1;min-width:200px;}
+.body-map-hint{font-size:11.5px;color:var(--ink-mute);margin-bottom:8px;}
+.body-map-list{display:flex;flex-direction:column;gap:4px;margin-bottom:8px;}
+.body-map-list-row{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink-dim);cursor:pointer;padding:4px 6px;border-radius:6px;}
+.body-map-list-row.sel{background:var(--navy-800);}
+.body-map-dot{width:10px;height:10px;border-radius:50%;background:var(--pcolor);flex:0 0 auto;}
+.body-map-list-row span:nth-child(2){flex:1;}
+.body-map-rm{background:none;border:none;color:var(--ink-mute);font-size:15px;cursor:pointer;line-height:1;padding:0 2px;}
+.body-map-rm:hover{color:#E0776A;}
+.body-map-editor{border-top:1px solid var(--line-soft);padding-top:10px;margin-top:4px;}
+.body-map-editor label{font-size:12px;color:var(--ink-mute);display:block;margin-bottom:4px;}
+.body-map-editor input[type=range]{width:100%;}
+
+/* red flags (Area Fisioterapia) */
+.redflag-banner{background:rgba(224,119,106,.14);color:#E0776A;border:1px solid rgba(224,119,106,.4);border-radius:8px;padding:8px 12px;font-size:12.5px;margin:8px 0;}
 .osteo-condividi-btn:hover{border-color:var(--gold);color:var(--gold);}
 .osteo-condividi-list label{display:flex;align-items:center;gap:8px;font-size:13.5px;padding:8px 2px;border-bottom:1px solid var(--line-soft);cursor:pointer;}
 .osteo-condividi-list label:last-child{border-bottom:none;}
@@ -5610,29 +5636,177 @@ function renderAreaHumanOsteopatia(){
 }
 
 // ==================== AREA FISIOTERAPIA ====================
-// branchia dell'Area Performance dedicata al fisioterapista: prima bozza
-// (30/9), da rifinire quando i fisioterapisti daranno indicazioni precise.
+// branchia dell'Area Performance dedicata al fisioterapista. Round III/IV
+// (2/10): ampliata su richiesta di Ale con 5 miglioramenti — tipi di
+// trattamento ampliati, collegamento trattamento↔valutazione, red flags +
+// obiettivi funzionali/dimissione, mappa corporea con scala dolore NRS
+// (valutazione e trattamenti), grafico di andamento nel report PDF.
 // Tre sezioni: Valutazione fisioterapica (scheda dedicata), Trattamenti
-// (mobilizzazione/scarico/tecarterapia, stesso pattern della scheda
-// osteopatia — flag multipli + nota per il report/nota privata condivisibile)
-// e Schede esercizio (rinforzo: stesso sistema di schede di Area Performance,
-// ma come elenco flat per cliente, non legato a un profilo/pathway — vedi
-// c.schedeFisioterapia, mai keyed come state.schede).
+// (flag multipli + nota per il report/nota privata condivisibile, stesso
+// pattern della scheda osteopatia) e Schede esercizio (rinforzo: stesso
+// sistema di schede di Area Performance, ma come elenco flat per cliente,
+// non legato a un profilo/pathway — vedi c.schedeFisioterapia, mai keyed
+// come state.schede).
 
-// ---------- Trattamenti fisioterapici (mobilizzazione/scarico/tecarterapia) ----------
-const TRATTAMENTO_FISIO_LABELS = { mobilizzazione:'Mobilizzazione', scarico:'Scarico', tecarterapia:'Tecarterapia' };
+// ---------- Mappa corporea + scala dolore (NRS 0-10), condivisa tra
+// valutazione fisioterapica e singoli trattamenti ----------
+// colore del dolore: verde (0, nessun dolore) -> rosso (10, massimo) — la
+// semantica è opposta a valScoreColor() (dove alto=buono), quindi una
+// funzione dedicata
+function painColor(nrs){
+  const t = Math.max(0, Math.min(1, (Number(nrs)||0)/10));
+  const lo = {r:111,g:207,b:151}, hi = {r:224,g:90,b:90};
+  const r = Math.round(lo.r + (hi.r-lo.r)*t);
+  const g = Math.round(lo.g + (hi.g-lo.g)*t);
+  const b = Math.round(lo.b + (hi.b-lo.b)*t);
+  return `rgb(${r},${g},${b})`;
+}
+// sagoma corporea minimale (vista frontale), disegno originale a forme
+// semplici — solo da inquadrare dove si trova il dolore, non un'illustrazione
+// anatomica di dettaglio
+const BODY_MAP_SVG = `<svg viewBox="0 0 200 420" xmlns="http://www.w3.org/2000/svg" class="body-map-svg">
+  <circle cx="100" cy="36" r="26"/>
+  <rect x="78" y="60" width="44" height="18" rx="8"/>
+  <path d="M60,78 h80 c14,0 22,10 22,26 v70 c0,10 -6,16 -14,16 h-10 v110 c0,10 -8,16 -18,16 h-18 v-110 h-16 v110 h-18 c-10,0 -18,-6 -18,-16 v-110 h-10 c-8,0 -14,-6 -14,-16 v-70 c0,-16 8,-26 22,-26 z"/>
+  <rect x="24" y="96" width="20" height="92" rx="10"/>
+  <rect x="156" y="96" width="20" height="92" rx="10"/>
+  <rect x="68" y="300" width="22" height="100" rx="10"/>
+  <rect x="110" y="300" width="22" height="100" rx="10"/>
+</svg>`;
+function emptyDolorePunto(){ return { id:'dp_'+Date.now()+'_'+Math.random().toString(36).slice(2,5), x:0.5, y:0.5, nrs:5, nota:'' }; }
+// rende la mappa + lista punti + editor del punto selezionato; getPoints/setPoints
+// generalizzano l'accesso (funziona sia su v.dolorePunti sia su s.dolorePunti),
+// stesso pattern getter/setter di profAssignHTML/bindProfAssign
+function bodyMapHTML(points, idPrefix, selectedId){
+  const pts = points || [];
+  const markersHTML = pts.map(p=>`<div class="body-map-marker ${p.id===selectedId?'sel':''}" data-bm-point="${p.id}"
+      style="left:${(p.x*100).toFixed(1)}%;top:${(p.y*100).toFixed(1)}%;--pcolor:${painColor(p.nrs)};" title="NRS ${p.nrs}/10">${p.nrs}</div>`).join('');
+  const selected = pts.find(p=>p.id===selectedId);
+  return `<div class="body-map-wrap">
+    <div class="body-map-canvas" id="${idPrefix}Canvas">${BODY_MAP_SVG}${markersHTML}</div>
+    <div class="body-map-side">
+      <div class="body-map-hint">Clicca sulla sagoma per segnare un punto dolente, poi regola l'intensità.</div>
+      ${pts.length ? `<div class="body-map-list">${pts.map(p=>`
+        <div class="body-map-list-row ${p.id===selectedId?'sel':''}" data-bm-select="${p.id}">
+          <span class="body-map-dot" style="--pcolor:${painColor(p.nrs)};"></span>
+          <span>NRS ${p.nrs}/10${p.nota ? ' — '+escHtml(p.nota) : ''}</span>
+          <button type="button" class="body-map-rm" data-bm-remove="${p.id}" title="Rimuovi">×</button>
+        </div>`).join('')}</div>` : `<div class="val-empty" style="margin:0;">Nessun punto dolente segnato.</div>`}
+      ${selected ? `<div class="body-map-editor">
+        <label>Intensità (NRS 0-10): <b>${selected.nrs}</b></label>
+        <input type="range" min="0" max="10" step="1" value="${selected.nrs}" id="${idPrefix}NrsRange">
+        <input class="editable" id="${idPrefix}NotaPunto" placeholder="es. spalla destra, lato anteriore" value="${escAttr(selected.nota||'')}" style="margin-top:8px;">
+      </div>` : ''}
+    </div>
+  </div>`;
+}
+function bindBodyMap(idPrefix, getPoints, setPoints, selectedId, onChange){
+  const canvas = document.getElementById(idPrefix+'Canvas');
+  if(!canvas) return;
+  canvas.addEventListener('click', (e)=>{
+    if(e.target.closest('[data-bm-point]')) return; // il click su un marker esistente lo seleziona (gestito sotto)
+    const rect = canvas.getBoundingClientRect();
+    const x = Math.max(0, Math.min(1, (e.clientX-rect.left)/rect.width));
+    const y = Math.max(0, Math.min(1, (e.clientY-rect.top)/rect.height));
+    const pts = getPoints().slice();
+    const np = emptyDolorePunto();
+    np.x = x; np.y = y;
+    pts.push(np);
+    setPoints(pts);
+    onChange(np.id);
+  });
+  canvas.querySelectorAll('[data-bm-point]').forEach(el=>{
+    el.onclick = (e)=>{ e.stopPropagation(); onChange(el.dataset.bmPoint); };
+  });
+  const wrap = canvas.closest('.body-map-wrap');
+  if(!wrap) return;
+  wrap.querySelectorAll('[data-bm-select]').forEach(row=>{
+    row.onclick = (e)=>{ if(e.target.closest('[data-bm-remove]')) return; onChange(row.dataset.bmSelect); };
+  });
+  wrap.querySelectorAll('[data-bm-remove]').forEach(btn=>{
+    btn.onclick = (e)=>{
+      e.stopPropagation();
+      const pts = getPoints().filter(p=>p.id!==btn.dataset.bmRemove);
+      setPoints(pts);
+      onChange(null);
+    };
+  });
+  const range = document.getElementById(idPrefix+'NrsRange');
+  if(range) range.oninput = (e)=>{
+    const pts = getPoints().slice();
+    const p = pts.find(x=>x.id===selectedId);
+    if(!p) return;
+    p.nrs = parseInt(e.target.value,10);
+    setPoints(pts);
+    // aggiornamento diretto del DOM (niente re-render completo, altrimenti
+    // si interrompe il drag dello slider): colore/numero del marker sulla
+    // mappa, etichetta nell'editor, e riga corrispondente nella lista punti
+    const color = painColor(p.nrs);
+    const marker = wrap.querySelector(`[data-bm-point="${p.id}"]`);
+    if(marker){ marker.style.setProperty('--pcolor', color); marker.textContent = p.nrs; marker.title = `NRS ${p.nrs}/10`; }
+    const label = wrap.querySelector('.body-map-editor label b');
+    if(label) label.textContent = p.nrs;
+    const listRow = wrap.querySelector(`[data-bm-select="${p.id}"] span:nth-child(2)`);
+    if(listRow) listRow.textContent = `NRS ${p.nrs}/10${p.nota ? ' — '+p.nota : ''}`;
+    const dot = wrap.querySelector(`[data-bm-select="${p.id}"] .body-map-dot`);
+    if(dot) dot.style.setProperty('--pcolor', color);
+    if(onChange) onChange(selectedId, true);
+  };
+  const notaEl = document.getElementById(idPrefix+'NotaPunto');
+  if(notaEl) notaEl.oninput = (e)=>{
+    const pts = getPoints().slice();
+    const p = pts.find(x=>x.id===selectedId);
+    if(!p) return;
+    p.nota = e.target.value;
+    setPoints(pts);
+    const listRow = wrap.querySelector(`[data-bm-select="${p.id}"] span:nth-child(2)`);
+    if(listRow) listRow.textContent = `NRS ${p.nrs}/10${p.nota ? ' — '+p.nota : ''}`;
+    if(onChange) onChange(selectedId, true);
+  };
+}
+
+// ---------- Trattamenti fisioterapici ----------
+// Round III/IV: ampliati oltre i 3 originali (mobilizzazione/scarico/
+// tecarterapia) con altre tecniche comuni, su richiesta di Ale — struttura
+// generalizzata in s.campi{tipo:{report,privata}} invece di 3 proprietà fisse,
+// con normalizeTrattamentoFisio() che migra al volo (nessuna riscrittura dati)
+// i trattamenti già salvati con le vecchie proprietà dirette.
+const TRATTAMENTO_FISIO_LABELS = {
+  mobilizzazione:'Mobilizzazione', scarico:'Scarico', tecarterapia:'Tecarterapia',
+  manipolazione:'Manipolazione', taping:'Taping', laser:'Laserterapia',
+  ultrasuoni:'Ultrasuoni', elettrostimolazione:'Elettrostimolazione', stretching:'Stretching assistito'
+};
 function emptyTrattamentoFisio(){
+  const campi = {};
+  Object.keys(TRATTAMENTO_FISIO_LABELS).forEach(t=> campi[t] = emptyOsteoCampo());
   return {
     id: 'ft_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
     data: fmtDateISO(new Date()),
-    tipi: [],                 // sottoinsieme di ['mobilizzazione','scarico','tecarterapia'], selezionabili insieme
-    mobilizzazione: emptyOsteoCampo(),
-    scarico: emptyOsteoCampo(),
-    tecarterapia: emptyOsteoCampo(),
+    tipi: [],                 // sottoinsieme delle chiavi di TRATTAMENTO_FISIO_LABELS, selezionabili insieme
+    campi,
+    collegataAValutazioneId: null, // id della valutazione fisioterapica di riferimento
+    dolorePunti: [],          // punti dolenti NRS segnati a questa seduta (per il grafico di andamento)
     condividiPrivateCon: [],  // id professionisti con cui sono condivise TUTTE le note private di questa seduta
     professionistaId: null,
     _privataOpen: {}
   };
+}
+// migra al volo un trattamento salvato nel vecchio formato (proprietà dirette
+// mobilizzazione/scarico/tecarterapia) nel nuovo s.campi — nessuna riscrittura
+// dei dati esistenti, stesso pattern di normalizeSchedaOsteopatia
+function normalizeTrattamentoFisio(s){
+  if(!s.campi){
+    const campi = {};
+    Object.keys(TRATTAMENTO_FISIO_LABELS).forEach(t=>{
+      campi[t] = s[t] ? { report:s[t].report||'', privata:s[t].privata||'' } : emptyOsteoCampo();
+    });
+    s.campi = campi;
+  } else {
+    Object.keys(TRATTAMENTO_FISIO_LABELS).forEach(t=>{ if(!s.campi[t]) s.campi[t] = emptyOsteoCampo(); });
+  }
+  if(!s.dolorePunti) s.dolorePunti = [];
+  if(s.collegataAValutazioneId===undefined) s.collegataAValutazioneId = null;
+  return s;
 }
 function canSeeFisioPrivata(s){
   if(!state.professionista) return false;
@@ -5641,16 +5815,16 @@ function canSeeFisioPrivata(s){
   return Array.isArray(s.condividiPrivateCon) && s.condividiPrivateCon.includes(state.professionista.id);
 }
 function fisioTrattamentoBlocks(s){
-  const blocks = [];
-  if(s.tipi.includes('mobilizzazione')) blocks.push({ titolo:'Mobilizzazione', report:s.mobilizzazione.report, privata:s.mobilizzazione.privata });
-  if(s.tipi.includes('scarico')) blocks.push({ titolo:'Scarico', report:s.scarico.report, privata:s.scarico.privata });
-  if(s.tipi.includes('tecarterapia')) blocks.push({ titolo:'Tecarterapia', report:s.tecarterapia.report, privata:s.tecarterapia.privata });
-  return blocks;
+  normalizeTrattamentoFisio(s);
+  return Object.keys(TRATTAMENTO_FISIO_LABELS)
+    .filter(t=> s.tipi.includes(t))
+    .map(t=> ({ titolo: TRATTAMENTO_FISIO_LABELS[t], report: s.campi[t].report, privata: s.campi[t].privata }));
 }
 // report stampabile (via "Stampa" del browser) di una seduta di trattamento
 // fisioterapico: stesso pattern di apriReportOsteopatia, solo note "per il
 // report" incluse, mai le private
 function apriReportTrattamentoFisio(c, s){
+  normalizeTrattamentoFisio(s);
   const prof = state.professionisti.find(p=>p.id===s.professionistaId);
   const dataFmt = s.data ? s.data.split('-').reverse().join('/') : '—';
   const logoSrc = (document.querySelector('.mark-logo') || document.querySelector('.auth-logo') || {}).src || '';
@@ -5659,6 +5833,8 @@ function apriReportTrattamentoFisio(c, s){
     `<div class="rep-sezione"><h3>${escHtml(b.titolo)}</h3><div class="rep-testo">${b.report ? escHtml(b.report) : '<em>Nessuna nota</em>'}</div></div>`
   ).join('') : `<div class="rep-sezione"><div class="rep-testo"><em>Nessun trattamento registrato.</em></div></div>`;
   const tipiLbl = s.tipi.map(t=>TRATTAMENTO_FISIO_LABELS[t] || t).join(', ') || '—';
+  const valRif = s.collegataAValutazioneId ? (c.valutazioniFisioterapia||[]).find(v=>v.id===s.collegataAValutazioneId) : null;
+  const doloreLbl = (s.dolorePunti&&s.dolorePunti.length) ? s.dolorePunti.map(p=>`NRS ${p.nrs}/10${p.nota?' ('+p.nota+')':''}`).join(', ') : '—';
   const html = `<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8">
     <title>Report trattamento — ${escHtml(c.nome || '')}</title>
     <style>
@@ -5684,6 +5860,8 @@ function apriReportTrattamentoFisio(c, s){
       <div><span class="rep-meta-label">Data seduta</span>${dataFmt}</div>
       <div><span class="rep-meta-label">Operatore</span>${prof ? escHtml(prof.nome) : '—'}</div>
       <div><span class="rep-meta-label">Trattamento</span>${escHtml(tipiLbl)}</div>
+      <div><span class="rep-meta-label">Valutazione di riferimento</span>${valRif ? (valRif.data ? valRif.data.split('-').reverse().join('/') : '—') : '—'}</div>
+      <div><span class="rep-meta-label">Dolore rilevato (NRS)</span>${escHtml(doloreLbl)}</div>
     </div>
     ${sezioniHTML}
     <button class="rep-print-btn" onclick="window.print()">Stampa / Salva come PDF</button>
@@ -5692,10 +5870,111 @@ function apriReportTrattamentoFisio(c, s){
   if(!win){ alert('Il browser ha bloccato l\'apertura della finestra di report. Consenti i popup per questo sito e riprova.'); return; }
   win.document.open(); win.document.write(html); win.document.close();
 }
+
+// ---------- Report andamento fisioterapia (grafico dolore nel tempo) ----------
+// raccoglie il dolore massimo rilevato ad ogni valutazione/trattamento che ha
+// almeno un punto segnato sulla mappa corporea, ordinato per data, e lo
+// disegna come grafico a linea — stesso pattern "finestra di stampa" degli
+// altri report, con un disegno SVG a colori letterali (la finestra non eredita
+// le custom property CSS dell'app)
+function fisioPainTrendPoints(c){
+  const pts = [];
+  (c.valutazioniFisioterapia||[]).forEach(v=>{
+    normalizeValutazioneFisio(v);
+    if(v.dolorePunti && v.dolorePunti.length){
+      pts.push({ data:v.data, nrs: Math.max(...v.dolorePunti.map(p=>p.nrs)), tipo:'Valutazione' });
+    }
+  });
+  (c.trattamentiFisioterapia||[]).forEach(s=>{
+    normalizeTrattamentoFisio(s);
+    if(s.dolorePunti && s.dolorePunti.length){
+      pts.push({ data:s.data, nrs: Math.max(...s.dolorePunti.map(p=>p.nrs)), tipo:'Trattamento' });
+    }
+  });
+  return pts.filter(p=>p.data).sort((a,b)=> a.data.localeCompare(b.data));
+}
+function painTrendSvgForReport(points){
+  if(!points.length) return '<div class="rep-testo"><em>Nessun dato sul dolore ancora registrato (nessun punto segnato sulla mappa corporea).</em></div>';
+  const W=640, H=220, padL=34, padR=16, padT=14, padB=34;
+  const innerW = W-padL-padR, innerH = H-padT-padB;
+  const n = points.length;
+  const xAt = (i)=> n>1 ? padL + innerW*i/(n-1) : padL+innerW/2;
+  const yAt = (v)=> padT + innerH*(1 - v/10);
+  const linePts = points.map((p,i)=>`${xAt(i)},${yAt(p.nrs)}`).join(' ');
+  const gridLines = [0,2,4,6,8,10].map(v=>`<line x1="${padL}" y1="${yAt(v)}" x2="${W-padR}" y2="${yAt(v)}" stroke="#eee" stroke-width="1"/><text x="${padL-6}" y="${yAt(v)+3}" font-size="9" fill="#888" text-anchor="end">${v}</text>`).join('');
+  const dots = points.map((p,i)=>`<circle cx="${xAt(i)}" cy="${yAt(p.nrs)}" r="4" fill="${painColor(p.nrs)}"/>`).join('');
+  const step = Math.max(1, Math.ceil(n/7));
+  const labels = points.map((p,i)=> (i===0||i===n-1||i%step===0) ? `<text x="${xAt(i)}" y="${H-10}" font-size="9" fill="#888" text-anchor="middle">${p.data.split('-').slice(1).reverse().join('/')}</text>` : '').join('');
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" height="220" style="max-width:640px;">
+    ${gridLines}
+    <polyline points="${linePts}" fill="none" stroke="#8a6d1d" stroke-width="2"/>
+    ${dots}
+    ${labels}
+  </svg>`;
+}
+function apriReportAndamentoFisio(c){
+  const logoSrc = (document.querySelector('.mark-logo') || document.querySelector('.auth-logo') || {}).src || '';
+  const points = fisioPainTrendPoints(c);
+  const chartHTML = painTrendSvgForReport(points);
+  const valutazioni = (c.valutazioniFisioterapia||[]).slice().sort((a,b)=> (a.data||'').localeCompare(b.data||''));
+  const valutazioniHTML = valutazioni.length ? valutazioni.map(v=>{
+    normalizeValutazioneFisio(v);
+    const obiettiviHTML = v.obiettiviFunzionali.length ? `<ul class="rep-list">${v.obiettiviFunzionali.map(o=>`<li>${o.raggiunto?'✓ ':''}${escHtml(o.testo)}${o.raggiunto?' (raggiunto)':''}</li>`).join('')}</ul>` : '';
+    const flagsHTML = anyRedFlag(v) ? `<div class="rep-redflag">⚠ Red flags: ${Object.keys(RED_FLAGS_FISIO).filter(k=>v.redFlags[k]).map(k=>escHtml(RED_FLAGS_FISIO[k])).join('; ')}</div>` : '';
+    return `<div class="rep-sezione">
+      <h3>${v.data ? v.data.split('-').reverse().join('/') : '—'}</h3>
+      ${flagsHTML}
+      <div class="rep-testo">${escHtml(v.motivo || 'Nessun motivo indicato')}</div>
+      ${v.criteriDimissione ? `<div class="rep-testo"><b>Criteri di dimissione:</b> ${escHtml(v.criteriDimissione)}</div>` : ''}
+      ${obiettiviHTML}
+    </div>`;
+  }).join('') : `<div class="rep-sezione"><div class="rep-testo"><em>Nessuna valutazione registrata.</em></div></div>`;
+  const html = `<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8">
+    <title>Report andamento fisioterapia — ${escHtml(c.nome || '')}</title>
+    <style>
+      body{font-family:-apple-system,Segoe UI,Arial,sans-serif;background:#fff;color:#111;padding:36px;max-width:760px;margin:0 auto;}
+      .rep-head{display:flex;align-items:center;gap:18px;border-bottom:2px solid #8a6d1d;padding-bottom:16px;margin-bottom:20px;}
+      .rep-head img{height:52px;filter:invert(1);background:#1b1b1b;padding:8px;border-radius:6px;}
+      .rep-head h1{font-size:20px;margin:0;}
+      .rep-head .rep-sub{color:#555;font-size:12.5px;margin-top:2px;}
+      .rep-meta{display:grid;grid-template-columns:1fr 1fr;gap:10px 24px;margin-bottom:20px;font-size:13px;}
+      .rep-meta .rep-meta-label{color:#777;text-transform:uppercase;font-size:10.5px;letter-spacing:.04em;display:block;}
+      .rep-sezione{margin-bottom:18px;}
+      .rep-sezione h3{font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:#8a6d1d;margin:0 0 6px;border-bottom:1px solid #e0d3a8;padding-bottom:4px;}
+      .rep-testo{font-size:13.5px;white-space:pre-wrap;line-height:1.5;margin-bottom:4px;}
+      .rep-list{margin:4px 0 0;padding-left:18px;font-size:13px;}
+      .rep-redflag{background:#fdecea;color:#b33;border:1px solid #f1b5ad;border-radius:6px;padding:6px 10px;font-size:12.5px;margin-bottom:6px;}
+      .rep-print-btn{margin-top:28px;padding:10px 18px;background:#8a6d1d;color:#fff;border:none;border-radius:4px;font-size:13px;cursor:pointer;}
+      @media print{ .rep-print-btn{display:none;} body{padding:0;} }
+    </style></head><body>
+    <div class="rep-head">
+      ${logoSrc ? `<img src="${logoSrc}" alt="HRL">` : ''}
+      <div><h1>Report andamento — Fisioterapia</h1><div class="rep-sub">HRL Performance Pathways</div></div>
+    </div>
+    <div class="rep-meta">
+      <div><span class="rep-meta-label">Cliente</span>${escHtml(c.nome || '—')}</div>
+      <div><span class="rep-meta-label">Sedute con dolore registrato</span>${points.length}</div>
+    </div>
+    <div class="rep-sezione"><h3>Andamento del dolore (NRS 0-10)</h3>${chartHTML}</div>
+    <div class="rep-sezione"><h3>Valutazioni</h3></div>
+    ${valutazioniHTML}
+    <button class="rep-print-btn" onclick="window.print()">Stampa / Salva come PDF</button>
+    </body></html>`;
+  const win = window.open('', '_blank');
+  if(!win){ alert('Il browser ha bloccato l\'apertura della finestra di report. Consenti i popup per questo sito e riprova.'); return; }
+  win.document.open(); win.document.write(html); win.document.close();
+}
 function renderFisioTrattamentiSection(c){
   if(!c.trattamentiFisioterapia) c.trattamentiFisioterapia = [];
+  c.trattamentiFisioterapia.forEach(normalizeTrattamentoFisio);
   if(!state.trattamentoFisioDraft) state.trattamentoFisioDraft = emptyTrattamentoFisio();
   const draft = state.trattamentoFisioDraft;
+  if(draft._selectedPainId===undefined) draft._selectedPainId = null;
+
+  const valutazioniRows = (c.valutazioniFisioterapia||[]).slice().sort((a,b)=> (b.data||'').localeCompare(a.data||''));
+  // se non è ancora stata scelta una valutazione di riferimento per il nuovo
+  // trattamento, propone di default la più recente — resta comunque modificabile
+  if(draft.collegataAValutazioneId===null && valutazioniRows.length) draft.collegataAValutazioneId = valutazioniRows[0].id;
 
   const rows = c.trattamentiFisioterapia.slice().sort((a,b)=> (b.data||'').localeCompare(a.data||''));
   const listHTML = rows.length ? rows.map(s=>{
@@ -5708,6 +5987,8 @@ function renderFisioTrattamentiSection(c){
       const privataLine = vedePrivata ? `<div style="color:var(--ink-mute);">🔒 <i>Privata:</i> ${b.privata ? escHtml(b.privata) : '<em>nessuna</em>'}</div>` : '';
       return reportLine + privataLine;
     }).join('') : '<div><em>Nessun trattamento registrato</em></div>';
+    const valRif = s.collegataAValutazioneId ? (c.valutazioniFisioterapia||[]).find(v=>v.id===s.collegataAValutazioneId) : null;
+    const doloreLbl = (s.dolorePunti&&s.dolorePunti.length) ? s.dolorePunti.map(p=>`NRS ${p.nrs}`).join(', ') : '';
     return `<div class="val-card">
       <div class="val-card-top">
         <div class="val-card-date">${s.data ? s.data.split('-').reverse().join('/') : '—'}</div>
@@ -5717,15 +5998,19 @@ function renderFisioTrattamentiSection(c){
         </div>
       </div>
       <div class="val-card-autore">${escHtml(tipiLbl)}${prof ? ' · ' + escHtml(prof.nome) : ''}${(s.condividiPrivateCon&&s.condividiPrivateCon.length) ? ' · <span title="Note private condivise">🔓 condivisa</span>' : ''}</div>
+      ${valRif ? `<div style="font-size:11.5px;color:var(--ink-mute);margin-top:2px;">Rif. valutazione del ${valRif.data ? valRif.data.split('-').reverse().join('/') : '—'}</div>` : ''}
+      ${doloreLbl ? `<div style="font-size:11.5px;color:var(--ink-mute);margin-top:2px;">Dolore rilevato: ${doloreLbl}</div>` : ''}
       <div class="val-card-motivo">${dettaglioHTML}</div>
     </div>`;
   }).join('') : `<div class="val-empty">Nessun trattamento ancora registrato per questo cliente.</div>`;
 
   if(!draft._privataOpen) draft._privataOpen = {};
-  function campoHTML(idBase, subLbl, campo){
+  function campoHTML(t){
+    const campo = draft.campi[t];
+    const idBase = 'fisioCampo_'+t;
     const isOpen = draft._privataOpen[idBase] || !!campo.privata;
     return `
-      <div class="client-section-label-row" style="margin-top:14px;"><div class="client-section-label" style="font-size:11px;">${escHtml(subLbl)}</div></div>
+      <div class="client-section-label-row" style="margin-top:14px;"><div class="client-section-label" style="font-size:11px;">${escHtml(TRATTAMENTO_FISIO_LABELS[t])}</div></div>
       <div class="osteo-note-box osteo-note-report">
         <label>Note per il report (nel PDF e nello storico del cliente)</label>
         <textarea class="editable" id="${idBase}Report" rows="2" placeholder="Contenuto del trattamento, visibile nel report">${escHtml(campo.report)}</textarea>
@@ -5748,21 +6033,26 @@ function renderFisioTrattamentiSection(c){
     <div class="ghi-draft-box">
       <div class="ev-row">
         <div class="ev-field"><label>Data seduta</label><input class="editable" type="date" id="fisioTrattData" value="${escAttr(draft.data)}"></div>
+        <div class="ev-field"><label>Valutazione di riferimento</label>
+          <select class="editable" id="fisioTrattValRif">
+            <option value="">— Nessuna —</option>
+            ${valutazioniRows.map(v=>`<option value="${v.id}" ${draft.collegataAValutazioneId===v.id?'selected':''}>${v.data ? v.data.split('-').reverse().join('/') : '—'}${v.motivo ? ' — '+escHtml(v.motivo.slice(0,40)) : ''}</option>`).join('')}
+          </select>
+        </div>
       </div>
       <div style="margin:10px 0 16px;">
         <label style="font-size:11px;color:var(--ink-mute);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:6px;">Trattamento svolto (selezionabili insieme)</label>
         <div style="display:flex;gap:18px;flex-wrap:wrap;">
-          <label style="display:flex;align-items:center;gap:6px;font-size:13.5px;"><input type="checkbox" data-tipo-fisio="mobilizzazione" ${draft.tipi.includes('mobilizzazione')?'checked':''}> Mobilizzazione</label>
-          <label style="display:flex;align-items:center;gap:6px;font-size:13.5px;"><input type="checkbox" data-tipo-fisio="scarico" ${draft.tipi.includes('scarico')?'checked':''}> Scarico</label>
-          <label style="display:flex;align-items:center;gap:6px;font-size:13.5px;"><input type="checkbox" data-tipo-fisio="tecarterapia" ${draft.tipi.includes('tecarterapia')?'checked':''}> Tecarterapia</label>
+          ${Object.keys(TRATTAMENTO_FISIO_LABELS).map(t=>`<label style="display:flex;align-items:center;gap:6px;font-size:13.5px;"><input type="checkbox" data-tipo-fisio="${t}" ${draft.tipi.includes(t)?'checked':''}> ${escHtml(TRATTAMENTO_FISIO_LABELS[t])}</label>`).join('')}
         </div>
       </div>
       <div id="fisioTrattCampiWrap">
         ${!draft.tipi.length ? `<div class="val-empty">Seleziona almeno un trattamento per continuare.</div>` : ''}
-        ${draft.tipi.includes('mobilizzazione') ? campoHTML('fisioMob', 'Mobilizzazione', draft.mobilizzazione) : ''}
-        ${draft.tipi.includes('scarico') ? campoHTML('fisioScar', 'Scarico', draft.scarico) : ''}
-        ${draft.tipi.includes('tecarterapia') ? campoHTML('fisioTecar', 'Tecarterapia', draft.tecarterapia) : ''}
+        ${draft.tipi.map(campoHTML).join('')}
       </div>
+
+      <div class="client-section-label-row" style="margin-top:18px;"><div class="client-section-label" style="font-size:11px;">Dolore rilevato in questa seduta</div></div>
+      ${bodyMapHTML(draft.dolorePunti, 'fisioTrattPain', draft._selectedPainId)}
 
       <div class="osteo-flag-box" style="margin-top:16px;">
         <label style="font-size:11px;color:var(--ink-mute);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:8px;">Note private</label>
@@ -5777,6 +6067,7 @@ function renderFisioTrattamentiSection(c){
   box.innerHTML = html;
 
   document.getElementById('fisioTrattData').onchange = (e)=>{ draft.data = e.target.value; };
+  document.getElementById('fisioTrattValRif').onchange = (e)=>{ draft.collegataAValutazioneId = e.target.value || null; };
   box.querySelectorAll('[data-tipo-fisio]').forEach(chk=>{
     chk.onchange = (e)=>{
       const t = chk.dataset.tipoFisio;
@@ -5793,21 +6084,27 @@ function renderFisioTrattamentiSection(c){
   });
   updateCondividiBtnLabel(draft, 'btnFisioCondividi');
   document.getElementById('btnFisioCondividi').onclick = ()=> openCondividiModal(draft, 'btnFisioCondividi');
-  function wireCampo(idBase, campo){
+  draft.tipi.forEach(t=>{
+    const campo = draft.campi[t];
+    const idBase = 'fisioCampo_'+t;
     const rEl = document.getElementById(idBase+'Report'); if(rEl) rEl.oninput = (e)=>{ campo.report = e.target.value; };
     const pEl = document.getElementById(idBase+'Privata'); if(pEl) pEl.oninput = (e)=>{ campo.privata = e.target.value; };
-  }
-  wireCampo('fisioMob', draft.mobilizzazione);
-  wireCampo('fisioScar', draft.scarico);
-  wireCampo('fisioTecar', draft.tecarterapia);
+  });
+  bindBodyMap('fisioTrattPain',
+    ()=>draft.dolorePunti, (pts)=>{ draft.dolorePunti = pts; },
+    draft._selectedPainId,
+    (id, liveOnly)=>{ draft._selectedPainId = id; if(!liveOnly) renderFisioTrattamentiSection(c); }
+  );
 
   document.getElementById('btnSaveFisioTratt').onclick = ()=>{
     if(!draft.tipi.length){ alert('Seleziona almeno un trattamento.'); return; }
+    const campi = {};
+    Object.keys(TRATTAMENTO_FISIO_LABELS).forEach(t=> campi[t] = { report: draft.campi[t].report, privata: draft.campi[t].privata });
     const trattamento = {
       id: draft.id, data: draft.data, tipi: draft.tipi.slice(),
-      mobilizzazione: { report: draft.mobilizzazione.report, privata: draft.mobilizzazione.privata },
-      scarico: { report: draft.scarico.report, privata: draft.scarico.privata },
-      tecarterapia: { report: draft.tecarterapia.report, privata: draft.tecarterapia.privata },
+      campi,
+      collegataAValutazioneId: draft.collegataAValutazioneId || null,
+      dolorePunti: draft.dolorePunti.map(p=>({...p})),
       condividiPrivateCon: draft.condividiPrivateCon.slice(),
       professionistaId: state.professionista ? state.professionista.id : null
     };
@@ -5836,18 +6133,49 @@ function renderFisioTrattamentiSection(c){
 // scheda dedicata (separata dalla valutazione generale di smistamento):
 // struttura minima, volutamente semplice, da ampliare quando i
 // fisioterapisti indicheranno i campi che usano davvero
+// Round III/IV: red flags (segnali di allarme da escalare al medico prima di
+// procedere) + obiettivi funzionali misurabili/criteri di dimissione, su
+// richiesta di Ale — elenco non esaustivo, pensato come prima bozza da
+// rifinire con i fisioterapisti
+const RED_FLAGS_FISIO = {
+  perditaPeso: 'Perdita di peso inspiegata',
+  doloreNotturno: 'Dolore notturno non meccanico (non migliora a riposo)',
+  febbre: 'Febbre o malessere sistemico',
+  parestesie: 'Parestesie bilaterali o progressive',
+  sfinteri: 'Disfunzioni sfinteriche (vescica/intestino)',
+  trauma: 'Trauma significativo recente',
+  cancro: 'Storia personale di cancro',
+  eta: 'Nuovo esordio senza causa apparente, età <20 o >50 anni'
+};
 function emptyValutazioneFisio(){
   return {
     id: 'vf_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
     data: fmtDateISO(new Date()),
     motivo: '', esameObiettivo: '', diagnosiFunzionale: '', obiettivi: '', note: '',
+    redFlags: {}, redFlagsNote: '',
+    obiettiviFunzionali: [],   // {id, testo, raggiunto}
+    criteriDimissione: '',
+    dolorePunti: [],           // punto di partenza del dolore, stessa mappa/NRS dei trattamenti
     professionistaId: null
   };
 }
+// retrocompatibilità: valutazioni salvate prima del Round III/IV non hanno
+// questi campi — li crea al volo in lettura, nessuna riscrittura dei dati
+function normalizeValutazioneFisio(v){
+  if(!v.redFlags) v.redFlags = {};
+  if(v.redFlagsNote===undefined) v.redFlagsNote = '';
+  if(!v.obiettiviFunzionali) v.obiettiviFunzionali = [];
+  if(v.criteriDimissione===undefined) v.criteriDimissione = '';
+  if(!v.dolorePunti) v.dolorePunti = [];
+  return v;
+}
+function anyRedFlag(v){ return Object.keys(RED_FLAGS_FISIO).some(k=>v.redFlags && v.redFlags[k]); }
 function renderFisioValutazioneSection(c){
   if(!c.valutazioniFisioterapia) c.valutazioniFisioterapia = [];
+  c.valutazioniFisioterapia.forEach(normalizeValutazioneFisio);
   if(!state.valutazioneFisioDraft) state.valutazioneFisioDraft = emptyValutazioneFisio();
   const draft = state.valutazioneFisioDraft;
+  if(draft._selectedPainId===undefined) draft._selectedPainId = null;
 
   const rows = c.valutazioniFisioterapia.slice().sort((a,b)=> (b.data||'').localeCompare(a.data||''));
   const listHTML = rows.length ? rows.map(v=>{
@@ -5858,14 +6186,17 @@ function renderFisioValutazioneSection(c){
         <button class="val-card-del" data-del-valfisio="${v.id}" title="Elimina">×</button>
       </div>
       <div class="val-card-autore">${prof ? escHtml(prof.nome) : '—'}</div>
+      ${anyRedFlag(v) ? `<div class="redflag-banner" style="margin-top:6px;">⚠ Red flags presenti</div>` : ''}
       <div class="val-card-motivo">${escHtml(v.motivo || 'Nessun motivo indicato')}</div>
     </div>`;
   }).join('') : `<div class="val-empty">Nessuna valutazione fisioterapica ancora registrata per questo cliente.</div>`;
 
   const box = document.getElementById('fisioValContent');
+  const flagsChecked = anyRedFlag(draft);
   box.innerHTML = `
     <div class="client-section-label-row"><div class="client-section-label">Valutazioni svolte</div></div>
-    <div style="margin:14px 0 24px;">${listHTML}</div>
+    <div style="margin:14px 0 10px;">${listHTML}</div>
+    ${rows.length ? `<button class="btn-ghost" id="btnReportAndamentoFisio" style="margin-bottom:24px;">📈 Report andamento</button>` : ''}
 
     <div class="client-section-label-row"><div class="client-section-label">Nuova valutazione fisioterapica</div></div>
     <div class="ghi-draft-box">
@@ -5873,7 +6204,31 @@ function renderFisioValutazioneSection(c){
       <div class="ev-field"><label>Motivo di invio / anamnesi</label><textarea class="editable" id="vfMotivo" rows="3">${escHtml(draft.motivo)}</textarea></div>
       <div class="ev-field"><label>Esame obiettivo</label><textarea class="editable" id="vfEsame" rows="3">${escHtml(draft.esameObiettivo)}</textarea></div>
       <div class="ev-field"><label>Diagnosi funzionale / ipotesi di lavoro</label><textarea class="editable" id="vfDiagnosi" rows="3">${escHtml(draft.diagnosiFunzionale)}</textarea></div>
-      <div class="ev-field"><label>Obiettivi del trattamento</label><textarea class="editable" id="vfObiettivi" rows="3">${escHtml(draft.obiettivi)}</textarea></div>
+
+      <div class="client-section-label-row" style="margin-top:18px;"><div class="client-section-label" style="font-size:11px;">Dolore iniziale</div></div>
+      ${bodyMapHTML(draft.dolorePunti, 'vfPain', draft._selectedPainId)}
+
+      <div class="client-section-label-row" style="margin-top:18px;"><div class="client-section-label" style="font-size:11px;">Red flags</div></div>
+      ${flagsChecked ? `<div class="redflag-banner">⚠ Red flags presenti — valutare l'invio al medico/specialista prima di procedere con il trattamento.</div>` : ''}
+      <div style="display:flex;flex-direction:column;gap:6px;margin:8px 0;">
+        ${Object.keys(RED_FLAGS_FISIO).map(k=>`<label style="display:flex;align-items:center;gap:8px;font-size:13px;"><input type="checkbox" data-redflag="${k}" ${draft.redFlags[k]?'checked':''}> ${escHtml(RED_FLAGS_FISIO[k])}</label>`).join('')}
+      </div>
+      <div class="ev-field"><label>Note sui red flags (opzionale)</label><textarea class="editable" id="vfRedFlagsNote" rows="2">${escHtml(draft.redFlagsNote)}</textarea></div>
+
+      <div class="client-section-label-row" style="margin-top:18px;"><div class="client-section-label" style="font-size:11px;">Obiettivi funzionali</div></div>
+      <div id="vfObiettiviList" style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px;">
+        ${draft.obiettiviFunzionali.map(o=>`<div style="display:flex;align-items:center;gap:8px;">
+          <input type="checkbox" data-obf-raggiunto="${o.id}" ${o.raggiunto?'checked':''} title="Raggiunto">
+          <span style="flex:1;font-size:13.5px;${o.raggiunto?'text-decoration:line-through;color:var(--ink-mute);':''}">${escHtml(o.testo)}</span>
+          <button type="button" class="body-map-rm" data-obf-remove="${o.id}" title="Rimuovi">×</button>
+        </div>`).join('')}
+      </div>
+      <div style="display:flex;gap:8px;">
+        <input class="editable" id="vfNuovoObiettivo" placeholder="es. salire le scale senza dolore" style="flex:1;">
+        <button type="button" class="btn-small" id="btnAddObiettivo">+ Aggiungi</button>
+      </div>
+
+      <div class="ev-field" style="margin-top:18px;"><label>Criteri di dimissione</label><textarea class="editable" id="vfCriteriDimissione" rows="2" placeholder="Condizioni per concludere il percorso fisioterapico">${escHtml(draft.criteriDimissione)}</textarea></div>
       <div class="ev-field"><label>Note</label><textarea class="editable" id="vfNote" rows="2">${escHtml(draft.note)}</textarea></div>
       <button class="btn-gold" id="btnSaveValFisio" style="margin-top:8px;">Salva valutazione</button>
     </div>
@@ -5882,10 +6237,41 @@ function renderFisioValutazioneSection(c){
   document.getElementById('vfMotivo').oninput = e=> draft.motivo = e.target.value;
   document.getElementById('vfEsame').oninput = e=> draft.esameObiettivo = e.target.value;
   document.getElementById('vfDiagnosi').oninput = e=> draft.diagnosiFunzionale = e.target.value;
-  document.getElementById('vfObiettivi').oninput = e=> draft.obiettivi = e.target.value;
+  document.getElementById('vfRedFlagsNote').oninput = e=> draft.redFlagsNote = e.target.value;
+  document.getElementById('vfCriteriDimissione').oninput = e=> draft.criteriDimissione = e.target.value;
   document.getElementById('vfNote').oninput = e=> draft.note = e.target.value;
+  box.querySelectorAll('[data-redflag]').forEach(chk=>{
+    chk.onchange = (e)=>{ draft.redFlags[chk.dataset.redflag] = e.target.checked; renderFisioValutazioneSection(c); };
+  });
+  bindBodyMap('vfPain',
+    ()=>draft.dolorePunti, (pts)=>{ draft.dolorePunti = pts; },
+    draft._selectedPainId,
+    (id, liveOnly)=>{ draft._selectedPainId = id; if(!liveOnly) renderFisioValutazioneSection(c); }
+  );
+  box.querySelectorAll('[data-obf-raggiunto]').forEach(chk=>{
+    chk.onchange = (e)=>{
+      const o = draft.obiettiviFunzionali.find(x=>x.id===chk.dataset.obfRaggiunto);
+      if(o){ o.raggiunto = e.target.checked; renderFisioValutazioneSection(c); }
+    };
+  });
+  box.querySelectorAll('[data-obf-remove]').forEach(btn=>{
+    btn.onclick = ()=>{
+      draft.obiettiviFunzionali = draft.obiettiviFunzionali.filter(o=>o.id!==btn.dataset.obfRemove);
+      renderFisioValutazioneSection(c);
+    };
+  });
+  document.getElementById('btnAddObiettivo').onclick = ()=>{
+    const el = document.getElementById('vfNuovoObiettivo');
+    const testo = el.value.trim();
+    if(!testo) return;
+    draft.obiettiviFunzionali.push({ id:'obf_'+Date.now()+'_'+Math.random().toString(36).slice(2,5), testo, raggiunto:false });
+    renderFisioValutazioneSection(c);
+  };
+  const btnRepAndamento = document.getElementById('btnReportAndamentoFisio');
+  if(btnRepAndamento) btnRepAndamento.onclick = ()=> apriReportAndamentoFisio(c);
   document.getElementById('btnSaveValFisio').onclick = ()=>{
-    const v = { ...draft, professionistaId: state.professionista ? state.professionista.id : null };
+    const v = { ...draft, redFlags:{...draft.redFlags}, obiettiviFunzionali: draft.obiettiviFunzionali.map(o=>({...o})), dolorePunti: draft.dolorePunti.map(p=>({...p})), professionistaId: state.professionista ? state.professionista.id : null };
+    delete v._selectedPainId;
     c.valutazioniFisioterapia.push(v);
     db.saveCliente(c);
     state.valutazioneFisioDraft = emptyValutazioneFisio();
@@ -6338,10 +6724,11 @@ function renderStoricoTab(){
     </div>`;
   }
   function valFisioHTML(v){
+    normalizeValutazioneFisio(v);
     const prof = v.professionistaId ? state.professionisti.find(p=>p.id===v.professionistaId) : null;
     return `<div class="upcoming-item tipo-border-retest">
       <div class="ui-info">
-        <div class="uid"><span class="tipo-tag tipo-tag-retest">Valutazione fisioterapica</span> ${escHtml(v.motivo || 'Nessun motivo indicato')}</div>
+        <div class="uid"><span class="tipo-tag tipo-tag-retest">Valutazione fisioterapica</span> ${escHtml(v.motivo || 'Nessun motivo indicato')}${anyRedFlag(v) ? ' <span class="redflag-banner" style="margin:0;padding:2px 8px;display:inline;">⚠ Red flags</span>' : ''}</div>
         <div class="uim">${v.data ? v.data.split('-').reverse().join('/') : '—'} · Area Fisioterapia${prof ? ' · '+escHtml(prof.nome) : ''}</div>
       </div>
     </div>`;
