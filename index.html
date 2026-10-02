@@ -1161,12 +1161,25 @@ header.top{
 }
 
 .val-ruota-wrap{display:flex;gap:28px;flex-wrap:wrap;align-items:flex-start;}
-.val-radar-wrap{flex:none;width:260px;}
+.val-radar-wrap{flex:none;width:320px;}
 .val-radar-svg{width:100%;height:auto;}
+.val-radar-label{font-size:9.5px;fill:var(--ink-mute);}
 .val-ruota-sliders{flex:1;min-width:260px;display:grid;grid-template-columns:1fr 1fr;gap:10px 20px;}
 .val-ruota-item label{display:flex;justify-content:space-between;font-size:11px;color:var(--ink-mute);margin-bottom:4px;}
 .val-ruota-num{color:var(--client-accent-bright);font-weight:700;}
 .val-ruota-item input[type=range]{width:100%;}
+.val-ruota-item-view{display:flex;align-items:center;justify-content:space-between;gap:10px;}
+.val-ruota-item-view label{margin-bottom:0;flex:1;}
+.val-macrozone{display:flex;gap:20px;flex-wrap:wrap;margin-top:18px;}
+.val-zona-col{flex:1;min-width:220px;}
+.val-zona-title{font-size:11px;color:var(--ink-mute);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px;}
+.val-zona-badges{display:flex;flex-direction:column;gap:6px;}
+.val-zona-badge{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:999px;padding:5px 12px;font-size:12px;color:var(--ink-dim);width:fit-content;}
+.val-zona-badge b{font-size:13px;}
+.val-zona-forza{border-color:rgba(76,175,80,.4);background:rgba(76,175,80,.08);}
+.val-zona-attenzione{border-color:rgba(59,111,224,.4);background:rgba(59,111,224,.08);}
+.val-alert{margin-top:14px;padding:10px 14px;border-radius:8px;font-size:12.5px;border:1px solid rgba(224,119,106,.4);background:rgba(224,119,106,.1);color:#E0776A;}
+.val-alert-ok{border-color:rgba(76,175,80,.4);background:rgba(76,175,80,.08);color:#4CAF50;}
 
 .val-trauma-row{display:grid;grid-template-columns:90px 1fr 60px 60px 30px;gap:8px;align-items:center;margin-bottom:8px;}
 .val-trauma-chk{display:flex;align-items:center;gap:4px;font-size:12px;color:var(--ink-dim);}
@@ -1197,6 +1210,12 @@ header.top{
 .val-pasto-row textarea{width:100%;}
 .val-pasto-orario{align-self:start;}
 .val-energia-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px 20px;}
+.val-view-text{font-size:13.5px;color:var(--ink-dim);white-space:pre-wrap;line-height:1.5;}
+.val-pasto-row-view{margin-bottom:10px;font-size:13px;color:var(--ink-mute);}
+.val-pasto-row-view b{color:var(--ink);}
+.val-view-header{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;border-bottom:1px solid var(--line-soft);padding-bottom:16px;margin-bottom:20px;}
+.val-view-meta{display:flex;gap:24px;flex-wrap:wrap;font-size:13px;color:var(--ink-dim);}
+.val-view-meta b{color:var(--ink);}
 .val-energia-item label{display:block;font-size:11px;color:var(--ink-mute);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;}
 @media (max-width:640px){
   .val-field-grid{grid-template-columns:1fr;}
@@ -3704,17 +3723,17 @@ function escAttr(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/
 function escHtml(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 const VAL_RUOTA_DOMINI = [
-  {key:'mission', label:'Mission, contributo al mondo'},
-  {key:'lavoro', label:'Lavoro - carriera'},
-  {key:'stress', label:'Gestione dello stress - tensione'},
-  {key:'umore', label:'Umore'},
-  {key:'fisico', label:'Fisico'},
-  {key:'energia', label:'Energia'},
-  {key:'finanze', label:'Finanze'},
-  {key:'relazioni', label:'Relazioni - affetti'},
-  {key:'ambiente', label:'Ambiente'},
-  {key:'metabolismo', label:'Metabolismo e alimentazione'},
-  {key:'relax', label:'Relax e svago'}
+  {key:'mission', label:'Mission, contributo al mondo', short:'Mission'},
+  {key:'lavoro', label:'Lavoro - carriera', short:'Lavoro'},
+  {key:'stress', label:'Gestione dello stress - tensione', short:'Stress'},
+  {key:'umore', label:'Umore', short:'Umore'},
+  {key:'fisico', label:'Fisico', short:'Fisico'},
+  {key:'energia', label:'Energia', short:'Energia'},
+  {key:'finanze', label:'Finanze', short:'Finanze'},
+  {key:'relazioni', label:'Relazioni - affetti', short:'Relazioni'},
+  {key:'ambiente', label:'Ambiente', short:'Ambiente'},
+  {key:'metabolismo', label:'Metabolismo e alimentazione', short:'Metabolismo'},
+  {key:'relax', label:'Relax e svago', short:'Relax'}
 ];
 
 const VAL_SEZIONI = [
@@ -3890,13 +3909,19 @@ document.getElementById('btnNuovaValutazione').onclick = ()=>{
   openValutazioneEditor(emptyValutazione(), true);
 };
 
+// una valutazione NUOVA si apre direttamente nel form compilabile; una
+// valutazione già esistente si apre invece in sola visualizzazione (si
+// vede quanto già raccolto senza rischiare di modificarlo per sbaglio) —
+// per modificarla bisogna passare esplicitamente da "✎ Modifica" in
+// renderValutazioneView()
 function openValutazioneEditor(v, isNew){
   normalizeValutazione(v);
   state.valutazioneEditor = v;
   state.valutazioneEditorIsNew = isNew;
   document.getElementById('valutazioniListView').style.display = 'none';
   document.getElementById('valutazioneEditorView').style.display = 'block';
-  renderValutazioneEditor();
+  if(isNew) renderValutazioneEditor();
+  else renderValutazioneView();
 }
 
 function valFieldHTML(v, c){
@@ -3911,13 +3936,37 @@ function valFieldHTML(v, c){
   </div>`;
 }
 
+// scala colore bassa->buona (blu->verde) usata sia sullo sfondo del radar
+// che sui singoli punti del dato, così si capisce a colpo d'occhio quali
+// aree sono deboli (vicino al blu) senza dover leggere i numeri
+function valScoreColor(score){
+  const t = Math.max(0, Math.min(1, ((Number(score)||0)-1)/9));
+  const lo = {r:59,g:111,b:224}, hi = {r:76,g:175,b:80};
+  const r = Math.round(lo.r + (hi.r-lo.r)*t);
+  const g = Math.round(lo.g + (hi.g-lo.g)*t);
+  const b = Math.round(lo.b + (hi.b-lo.b)*t);
+  return `rgb(${r},${g},${b})`;
+}
+
+const VAL_RADAR_CX = 160, VAL_RADAR_CY = 160, VAL_RADAR_MAXR = 118;
+function valRadarPt(i, r, n){
+  const ang = (Math.PI*2*i/n) - Math.PI/2;
+  return [VAL_RADAR_CX + r*Math.cos(ang), VAL_RADAR_CY + r*Math.sin(ang)];
+}
+
 function valRadarSvg(ruota){
   const n = VAL_RUOTA_DOMINI.length;
-  const cx = 130, cy = 130, maxR = 110;
-  const pt = (i, r) => {
-    const ang = (Math.PI*2*i/n) - Math.PI/2;
-    return [cx + r*Math.cos(ang), cy + r*Math.sin(ang)];
-  };
+  const cx = VAL_RADAR_CX, cy = VAL_RADAR_CY, maxR = VAL_RADAR_MAXR;
+  const pt = (i, r) => valRadarPt(i, r, n);
+  // sfondo a gradiente radiale: blu al centro (valori bassi) -> verde al
+  // bordo (valori alti), un'unica forma sotto la griglia, così la scala di
+  // colore non si "sporca" sovrapponendo più fasce come farebbero anelli pieni
+  const bgPts = VAL_RUOTA_DOMINI.map((d,i)=> pt(i, maxR).join(',')).join(' ');
+  const bg = `<defs><radialGradient id="valRuotaGrad" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="rgb(59,111,224)"/>
+      <stop offset="100%" stop-color="rgb(76,175,80)"/>
+    </radialGradient></defs>
+    <polygon points="${bgPts}" fill="url(#valRuotaGrad)" fill-opacity="0.22" stroke="none"/>`;
   let rings = '';
   for(let ring=1; ring<=5; ring++){
     const r = maxR*ring/5;
@@ -3925,12 +3974,25 @@ function valRadarSvg(ruota){
     rings += `<polygon points="${pts}" fill="none" stroke="var(--line)" stroke-width="1"/>`;
   }
   let spokes = '';
+  let labels = '';
   VAL_RUOTA_DOMINI.forEach((d,i)=>{
     const [x,y] = pt(i, maxR);
     spokes += `<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" stroke="var(--line)" stroke-width="1"/>`;
+    const [lx,ly] = pt(i, maxR+14);
+    const cosA = Math.cos((Math.PI*2*i/n) - Math.PI/2);
+    const sinA = Math.sin((Math.PI*2*i/n) - Math.PI/2);
+    const anchor = cosA>0.3 ? 'start' : (cosA<-0.3 ? 'end' : 'middle');
+    const dy = sinA>0.3 ? 9 : (sinA<-0.3 ? 0 : 4.5);
+    labels += `<text x="${lx}" y="${ly+dy}" text-anchor="${anchor}" class="val-radar-label">${escHtml(d.short||d.label)}</text>`;
   });
   const dataPts = VAL_RUOTA_DOMINI.map((d,i)=> pt(i, maxR*(ruota[d.key]||0)/10).join(',')).join(' ');
-  return `<svg viewBox="0 0 260 260" class="val-radar-svg" id="valRadarSvg">${rings}${spokes}<polygon points="${dataPts}" fill="var(--client-accent-dim)" stroke="var(--client-accent)" stroke-width="2" id="valRadarPoly"/></svg>`;
+  let dots = '';
+  VAL_RUOTA_DOMINI.forEach((d,i)=>{
+    const val = ruota[d.key]||0;
+    const [x,y] = pt(i, maxR*val/10);
+    dots += `<circle cx="${x}" cy="${y}" r="4.5" fill="${valScoreColor(val)}" stroke="var(--navy-900, #111)" stroke-width="1" data-radardot="${d.key}"/>`;
+  });
+  return `<svg viewBox="0 0 320 320" class="val-radar-svg" id="valRadarSvg">${bg}${rings}${spokes}${labels}<polygon points="${dataPts}" fill="var(--client-accent-dim)" stroke="var(--client-accent)" stroke-width="2" id="valRadarPoly"/><g id="valRadarDots">${dots}</g></svg>`;
 }
 
 function updateValRadar(){
@@ -3938,13 +4000,66 @@ function updateValRadar(){
   const poly = document.getElementById('valRadarPoly');
   if(!poly) return;
   const n = VAL_RUOTA_DOMINI.length;
-  const cx = 130, cy = 130, maxR = 110;
   const pts = VAL_RUOTA_DOMINI.map((d,i)=>{
-    const ang = (Math.PI*2*i/n) - Math.PI/2;
-    const r = maxR*(v.ruota[d.key]||0)/10;
-    return [cx + r*Math.cos(ang), cy + r*Math.sin(ang)].join(',');
+    const r = VAL_RADAR_MAXR*(v.ruota[d.key]||0)/10;
+    return valRadarPt(i, r, n).join(',');
   }).join(' ');
   poly.setAttribute('points', pts);
+  VAL_RUOTA_DOMINI.forEach((d,i)=>{
+    const dot = document.querySelector(`[data-radardot="${d.key}"]`);
+    if(!dot) return;
+    const val = v.ruota[d.key]||0;
+    const [x,y] = valRadarPt(i, VAL_RADAR_MAXR*val/10, n);
+    dot.setAttribute('cx', x); dot.setAttribute('cy', y); dot.setAttribute('fill', valScoreColor(val));
+  });
+  const macroBox = document.getElementById('valMacrozoneBox');
+  if(macroBox) macroBox.innerHTML = valMacrozoneHTML(v.ruota);
+}
+
+// "macrozone": non un'ulteriore categorizzazione inventata dei domini, ma
+// semplicemente i migliori/peggiori punteggi della ruota già inserita, per
+// avere un quadro immediato di dove si trovano i punti di forza e le aree
+// da attenzionare, con un alert se qualche area è in zona critica (<=3)
+function valForzaAttenzione(ruota){
+  const arr = VAL_RUOTA_DOMINI.map(d=> ({key:d.key, label:d.short||d.label, val:ruota[d.key]||0}));
+  const sorted = arr.slice().sort((a,b)=> a.val-b.val);
+  const attenzione = sorted.slice(0,3);
+  const forza = sorted.slice(-3).reverse();
+  const critiche = arr.filter(a=> a.val<=3);
+  return {forza, attenzione, critiche};
+}
+function valMacrozoneHTML(ruota){
+  const {forza, attenzione, critiche} = valForzaAttenzione(ruota);
+  const badge = (i, cls) => `<span class="val-zona-badge ${cls}"><b>${i.val}</b> ${escHtml(i.label)}</span>`;
+  const alertHtml = critiche.length
+    ? `<div class="val-alert">⚠ Attenzione: valori bassi (≤3) in ${critiche.map(c=>escHtml(c.label)).join(', ')}. Da approfondire con il cliente.</div>`
+    : `<div class="val-alert val-alert-ok">✓ Nessuna area in zona critica (tutti i punteggi sopra 3).</div>`;
+  return `<div class="val-macrozone">
+      <div class="val-zona-col"><div class="val-zona-title">💪 Aree di forza</div><div class="val-zona-badges">${forza.map(i=>badge(i,'val-zona-forza')).join('')}</div></div>
+      <div class="val-zona-col"><div class="val-zona-title">⚠ Aree di attenzione</div><div class="val-zona-badges">${attenzione.map(i=>badge(i,'val-zona-attenzione')).join('')}</div></div>
+    </div>
+    ${alertHtml}`;
+}
+
+// sezione "Analisi globale HRL" condivisa fra editor (interactive=true,
+// slider trascinabili) e vista di sola lettura (interactive=false, solo
+// l'elenco dei punteggi) — radar/gradiente/macrozone sono identici nei due casi
+function valRuotaSectionHTML(v, interactive){
+  const sliders = interactive
+    ? VAL_RUOTA_DOMINI.map(d=>`<div class="val-ruota-item">
+        <label>${d.label} <span class="val-ruota-num" data-ruotanum="${d.key}">${v.ruota[d.key]}</span></label>
+        <input type="range" min="1" max="10" step="1" data-ruota="${d.key}" value="${v.ruota[d.key]}">
+      </div>`).join('')
+    : VAL_RUOTA_DOMINI.map(d=>`<div class="val-ruota-item val-ruota-item-view">
+        <label>${d.label}</label><span class="val-zona-badge" style="background:${valScoreColor(v.ruota[d.key]||0)};border-color:transparent;color:#fff;">${v.ruota[d.key]}</span>
+      </div>`).join('');
+  return `<div class="val-section"><div class="val-section-title">Analisi globale HRL</div>
+    <div class="val-ruota-wrap">
+      <div class="val-radar-wrap">${valRadarSvg(v.ruota)}</div>
+      <div class="val-ruota-sliders">${sliders}</div>
+    </div>
+    <div id="valMacrozoneBox">${valMacrozoneHTML(v.ruota)}</div>
+  </div>`;
 }
 
 function valTraumiTableHTML(v){
@@ -4032,6 +4147,139 @@ function valEnergiaHTML(v){
   </div>`;
 }
 
+// ---------- varianti di sola lettura (vista "Visualizza") ----------
+function valFieldViewHTML(v, c){
+  const val = v.campi[c.key];
+  if(!val) return '';
+  const evid = v.evidenziati.includes(c.key);
+  return `<div class="ev-field val-field ${c.full?'val-field-full':''} ${evid?'val-highlighted':''}">
+    <label>${c.label}${evid?' ★':''}</label>
+    <div class="val-view-text">${escHtml(val).replace(/\n/g,'<br>')}</div>
+  </div>`;
+}
+function valAlimentazioneViewHTML(v){
+  const a = v.alimentazione;
+  const legacy = (v.campi && v.campi.alimentazione) ? `<div class="val-legacy-note">Testo inserito in precedenza (formato libero): “${escHtml(v.campi.alimentazione)}”</div>` : '';
+  const rows = VAL_PASTI.map(p=>{
+    const cibi = a[p.key].cibi, orario = a[p.key].orario;
+    if(!cibi && !orario) return '';
+    return `<div class="val-pasto-row-view"><b>${escHtml(p.label)}</b>${orario?' · '+escHtml(orario):''}<div class="val-view-text">${escHtml(cibi)||'—'}</div></div>`;
+  }).filter(Boolean).join('');
+  return legacy + (rows || '<div class="val-empty">Nessun dato inserito.</div>');
+}
+function valSonnoViewHTML(v){
+  const s = v.sonno;
+  const legacy = (v.campi && v.campi.sonno) ? `<div class="val-legacy-note">Testo inserito in precedenza (formato libero): “${escHtml(v.campi.sonno)}”</div>` : '';
+  const parts = [];
+  if(s.addormentamento) parts.push(`Orario di addormentamento: <b>${escHtml(s.addormentamento)}</b>`);
+  if(s.risveglioOrario) parts.push(`Orario risveglio notturno: <b>${escHtml(s.risveglioOrario)}</b>`);
+  if(s.risveglioNotturno) parts.push(`Risveglio notturno: ${escHtml(s.risveglioNotturno)}`);
+  if(s.note) parts.push(`Altre note: ${escHtml(s.note)}`);
+  return legacy + (parts.length ? parts.map(p=>`<div class="val-view-text">${p}</div>`).join('') : '<div class="val-empty">Nessun dato inserito.</div>');
+}
+function valEnergiaViewHTML(v){
+  const e = v.energiaLivelli;
+  const legacy = (v.campi && v.campi.energiaGiorno) ? `<div class="val-legacy-note">Testo inserito in precedenza (formato libero): “${escHtml(v.campi.energiaGiorno)}”</div>` : '';
+  const items = ENERGIA_MOMENTI.map(m=>{
+    if(!e[m.key]) return '';
+    const opz = ENERGIA_LIVELLO_OPZIONI.find(o=>o.v===e[m.key]);
+    return `<span class="val-zona-badge">${escHtml(m.label)}: <b>${opz?escHtml(opz.l):escHtml(e[m.key])}</b></span>`;
+  }).filter(Boolean).join('');
+  return legacy + (items ? `<div class="val-zona-badges" style="flex-direction:row;flex-wrap:wrap;">${items}</div>` : '<div class="val-empty">Nessun dato inserito.</div>');
+}
+
+function valTraumiViewHTML(v){
+  if(!v.traumi.length) return '<div class="val-empty">Nessun trauma registrato.</div>';
+  return v.traumi.map(t=>`<div class="val-view-text">${escHtml(t.anno||'—')} — ${escHtml(t.distretto||'—')}${t.dx?' · dx':''}${t.sx?' · sx':''}</div>`).join('');
+}
+
+// vista di sola lettura di una valutazione già salvata: aprire un cliente
+// con una valutazione esistente mostra questa, non l'editor — bisogna
+// premere "Modifica" per entrare nel form compilabile (vedi
+// openValutazioneEditor/switchToValutazioneEditMode)
+function renderValutazioneView(){
+  const v = state.valutazioneEditor;
+  const box = document.getElementById('valutazioneEditorView');
+  const dataFmt = v.data ? v.data.split('-').reverse().join('/') : '—';
+  let html = `<div class="val-view-header">
+    <button class="btn-ghost" id="btnValBack">← Torna all'elenco</button>
+    <div style="display:flex;gap:10px;">
+      <button class="btn-ghost" id="btnValReportPdf">📄 Report PDF</button>
+      <button class="btn-gold" id="btnValModifica">✎ Modifica</button>
+    </div>
+  </div>
+  <div class="val-view-meta"><div>Data valutazione <b>${dataFmt}</b></div><div>Fatta da <b>${escHtml(v.autore||'—')}</b></div></div>`;
+
+  VAL_SEZIONI.slice(0,2).forEach(sez=>{
+    const fieldsHtml = sez.campi.map(c=>valFieldViewHTML(v,c)).join('');
+    html += `<div class="val-section"><div class="val-section-title">${sez.title}</div><div class="ev-row val-field-grid">
+      ${fieldsHtml || '<div class="val-empty">Nessun dato inserito.</div>'}
+    </div></div>`;
+  });
+
+  html += valRuotaSectionHTML(v, false);
+
+  html += `<div class="val-section"><div class="val-section-title">Cronologia traumi</div>${valTraumiViewHTML(v)}</div>`;
+
+  VAL_SEZIONI.slice(2,5).forEach(sez=>{
+    const fieldsHtml = sez.campi.map(c=>valFieldViewHTML(v,c)).join('');
+    html += `<div class="val-section"><div class="val-section-title">${sez.title}</div><div class="ev-row val-field-grid">
+      ${fieldsHtml || '<div class="val-empty">Nessun dato inserito.</div>'}
+    </div></div>`;
+    if(sez.title==='Metabolismo'){
+      html += `<div class="val-section"><div class="val-section-title">Alimentazione</div>${valAlimentazioneViewHTML(v)}</div>`;
+      html += `<div class="val-section"><div class="val-section-title">Sonno</div>${valSonnoViewHTML(v)}</div>`;
+      html += `<div class="val-section"><div class="val-section-title">Energia nella giornata</div>${valEnergiaViewHTML(v)}</div>`;
+    }
+  });
+
+  html += `<div class="val-section"><div class="val-section-title">Desiderio di migliorarsi e affrontare il percorso</div>
+    <div class="val-view-text">${v.desiderioMigliorarsi!=null ? v.desiderioMigliorarsi+' / 10' : '—'}</div>
+  </div>`;
+
+  const dialogoFocusLbl = {io:'Io', vita:'Vita', altri:'Altri'}[v.dialogoFocus] || '—';
+  html += `<div class="val-section"><div class="val-section-title">Focus del dialogo interiore</div>
+    <div class="val-view-text">${dialogoFocusLbl}</div>
+    ${v.dialogoFocusNote ? `<div class="val-view-text" style="margin-top:8px;">${escHtml(v.dialogoFocusNote)}</div>` : ''}
+  </div>`;
+
+  html += `<div class="val-section"><div class="val-section-title">La persona è</div>
+    <div class="val-view-text">${VAL_PERSONA_ASSI.map(ax=> v.persona[ax.key] ? escHtml(v.persona[ax.key]) : null).filter(Boolean).join(' · ') || '—'}</div>
+  </div>`;
+
+  const coerenzaLbl = {bassa:'Bassa', alta:'Alta', norma:'Nella norma'}[v.coerenza] || '—';
+  html += `<div class="val-section"><div class="val-section-title">* Coerenza fra percezione e sintomo</div><div class="val-view-text">${coerenzaLbl}</div></div>`;
+
+  const tensRelaxLbl = {tens:'Tens', relax:'Relax'}[v.tensRelax] || '—';
+  html += `<div class="val-section"><div class="val-section-title">Tens / Relax *</div><div class="val-view-text">${tensRelaxLbl}</div></div>`;
+
+  VAL_SEZIONI.slice(5).forEach(sez=>{
+    const fieldsHtml = sez.campi.map(c=>valFieldViewHTML(v,c)).join('');
+    html += `<div class="val-section"><div class="val-section-title">${sez.title}</div><div class="ev-row val-field-grid">
+      ${fieldsHtml || '<div class="val-empty">Nessun dato inserito.</div>'}
+    </div></div>`;
+  });
+
+  const esitoLbl = {acuto:'Acuto → Fisioterapia', sistema:'Non acuto → Sistema'}[v.esito] || '—';
+  const areaSceltaLbl = {AH:'Area Human', AP:'Area Performance'};
+  html += `<div class="val-section val-esito-section"><div class="val-section-title">Esito valutazione — smistamento</div>
+    <div class="val-view-text">${esitoLbl}</div>
+    ${v.esito==='sistema' && v.areaScelta.length ? `<div class="val-view-text" style="margin-top:6px;">Area di destinazione: ${v.areaScelta.map(a=>areaSceltaLbl[a]||a).join(', ')}</div>` : ''}
+  </div>`;
+
+  box.innerHTML = html;
+  document.getElementById('btnValBack').onclick = ()=>{ renderValutazioni(); };
+  document.getElementById('btnValModifica').onclick = ()=>{ switchToValutazioneEditMode(); };
+  document.getElementById('btnValReportPdf').onclick = ()=>{
+    const c = activeClient();
+    if(c) apriReportValutazione(c, v);
+  };
+}
+
+function switchToValutazioneEditMode(){
+  renderValutazioneEditor();
+}
+
 function renderValutazioneEditor(){
   const v = state.valutazioneEditor;
   const box = document.getElementById('valutazioneEditorView');
@@ -4049,17 +4297,7 @@ function renderValutazioneEditor(){
     </div></div>`;
   });
 
-  html += `<div class="val-section"><div class="val-section-title">Analisi globale HRL</div>
-    <div class="val-ruota-wrap">
-      <div class="val-radar-wrap">${valRadarSvg(v.ruota)}</div>
-      <div class="val-ruota-sliders">
-        ${VAL_RUOTA_DOMINI.map(d=>`<div class="val-ruota-item">
-          <label>${d.label} <span class="val-ruota-num" data-ruotanum="${d.key}">${v.ruota[d.key]}</span></label>
-          <input type="range" min="1" max="10" step="1" data-ruota="${d.key}" value="${v.ruota[d.key]}">
-        </div>`).join('')}
-      </div>
-    </div>
-  </div>`;
+  html += valRuotaSectionHTML(v, true);
 
   html += `<div class="val-section"><div class="val-section-title">Cronologia traumi</div>
     <div id="valTraumiSection"></div>
@@ -4266,8 +4504,10 @@ function bindValutazioneEditorEvents(){
       renderContextBar();
       renderCliTabs();
     }
-    state.valutazioneEditor = null;
-    renderValutazioni();
+    // dopo il salvataggio si torna in sola visualizzazione (non si resta a
+    // compilare/modificare): per intervenire di nuovo serve "✎ Modifica"
+    state.valutazioneEditorIsNew = false;
+    renderValutazioneView();
   };
 }
 
@@ -4358,6 +4598,179 @@ function osteoAreaBlocks(s){
   }
   return blocks;
 }
+// ---------- report PDF prima valutazione ----------
+// la finestra di report è un documento HTML del tutto separato dall'app (non
+// eredita né :root né le classi CSS dell'app), quindi qui si ridisegna il
+// radar e le macrozone con colori/stili scritti in chiaro invece delle
+// var(--...)/classi usate nella UI live, altrimenti griglia e punti dato
+// sparirebbero (var() senza fallback risolve al valore iniziale della
+// proprietà, cioè "none" per stroke e "black" per fill)
+function valRadarSvgForReport(ruota){
+  const n = VAL_RUOTA_DOMINI.length;
+  const cx = VAL_RADAR_CX, cy = VAL_RADAR_CY, maxR = VAL_RADAR_MAXR;
+  const pt = (i, r) => valRadarPt(i, r, n);
+  const bgPts = VAL_RUOTA_DOMINI.map((d,i)=> pt(i, maxR).join(',')).join(' ');
+  const bg = `<defs><radialGradient id="valRuotaGradRep" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="rgb(59,111,224)"/>
+      <stop offset="100%" stop-color="rgb(76,175,80)"/>
+    </radialGradient></defs>
+    <polygon points="${bgPts}" fill="url(#valRuotaGradRep)" fill-opacity="0.22" stroke="none"/>`;
+  let rings = '';
+  for(let ring=1; ring<=5; ring++){
+    const r = maxR*ring/5;
+    const pts = VAL_RUOTA_DOMINI.map((d,i)=> pt(i,r).join(',')).join(' ');
+    rings += `<polygon points="${pts}" fill="none" stroke="#ccc" stroke-width="1"/>`;
+  }
+  let spokes = '', labels = '';
+  VAL_RUOTA_DOMINI.forEach((d,i)=>{
+    const [x,y] = pt(i, maxR);
+    spokes += `<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" stroke="#ccc" stroke-width="1"/>`;
+    const [lx,ly] = pt(i, maxR+14);
+    const cosA = Math.cos((Math.PI*2*i/n) - Math.PI/2);
+    const sinA = Math.sin((Math.PI*2*i/n) - Math.PI/2);
+    const anchor = cosA>0.3 ? 'start' : (cosA<-0.3 ? 'end' : 'middle');
+    const dy = sinA>0.3 ? 9 : (sinA<-0.3 ? 0 : 4.5);
+    labels += `<text x="${lx}" y="${ly+dy}" text-anchor="${anchor}" style="font-size:9.5px;fill:#555;">${escHtml(d.short||d.label)}</text>`;
+  });
+  const dataPts = VAL_RUOTA_DOMINI.map((d,i)=> pt(i, maxR*(ruota[d.key]||0)/10).join(',')).join(' ');
+  let dots = '';
+  VAL_RUOTA_DOMINI.forEach((d,i)=>{
+    const val = ruota[d.key]||0;
+    const [x,y] = pt(i, maxR*val/10);
+    dots += `<circle cx="${x}" cy="${y}" r="4.5" fill="${valScoreColor(val)}" stroke="#333" stroke-width="1"/>`;
+  });
+  return `<svg viewBox="0 0 320 320" width="320" height="320">${bg}${rings}${spokes}${labels}<polygon points="${dataPts}" fill="rgba(138,109,29,0.18)" stroke="#8a6d1d" stroke-width="2"/>${dots}</svg>`;
+}
+function valMacrozoneHTMLForReport(ruota){
+  const {forza, attenzione, critiche} = valForzaAttenzione(ruota);
+  const badge = (i, bg, border) => `<span style="display:inline-flex;align-items:center;gap:6px;border:1px solid ${border};background:${bg};border-radius:999px;padding:4px 10px;font-size:11.5px;margin:2px;"><b>${i.val}</b> ${escHtml(i.label)}</span>`;
+  const alertHtml = critiche.length
+    ? `<div style="margin-top:10px;padding:8px 12px;border-radius:6px;font-size:12px;border:1px solid #e0776a;background:#fdf0ee;color:#b94a3a;">⚠ Attenzione: valori bassi (≤3) in ${critiche.map(c=>escHtml(c.label)).join(', ')}.</div>`
+    : `<div style="margin-top:10px;padding:8px 12px;border-radius:6px;font-size:12px;border:1px solid #4CAF50;background:#eef7ee;color:#2e7d32;">✓ Nessuna area in zona critica.</div>`;
+  return `<div style="display:flex;gap:20px;flex-wrap:wrap;margin-top:12px;">
+    <div style="flex:1;min-width:200px;"><div style="font-size:10.5px;color:#777;text-transform:uppercase;margin-bottom:6px;">Aree di forza</div>${forza.map(i=>badge(i,'#eef7ee','#bfe3bf')).join('')}</div>
+    <div style="flex:1;min-width:200px;"><div style="font-size:10.5px;color:#777;text-transform:uppercase;margin-bottom:6px;">Aree di attenzione</div>${attenzione.map(i=>badge(i,'#eef2fb','#b9c9f0')).join('')}</div>
+  </div>${alertHtml}`;
+}
+function valFieldReportHTML(v, c){
+  const val = v.campi[c.key];
+  if(!val) return '';
+  const evid = v.evidenziati.includes(c.key);
+  return `<div style="margin-bottom:10px;"><div style="font-size:10.5px;color:#777;text-transform:uppercase;">${escHtml(c.label)}${evid?' ★':''}</div><div style="font-size:13px;white-space:pre-wrap;">${escHtml(val)}</div></div>`;
+}
+function valAlimentazioneReportHTML(v){
+  const a = v.alimentazione;
+  const rows = VAL_PASTI.map(p=>{
+    const cibi = a[p.key].cibi, orario = a[p.key].orario;
+    if(!cibi && !orario) return '';
+    return `<div style="margin-bottom:8px;font-size:13px;"><b>${escHtml(p.label)}</b>${orario?' · '+escHtml(orario):''}<div style="color:#333;">${escHtml(cibi)||'—'}</div></div>`;
+  }).filter(Boolean).join('');
+  return rows || '<div style="font-size:12px;color:#999;"><em>Nessun dato inserito.</em></div>';
+}
+function valSonnoReportHTML(v){
+  const s = v.sonno;
+  const parts = [];
+  if(s.addormentamento) parts.push(`Orario di addormentamento: <b>${escHtml(s.addormentamento)}</b>`);
+  if(s.risveglioOrario) parts.push(`Orario risveglio notturno: <b>${escHtml(s.risveglioOrario)}</b>`);
+  if(s.risveglioNotturno) parts.push(`Risveglio notturno: ${escHtml(s.risveglioNotturno)}`);
+  if(s.note) parts.push(`Altre note: ${escHtml(s.note)}`);
+  return parts.length ? parts.map(p=>`<div style="font-size:13px;margin-bottom:4px;">${p}</div>`).join('') : '<div style="font-size:12px;color:#999;"><em>Nessun dato inserito.</em></div>';
+}
+function valEnergiaReportHTML(v){
+  const e = v.energiaLivelli;
+  const items = ENERGIA_MOMENTI.map(m=>{
+    if(!e[m.key]) return '';
+    const opz = ENERGIA_LIVELLO_OPZIONI.find(o=>o.v===e[m.key]);
+    return `<span style="display:inline-block;border:1px solid #ddd;border-radius:999px;padding:4px 10px;font-size:12px;margin:2px;">${escHtml(m.label)}: <b>${opz?escHtml(opz.l):escHtml(e[m.key])}</b></span>`;
+  }).filter(Boolean).join('');
+  return items || '<div style="font-size:12px;color:#999;"><em>Nessun dato inserito.</em></div>';
+}
+// apre in una nuova finestra un report stampabile (via "Stampa" del browser,
+// da cui l'utente sceglie "Salva come PDF") dell'intera prima valutazione:
+// logo, cliente, data, autore, tutte le sezioni compilate (quelle vuote
+// vengono omesse), radar HRL con macrozone/alert. Stesso pattern "finestra
+// HTML + window.print()" già usato per osteopatia/fisioterapia, nessuna
+// libreria PDF richiesta.
+function apriReportValutazione(c, v){
+  normalizeValutazione(v);
+  const dataFmt = v.data ? v.data.split('-').reverse().join('/') : '—';
+  const logoSrc = (document.querySelector('.mark-logo') || document.querySelector('.auth-logo') || {}).src || '';
+  let sections = '';
+  VAL_SEZIONI.slice(0,2).forEach(sez=>{
+    const f = sez.campi.map(c2=>valFieldReportHTML(v,c2)).join('');
+    if(f) sections += `<div class="rep-sezione"><h3>${escHtml(sez.title)}</h3>${f}</div>`;
+  });
+  sections += `<div class="rep-sezione"><h3>Analisi globale HRL</h3>
+    <div>${valRadarSvgForReport(v.ruota)}</div>
+    ${valMacrozoneHTMLForReport(v.ruota)}
+  </div>`;
+  if(v.traumi.length){
+    sections += `<div class="rep-sezione"><h3>Cronologia traumi</h3>${v.traumi.map(t=>`<div style="font-size:13px;margin-bottom:4px;">${escHtml(t.anno||'—')} — ${escHtml(t.distretto||'—')}${t.dx?' · dx':''}${t.sx?' · sx':''}</div>`).join('')}</div>`;
+  }
+  VAL_SEZIONI.slice(2,5).forEach(sez=>{
+    const f = sez.campi.map(c2=>valFieldReportHTML(v,c2)).join('');
+    if(f) sections += `<div class="rep-sezione"><h3>${escHtml(sez.title)}</h3>${f}</div>`;
+    if(sez.title==='Metabolismo'){
+      sections += `<div class="rep-sezione"><h3>Alimentazione</h3>${valAlimentazioneReportHTML(v)}</div>`;
+      sections += `<div class="rep-sezione"><h3>Sonno</h3>${valSonnoReportHTML(v)}</div>`;
+      sections += `<div class="rep-sezione"><h3>Energia nella giornata</h3>${valEnergiaReportHTML(v)}</div>`;
+    }
+  });
+  if(v.desiderioMigliorarsi!=null){
+    sections += `<div class="rep-sezione"><h3>Desiderio di migliorarsi</h3><div style="font-size:13px;">${v.desiderioMigliorarsi} / 10</div></div>`;
+  }
+  const dialogoFocusLbl = {io:'Io', vita:'Vita', altri:'Altri'}[v.dialogoFocus];
+  if(dialogoFocusLbl || v.dialogoFocusNote){
+    sections += `<div class="rep-sezione"><h3>Focus del dialogo interiore</h3><div style="font-size:13px;">${dialogoFocusLbl||'—'}</div>${v.dialogoFocusNote?`<div style="font-size:13px;margin-top:4px;">${escHtml(v.dialogoFocusNote)}</div>`:''}</div>`;
+  }
+  const personaTxt = VAL_PERSONA_ASSI.map(ax=> v.persona[ax.key]).filter(Boolean).join(' · ');
+  if(personaTxt) sections += `<div class="rep-sezione"><h3>La persona è</h3><div style="font-size:13px;">${escHtml(personaTxt)}</div></div>`;
+  const coerenzaLbl = {bassa:'Bassa', alta:'Alta', norma:'Nella norma'}[v.coerenza];
+  if(coerenzaLbl) sections += `<div class="rep-sezione"><h3>Coerenza fra percezione e sintomo</h3><div style="font-size:13px;">${coerenzaLbl}</div></div>`;
+  const tensRelaxLbl = {tens:'Tens', relax:'Relax'}[v.tensRelax];
+  if(tensRelaxLbl) sections += `<div class="rep-sezione"><h3>Tens / Relax</h3><div style="font-size:13px;">${tensRelaxLbl}</div></div>`;
+  VAL_SEZIONI.slice(5).forEach(sez=>{
+    const f = sez.campi.map(c2=>valFieldReportHTML(v,c2)).join('');
+    if(f) sections += `<div class="rep-sezione"><h3>${escHtml(sez.title)}</h3>${f}</div>`;
+  });
+  const esitoLbl = {acuto:'Acuto → Fisioterapia', sistema:'Non acuto → Sistema'}[v.esito];
+  if(esitoLbl){
+    const areaSceltaLbl = {AH:'Area Human', AP:'Area Performance'};
+    sections += `<div class="rep-sezione"><h3>Esito valutazione</h3><div style="font-size:13px;">${esitoLbl}</div>${v.esito==='sistema'&&v.areaScelta.length ? `<div style="font-size:13px;margin-top:4px;">Area di destinazione: ${v.areaScelta.map(a=>areaSceltaLbl[a]||a).join(', ')}</div>` : ''}</div>`;
+  }
+
+  const html = `<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8">
+    <title>Prima valutazione — ${escHtml(c.nome || '')}</title>
+    <style>
+      body{font-family:-apple-system,Segoe UI,Arial,sans-serif;background:#fff;color:#111;padding:36px;max-width:780px;margin:0 auto;}
+      .rep-head{display:flex;align-items:center;gap:18px;border-bottom:2px solid #8a6d1d;padding-bottom:16px;margin-bottom:20px;}
+      .rep-head img{height:52px;filter:invert(1);background:#1b1b1b;padding:8px;border-radius:6px;}
+      .rep-head h1{font-size:20px;margin:0;}
+      .rep-head .rep-sub{color:#555;font-size:12.5px;margin-top:2px;}
+      .rep-meta{display:grid;grid-template-columns:1fr 1fr;gap:10px 24px;margin-bottom:24px;font-size:13px;}
+      .rep-meta .rep-meta-label{color:#777;text-transform:uppercase;font-size:10.5px;letter-spacing:.04em;display:block;}
+      .rep-sezione{margin-bottom:22px;}
+      .rep-sezione h3{font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:#8a6d1d;margin:0 0 8px;border-bottom:1px solid #e0d3a8;padding-bottom:4px;}
+      .rep-print-btn{margin-top:28px;padding:10px 18px;background:#8a6d1d;color:#fff;border:none;border-radius:4px;font-size:13px;cursor:pointer;}
+      @media print{ .rep-print-btn{display:none;} body{padding:0;} }
+    </style></head><body>
+    <div class="rep-head">
+      ${logoSrc ? `<img src="${logoSrc}" alt="HRL">` : ''}
+      <div><h1>Prima valutazione</h1><div class="rep-sub">HRL Performance Pathways</div></div>
+    </div>
+    <div class="rep-meta">
+      <div><span class="rep-meta-label">Cliente</span>${escHtml(c.nome || '—')}</div>
+      <div><span class="rep-meta-label">Data valutazione</span>${dataFmt}</div>
+      <div><span class="rep-meta-label">Fatta da</span>${escHtml(v.autore || '—')}</div>
+    </div>
+    ${sections}
+    <button class="rep-print-btn" onclick="window.print()">Stampa / Salva come PDF</button>
+    </body></html>`;
+  const win = window.open('', '_blank');
+  if(!win){ alert('Il browser ha bloccato l\'apertura della finestra di report. Consenti i popup per questo sito e riprova.'); return; }
+  win.document.open(); win.document.write(html); win.document.close();
+}
+
 // apre in una nuova finestra un report stampabile (via "Stampa" del browser,
 // da cui l'utente sceglie "Salva come PDF") di una singola scheda trattamento
 // osteopatia: logo, data seduta, operatore e contenuto diviso per aree. Solo
