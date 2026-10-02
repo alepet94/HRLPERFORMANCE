@@ -1463,6 +1463,20 @@ body[data-theme="light"]{
   border:1px solid var(--client-accent-line);color:var(--ink-dim);background:var(--client-accent-dim);
 }
 
+/* RPE di fine sessione (auto-valutazione del cliente) */
+.rpe-client-block{margin-top:22px;}
+.rpe-client-label{font-family:var(--serif);font-weight:800;text-transform:uppercase;letter-spacing:.02em;font-size:15px;color:var(--ink);margin-bottom:4px;}
+.rpe-client-hint{font-size:12px;color:var(--ink-mute);margin-bottom:12px;}
+.rpe-client-scale{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;}
+.rpe-client-btn{
+  border:1.5px solid var(--line);background:var(--navy-850);border-radius:12px;
+  padding:10px 4px;cursor:pointer;text-align:center;transition:border-color .15s,background .15s,transform .1s;
+  font-family:var(--serif);font-weight:800;font-size:18px;color:var(--ink-dim);
+}
+.rpe-client-btn:hover{border-color:var(--gold);transform:translateY(-2px);}
+.rpe-client-btn.sel{border-color:var(--gold);background:color-mix(in srgb, var(--gold) 18%, var(--navy-850));box-shadow:0 0 0 1px var(--gold);color:var(--ink);}
+.rpe-client-legend{display:flex;justify-content:space-between;font-size:10.5px;color:var(--ink-mute);margin-top:6px;text-transform:uppercase;letter-spacing:.02em;}
+
 /* istruzioni del coach */
 .instructions-card{
   border:1px solid var(--line);background:var(--navy-850);border-radius:16px;
@@ -6925,6 +6939,13 @@ function apriDettaglioLezione(appuntamentoId){
         ${READINESS_METRICS.map(m=> r[m.key] ? `<span class="rs-chip">${m.label}: ${r[m.key]}/5</span>` : '').join('')}
       </div>`;
     }
+    if(a.esecuzione.rpeCliente){
+      const srpePianificato = scheda ? computeSRPE(scheda.durataMin, scheda.rpeSessione) : null;
+      html += `<div class="readiness-summary">
+        <span class="rs-chip">RPE sessione (cliente): ${a.esecuzione.rpeCliente}/10</span>
+        ${srpePianificato!==null ? `<span class="rs-chip">sRPE pianificato: ${srpePianificato} AU</span>` : ''}
+      </div>`;
+    }
     html += `<table class="kpi-table"><thead><tr><th>Esercizio</th><th>Serie fatte (reps × kg)</th></tr></thead>
       <tbody>${er}</tbody></table>`;
     const vol = calcVolume(a.esecuzione.esercizi);
@@ -7044,7 +7065,8 @@ function apriEsecuzioneScheda(appuntamentoId){
       }
       return {nome:e.nome, serie:e.serie, reps:e.reps, carico:e.carico, tempo:e.tempo, superWithNext:!!e.superWithNext, serieValori:e.serieValori||null, sets};
     }),
-    nota: prevExec ? (prevExec.nota||'') : ''
+    nota: prevExec ? (prevExec.nota||'') : '',
+    rpeCliente: (prevExec && prevExec.rpeCliente) ? prevExec.rpeCliente : null
   };
   renderExecFlow();
   document.getElementById('execModal').classList.add('open');
@@ -7178,12 +7200,21 @@ function renderExecList(){
   });
   html += `</div>`;
 
+  html += `<div class="rpe-client-block">
+    <div class="rpe-client-label">Quanto è stata intensa la sessione?</div>
+    <div class="rpe-client-hint">RPE (percezione dello sforzo) da 1 a 10 — rispondi a fine allenamento.</div>
+    <div class="rpe-client-scale">${[1,2,3,4,5,6,7,8,9,10].map(v=>`<button class="rpe-client-btn ${f.rpeCliente===v?'sel':''}" data-rpecli="${v}">${v}</button>`).join('')}</div>
+    <div class="rpe-client-legend"><span>Molto leggero</span><span>Massimale</span></div>
+  </div>`;
   html += `<div class="ev-field" style="margin-top:22px;"><label>Nota per il preparatore (opzionale)</label>
     <input class="editable" id="execNota" value="${f.nota||''}" placeholder="es. ginocchio destro fastidioso sull'ultima serie"></div>`;
   html += `<div class="ev-actions"><div></div><button class="btn-gold" id="btnFinishExec">Termina e salva</button></div>`;
   box.innerHTML = html;
   box.querySelectorAll('[data-open-ex]').forEach(row=>{
     row.onclick = ()=>{ f.exerciseIndex = parseInt(row.dataset.openEx,10); f.step = 'exercise'; renderExecFlow(); saveExecFlow(false); };
+  });
+  box.querySelectorAll('[data-rpecli]').forEach(btn=>{
+    btn.onclick = ()=>{ f.rpeCliente = parseInt(btn.dataset.rpecli,10); renderExecList(); };
   });
   document.getElementById('execNota').oninput = (e)=>{ f.nota = e.target.value; };
   document.getElementById('btnFinishExec').onclick = ()=> saveExecFlow(true);
@@ -7315,6 +7346,7 @@ function saveExecFlow(close){
     readinessDismissed: prevDismissed,
     esercizi: f.esercizi.map(e=>({nome:e.nome, sets: e.sets.map(s=>({reps:s.reps, kg:s.kg, done:!!s.done, extra:!!s.extra}))})),
     nota: f.nota,
+    rpeCliente: f.rpeCliente || null,
     completedAt: new Date().toISOString()
   };
   db.saveAppuntamento(a);
