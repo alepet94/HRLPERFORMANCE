@@ -1476,6 +1476,8 @@ body[data-theme="light"]{
 .rpe-client-btn:hover{border-color:var(--gold);transform:translateY(-2px);}
 .rpe-client-btn.sel{border-color:var(--gold);background:color-mix(in srgb, var(--gold) 18%, var(--navy-850));box-shadow:0 0 0 1px var(--gold);color:var(--ink);}
 .rpe-client-legend{display:flex;justify-content:space-between;font-size:10.5px;color:var(--ink-mute);margin-top:6px;text-transform:uppercase;letter-spacing:.02em;}
+.rpe-client-srpe-result{margin-top:14px;font-size:13px;color:var(--ink-dim);}
+.rpe-client-srpe-result b{color:var(--gold);font-family:var(--serif);}
 
 /* istruzioni del coach */
 .instructions-card{
@@ -6940,10 +6942,10 @@ function apriDettaglioLezione(appuntamentoId){
       </div>`;
     }
     if(a.esecuzione.rpeCliente){
-      const srpePianificato = scheda ? computeSRPE(scheda.durataMin, scheda.rpeSessione) : null;
       html += `<div class="readiness-summary">
         <span class="rs-chip">RPE sessione (cliente): ${a.esecuzione.rpeCliente}/10</span>
-        ${srpePianificato!==null ? `<span class="rs-chip">sRPE pianificato: ${srpePianificato} AU</span>` : ''}
+        ${a.esecuzione.durataCliente ? `<span class="rs-chip">Durata: ${a.esecuzione.durataCliente} min</span>` : ''}
+        ${a.esecuzione.srpeCliente!==null && a.esecuzione.srpeCliente!==undefined ? `<span class="rs-chip">sRPE sessione: ${a.esecuzione.srpeCliente} AU</span>` : ''}
       </div>`;
     }
     html += `<table class="kpi-table"><thead><tr><th>Esercizio</th><th>Serie fatte (reps × kg)</th></tr></thead>
@@ -7066,7 +7068,8 @@ function apriEsecuzioneScheda(appuntamentoId){
       return {nome:e.nome, serie:e.serie, reps:e.reps, carico:e.carico, tempo:e.tempo, superWithNext:!!e.superWithNext, serieValori:e.serieValori||null, sets};
     }),
     nota: prevExec ? (prevExec.nota||'') : '',
-    rpeCliente: (prevExec && prevExec.rpeCliente) ? prevExec.rpeCliente : null
+    rpeCliente: (prevExec && prevExec.rpeCliente) ? prevExec.rpeCliente : null,
+    durataCliente: (prevExec && prevExec.durataCliente) ? prevExec.durataCliente : ''
   };
   renderExecFlow();
   document.getElementById('execModal').classList.add('open');
@@ -7200,11 +7203,15 @@ function renderExecList(){
   });
   html += `</div>`;
 
+  const srpeClienteCalc = computeSRPE(f.durataCliente, f.rpeCliente);
   html += `<div class="rpe-client-block">
-    <div class="rpe-client-label">Quanto è stata intensa la sessione?</div>
-    <div class="rpe-client-hint">RPE (percezione dello sforzo) da 1 a 10 — rispondi a fine allenamento.</div>
-    <div class="rpe-client-scale">${[1,2,3,4,5,6,7,8,9,10].map(v=>`<button class="rpe-client-btn ${f.rpeCliente===v?'sel':''}" data-rpecli="${v}">${v}</button>`).join('')}</div>
+    <div class="rpe-client-label">Durata e intensità della sessione</div>
+    <div class="rpe-client-hint">Inserisci la durata effettiva e l'RPE (percezione dello sforzo) per calcolare lo sRPE a fine allenamento.</div>
+    <div class="ev-field" style="max-width:220px;"><label>Durata effettiva (minuti)</label>
+      <input class="editable" id="execDurataCliente" type="number" min="0" value="${f.durataCliente||''}" placeholder="es. 50"></div>
+    <div class="rpe-client-scale" style="margin-top:14px;">${[1,2,3,4,5,6,7,8,9,10].map(v=>`<button class="rpe-client-btn ${f.rpeCliente===v?'sel':''}" data-rpecli="${v}">${v}</button>`).join('')}</div>
     <div class="rpe-client-legend"><span>Molto leggero</span><span>Massimale</span></div>
+    <div class="rpe-client-srpe-result" id="execSrpeResult" style="${srpeClienteCalc!==null?'':'display:none;'}">sRPE sessione: <b>${srpeClienteCalc!==null?srpeClienteCalc:''} AU</b></div>
   </div>`;
   html += `<div class="ev-field" style="margin-top:22px;"><label>Nota per il preparatore (opzionale)</label>
     <input class="editable" id="execNota" value="${f.nota||''}" placeholder="es. ginocchio destro fastidioso sull'ultima serie"></div>`;
@@ -7216,6 +7223,15 @@ function renderExecList(){
   box.querySelectorAll('[data-rpecli]').forEach(btn=>{
     btn.onclick = ()=>{ f.rpeCliente = parseInt(btn.dataset.rpecli,10); renderExecList(); };
   });
+  document.getElementById('execDurataCliente').oninput = (e)=>{
+    f.durataCliente = e.target.value;
+    const srpe = computeSRPE(f.durataCliente, f.rpeCliente);
+    const box2 = document.getElementById('execSrpeResult');
+    if(box2){
+      box2.style.display = srpe!==null ? '' : 'none';
+      box2.innerHTML = `sRPE sessione: <b>${srpe!==null?srpe:''} AU</b>`;
+    }
+  };
   document.getElementById('execNota').oninput = (e)=>{ f.nota = e.target.value; };
   document.getElementById('btnFinishExec').onclick = ()=> saveExecFlow(true);
 }
@@ -7347,6 +7363,8 @@ function saveExecFlow(close){
     esercizi: f.esercizi.map(e=>({nome:e.nome, sets: e.sets.map(s=>({reps:s.reps, kg:s.kg, done:!!s.done, extra:!!s.extra}))})),
     nota: f.nota,
     rpeCliente: f.rpeCliente || null,
+    durataCliente: f.durataCliente || null,
+    srpeCliente: computeSRPE(f.durataCliente, f.rpeCliente),
     completedAt: new Date().toISOString()
   };
   db.saveAppuntamento(a);
