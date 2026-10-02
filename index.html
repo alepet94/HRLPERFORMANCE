@@ -1192,7 +1192,9 @@ header.top{
   font-size:12.5px;color:var(--ink-dim);cursor:pointer;transition:all .12s;
 }
 .val-chip.sel{border-color:var(--client-accent);background:var(--client-accent-dim);color:var(--client-accent-bright);}
+.val-chip:disabled{cursor:not-allowed;opacity:.55;}
 .val-persona-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+.val-persona-locked{opacity:.75;}
 .val-scale10{display:flex;gap:6px;flex-wrap:wrap;}
 .val-scale-btn{
   width:36px;height:36px;border-radius:50%;border:1px solid var(--line);background:var(--navy-850);
@@ -2453,6 +2455,13 @@ function canManageAll(){
 // di tutti ma NON le schede cliniche dei clienti (solo anagrafica/contatti)
 function isSegreteriaOnly(){
   return !!(state.professionista && state.professionista.ruolo!=='admin' && state.professionista.area==='Segreteria');
+}
+// la sezione "La persona è" della prima valutazione richiede una lettura
+// specifica che, su richiesta di Ale, solo admin e Nutrizionista hanno le
+// competenze per compilare correttamente — gli altri professionisti la
+// vedono ma non possono modificarla
+function canEditPersonaValutazione(){
+  return !!(state.professionista && (state.professionista.ruolo==='admin' || state.professionista.area==='Nutrizionista'));
 }
 // determina, in base al ruolo/area del professionista, quali tab clienti
 // (#cliTabs) può vedere e quale "sotto-area" di Area Human gli compete.
@@ -4331,11 +4340,13 @@ function renderValutazioneEditor(){
     </div>
   </div>`;
 
+  const personaEditable = canEditPersonaValutazione();
   html += `<div class="val-section"><div class="val-section-title">La persona è</div>
-    <div class="val-persona-grid">
+    ${personaEditable ? '' : `<div class="val-legacy-note">Compilabile solo da admin o dalla Nutrizionista.</div>`}
+    <div class="val-persona-grid ${personaEditable ? '' : 'val-persona-locked'}">
       ${VAL_PERSONA_ASSI.map(ax=>`<div class="val-chip-group" data-persona="${ax.key}">
-        <button type="button" class="val-chip ${v.persona[ax.key]===ax.a?'sel':''}" data-personaval="${ax.a}">${ax.a}</button>
-        <button type="button" class="val-chip ${v.persona[ax.key]===ax.b?'sel':''}" data-personaval="${ax.b}">${ax.b}</button>
+        <button type="button" class="val-chip ${v.persona[ax.key]===ax.a?'sel':''}" data-personaval="${ax.a}" ${personaEditable?'':'disabled'}>${ax.a}</button>
+        <button type="button" class="val-chip ${v.persona[ax.key]===ax.b?'sel':''}" data-personaval="${ax.b}" ${personaEditable?'':'disabled'}>${ax.b}</button>
       </div>`).join('')}
     </div>
   </div>`;
@@ -4457,7 +4468,7 @@ function bindValutazioneEditorEvents(){
     });
   }
 
-  document.querySelectorAll('[data-persona]').forEach(group=>{
+  if(canEditPersonaValutazione()) document.querySelectorAll('[data-persona]').forEach(group=>{
     const key = group.dataset.persona;
     group.querySelectorAll('[data-personaval]').forEach(chip=>{
       chip.onclick = ()=>{
