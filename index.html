@@ -1139,6 +1139,10 @@ header.top{
   background:var(--pcolor);color:#fff;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;
   cursor:pointer;border:2px solid var(--navy-900);box-shadow:0 0 0 1px rgba(255,255,255,.15);
 }
+.body-map-marker-ref{
+  background:transparent;border:2px dashed var(--pcolor);color:var(--pcolor);
+  cursor:default;pointer-events:none;box-shadow:none;opacity:.85;
+}
 .body-map-marker.sel{box-shadow:0 0 0 2px var(--gold);}
 .body-map-side{flex:1;min-width:200px;}
 .body-map-hint{font-size:11.5px;color:var(--ink-mute);margin-bottom:8px;}
@@ -5690,15 +5694,21 @@ function emptyDolorePunto(){ return { id:'dp_'+Date.now()+'_'+Math.random().toSt
 // rende la mappa + lista punti + editor del punto selezionato; getPoints/setPoints
 // generalizzano l'accesso (funziona sia su v.dolorePunti sia su s.dolorePunti),
 // stesso pattern getter/setter di profAssignHTML/bindProfAssign
-function bodyMapHTML(points, idPrefix, selectedId){
+function bodyMapHTML(points, idPrefix, selectedId, refPoints){
   const pts = points || [];
   const markersHTML = pts.map(p=>`<div class="body-map-marker ${p.id===selectedId?'sel':''}" data-bm-point="${p.id}"
       style="left:${(p.x*100).toFixed(1)}%;top:${(p.y*100).toFixed(1)}%;--pcolor:${painColor(p.nrs)};" title="${escAttr(p.zona||'')}${p.zona?' — ':''}NRS ${p.nrs}/10">${p.nrs}</div>`).join('');
+  // punti di riferimento (es. il dolore segnato nella valutazione collegata):
+  // disegnati come anelli tratteggiati, non interattivi (niente click/drag),
+  // solo per confronto visivo col dolore di oggi — non fanno parte di `points`
+  // e non vengono mai salvati insieme ad esso
+  const refs = refPoints || [];
+  const refMarkersHTML = refs.map(p=>`<div class="body-map-marker body-map-marker-ref" style="left:${(p.x*100).toFixed(1)}%;top:${(p.y*100).toFixed(1)}%;--pcolor:${painColor(p.nrs)};" title="Dalla valutazione — ${escAttr(p.zona||'')}${p.zona?' — ':''}NRS ${p.nrs}/10">${p.nrs}</div>`).join('');
   const selected = pts.find(p=>p.id===selectedId);
   return `<div class="body-map-wrap">
-    <div class="body-map-canvas" id="${idPrefix}Canvas">${BODY_MAP_SVG_HTML}${markersHTML}</div>
+    <div class="body-map-canvas" id="${idPrefix}Canvas">${BODY_MAP_SVG_HTML}${refMarkersHTML}${markersHTML}</div>
     <div class="body-map-side">
-      <div class="body-map-hint">Clicca sulla sagoma (fronte a sinistra, retro a destra): la zona viene riconosciuta automaticamente, poi regola l'intensità.</div>
+      <div class="body-map-hint">Clicca sulla sagoma (fronte a sinistra, retro a destra): la zona viene riconosciuta automaticamente, poi regola l'intensità.${refs.length ? ' Gli anelli tratteggiati mostrano il dolore segnato nella valutazione di riferimento.' : ''}</div>
       ${pts.length ? `<div class="body-map-list">${pts.map(p=>`
         <div class="body-map-list-row ${p.id===selectedId?'sel':''}" data-bm-select="${p.id}">
           <span class="body-map-dot" style="--pcolor:${painColor(p.nrs)};"></span>
@@ -5805,6 +5815,7 @@ function emptyTrattamentoFisio(){
     tipi: [],                 // sottoinsieme delle chiavi di TRATTAMENTO_FISIO_LABELS, selezionabili insieme
     campi,
     collegataAValutazioneId: null, // id della valutazione fisioterapica di riferimento
+    _valRifDefaultApplicata: false, // evita di ri-applicare il default "più recente" dopo una scelta esplicita di "Nessuna"
     dolorePunti: [],          // punti dolenti NRS segnati a questa seduta (per il grafico di andamento)
     condividiPrivateCon: [],  // id professionisti con cui sono condivise TUTTE le note private di questa seduta
     professionistaId: null,
@@ -5993,8 +6004,13 @@ function renderFisioTrattamentiSection(c){
 
   const valutazioniRows = (c.valutazioniFisioterapia||[]).slice().sort((a,b)=> (b.data||'').localeCompare(a.data||''));
   // se non è ancora stata scelta una valutazione di riferimento per il nuovo
-  // trattamento, propone di default la più recente — resta comunque modificabile
-  if(draft.collegataAValutazioneId===null && valutazioniRows.length) draft.collegataAValutazioneId = valutazioniRows[0].id;
+  // trattamento, propone di default la più recente — resta comunque modificabile;
+  // il default si applica una sola volta, altrimenti scegliere esplicitamente
+  // "Nessuna" verrebbe subito sovrascritto al render successivo
+  if(!draft._valRifDefaultApplicata){
+    if(valutazioniRows.length) draft.collegataAValutazioneId = valutazioniRows[0].id;
+    draft._valRifDefaultApplicata = true;
+  }
 
   const rows = c.trattamentiFisioterapia.slice().sort((a,b)=> (b.data||'').localeCompare(a.data||''));
   const listHTML = rows.length ? rows.map(s=>{
@@ -6072,7 +6088,7 @@ function renderFisioTrattamentiSection(c){
       </div>
 
       <div class="client-section-label-row" style="margin-top:18px;"><div class="client-section-label" style="font-size:11px;">Dolore rilevato in questa seduta</div></div>
-      ${bodyMapHTML(draft.dolorePunti, 'fisioTrattPain', draft._selectedPainId)}
+      ${bodyMapHTML(draft.dolorePunti, 'fisioTrattPain', draft._selectedPainId, draft.collegataAValutazioneId ? ((c.valutazioniFisioterapia||[]).find(v=>v.id===draft.collegataAValutazioneId)||{}).dolorePunti : null)}
 
       <div class="osteo-flag-box" style="margin-top:16px;">
         <label style="font-size:11px;color:var(--ink-mute);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:8px;">Note private</label>
@@ -6087,7 +6103,7 @@ function renderFisioTrattamentiSection(c){
   box.innerHTML = html;
 
   document.getElementById('fisioTrattData').onchange = (e)=>{ draft.data = e.target.value; };
-  document.getElementById('fisioTrattValRif').onchange = (e)=>{ draft.collegataAValutazioneId = e.target.value || null; };
+  document.getElementById('fisioTrattValRif').onchange = (e)=>{ draft.collegataAValutazioneId = e.target.value || null; renderFisioTrattamentiSection(c); };
   box.querySelectorAll('[data-tipo-fisio]').forEach(chk=>{
     chk.onchange = (e)=>{
       const t = chk.dataset.tipoFisio;
