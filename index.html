@@ -6693,8 +6693,9 @@ function renderStoricoTab(){
   // stesso giorno, quando il professionista compila la scheda appena dopo
   // la seduta, prima che passi la mezzanotte)
   const giorniConTrattamentoSvolto = new Set(schedeOsteo.map(s=>s.data).filter(Boolean));
-  const svoltiApp = tuttiApp.filter(a=>a.day < todayStr);
-  const prossimi = tuttiApp.filter(a=>a.day >= todayStr && !giorniConTrattamentoSvolto.has(a.day));
+  // un allenamento già eseguito dal cliente è "svolto" anche se è oggi
+  const svoltiApp = tuttiApp.filter(a=>a.day < todayStr || a.esecuzione);
+  const prossimi = tuttiApp.filter(a=>a.day >= todayStr && !a.esecuzione && !giorniConTrattamentoSvolto.has(a.day));
   const valutazioniGenerali = c.valutazioni || [];
   const valutazioniFisio = c.valutazioniFisioterapia || [];
   const trattamentiFisio = c.trattamentiFisioterapia || [];
@@ -6735,12 +6736,32 @@ function renderStoricoTab(){
   document.getElementById('stFiltroDa').value = f.da;
   document.getElementById('stFiltroA').value = f.a;
 
+  // scheda svolta dal cliente: carichi/reps per serie, RPE, durata e sRPE (AU)
+  function esecuzioneStoricoHTML(a){
+    const ex = a.esecuzione;
+    if(!ex) return '';
+    const chips = [];
+    if(ex.rpeCliente) chips.push(`RPE: ${ex.rpeCliente}/10`);
+    if(ex.durataCliente) chips.push(`Durata: ${escHtml(String(ex.durataCliente))} min`);
+    if(ex.srpeCliente!==null && ex.srpeCliente!==undefined) chips.push(`sRPE: ${ex.srpeCliente} AU`);
+    const vol = calcVolume(ex.esercizi);
+    if(vol>0) chips.push(`Volume: ${vol} kg`);
+    const rows = (ex.esercizi||[]).map(e=>{
+      const setsTxt = (e.sets||[]).map((s,i)=> (s.done||s.kg||s.reps) ? `S${i+1}: ${escHtml(String(s.reps||'—'))}${s.kg ? ' × '+escHtml(String(s.kg))+'kg' : (s.done ? ' (corpo libero)' : '')}` : null).filter(Boolean).join(' · ') || '—';
+      return `<tr><td>${escHtml(e.nome||'')}</td><td>${setsTxt}</td></tr>`;
+    }).join('');
+    return `<details style="margin-top:6px;"><summary style="cursor:pointer;font-size:12.5px;color:var(--ink-dim);">Scheda svolta${chips.length ? ' — '+chips.join(' · ') : ''}</summary>
+      <table class="kpi-table" style="margin-top:8px;"><thead><tr><th>Esercizio</th><th>Serie (reps × kg)</th></tr></thead><tbody>${rows}</tbody></table>
+      ${ex.nota ? `<div class="uim" style="margin-top:6px;">Nota del cliente: ${escHtml(ex.nota)}</div>` : ''}
+    </details>`;
+  }
   function appHTML(a){
     const prof = a.professionistaId ? state.professionisti.find(p=>p.id===a.professionistaId) : null;
     return `<div class="upcoming-item tipo-border-${a.tipo}">
       <div class="ui-info">
         <div class="uid"><span class="tipo-tag tipo-tag-${a.tipo}">${tipoLabel(a.tipo)}</span> ${escHtml(a.titolo || tipoLabel(a.tipo))}</div>
         <div class="uim">${a.day.split('-').reverse().join('/')} · ${a.start}–${a.end} · ${STORICO_AREA_LBL[storicoAreaOf(a)]}${prof ? ' · '+escHtml(prof.nome) : ''}</div>
+        ${esecuzioneStoricoHTML(a)}
       </div>
     </div>`;
   }
@@ -7345,10 +7366,15 @@ function apriDettaglioLezione(appuntamentoId){
       <div style="color:var(--ink-dim);font-size:13px;">${a.noteSessione}</div></div>`;
   }
   if(scheda){
+    // la scheda non si apre da sola cliccando l'allenamento: resta chiusa
+    // finché non si preme "Visualizza scheda" (sola lettura)
     const rows = scheda.esercizi.map(schedaEsercizioRowsHTML).join('');
-    html += `<hr class="section-divider"><div class="section-label">Scheda: ${scheda.nome || '(senza nome)'}</div>
-      <table class="kpi-table"><thead><tr><th>Esercizio</th><th>Serie</th><th>Reps</th><th>Carico</th><th>Tempo</th></tr></thead>
-      <tbody>${rows}</tbody></table>`;
+    html += `<hr class="section-divider"><div class="section-label">Scheda: ${escHtml(scheda.nome || '(senza nome)')}</div>
+      <button class="btn-small" id="btnVisualizzaScheda">Visualizza scheda</button>
+      <div id="lessonSchedaBox" style="display:none;margin-top:10px;">
+        <table class="kpi-table"><thead><tr><th>Esercizio</th><th>Serie</th><th>Reps</th><th>Carico</th><th>Tempo</th></tr></thead>
+        <tbody>${rows}</tbody></table>
+      </div>`;
   } else {
     html += `<div style="color:var(--ink-mute);font-size:12.5px;">Nessuna scheda collegata a questa lezione.</div>`;
   }
@@ -7396,6 +7422,13 @@ function apriDettaglioLezione(appuntamentoId){
   }
   box.innerHTML = html;
   document.getElementById('lessonModal').classList.add('open');
+  const btnVisSch = document.getElementById('btnVisualizzaScheda');
+  if(btnVisSch) btnVisSch.onclick = ()=>{
+    const bx = document.getElementById('lessonSchedaBox');
+    const open = bx.style.display==='none';
+    bx.style.display = open ? '' : 'none';
+    btnVisSch.textContent = open ? 'Nascondi scheda' : 'Visualizza scheda';
+  };
   const btnReg = document.getElementById('btnRegistraEsecuzione');
   if(btnReg) btnReg.onclick = ()=>{
     document.getElementById('lessonModal').classList.remove('open');
