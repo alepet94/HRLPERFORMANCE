@@ -7432,7 +7432,8 @@ function parseSetCount(serieStr){
   const n = parseInt(serieStr,10);
   return (n>0 && n<=20) ? n : 3;
 }
-function setsLoggedCount(sets){ return sets.filter(s=>s.kg).length; }
+// una serie conta come fatta se ha la spunta (esercizi a corpo libero: nessun kg) o, per dati vecchi, un carico
+function setsLoggedCount(sets){ return sets.filter(s=>s.done || s.kg).length; }
 function findLastSetsForExercise(clienteId, exerciseName, excludeAppId){
   const nameL = (exerciseName||'').trim().toLowerCase();
   const candidates = state.appuntamenti
@@ -7729,8 +7730,8 @@ function renderExecExercise(){
       const [exIdxStr, setIdxStr, field] = inp.dataset.set.split('|');
       const exIdx = parseInt(exIdxStr,10), i = parseInt(setIdxStr,10);
       f.esercizi[exIdx].sets[i][field] = inp.value;
-      if(field==='kg'){
-        f.esercizi[exIdx].sets[i].done = !!inp.value.trim();
+      if(field==='kg' && inp.value.trim()){
+        f.esercizi[exIdx].sets[i].done = true;
         const checkBtn = box.querySelector(`[data-set-done="${exIdx}|${i}"]`);
         if(checkBtn) checkBtn.classList.toggle('on', f.esercizi[exIdx].sets[i].done);
       }
@@ -7740,7 +7741,18 @@ function renderExecExercise(){
     btn.onclick = ()=>{
       const [exIdxStr, setIdxStr] = btn.dataset.setDone.split('|');
       const exIdx = parseInt(exIdxStr,10), idx = parseInt(setIdxStr,10);
-      f.esercizi[exIdx].sets[idx].done = !f.esercizi[exIdx].sets[idx].done;
+      const st = f.esercizi[exIdx].sets[idx];
+      st.done = !st.done;
+      // spuntando una serie senza carico, riporta il carico dell'ultima serie
+      // precedente dello stesso esercizio che ne ha uno (stesso peso senza
+      // doverlo riscrivere); se non c'è nessun carico (esercizio a corpo
+      // libero) la serie resta semplicemente "fatta", senza kg
+      if(st.done && !String(st.kg||'').trim()){
+        for(let j=idx-1;j>=0;j--){
+          const prevKg = f.esercizi[exIdx].sets[j].kg;
+          if(prevKg && String(prevKg).trim()){ st.kg = prevKg; break; }
+        }
+      }
       renderExecExercise();
     };
   });
