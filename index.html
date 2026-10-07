@@ -2286,6 +2286,8 @@ const state = {
   blockOperativoEditorIsNew: false,
   segnalazioni: [],          // note tra professionisti: {id, clienteId, schedaOsteopatiaId, daProfessionistaId, aProfessionistaId, testo, letta, createdAt}
   seenSegnalazioniIds: null,
+  schedaEnergeticaDraft: null, // scheda Ottimizzazione energetica in compilazione, o null
+  humanSubTab: null,           // admin: 'osteopatia' | 'energetica' dentro Area Human
   schedaOsteopatiaDraft: null, // scheda Area Human (Osteopatia) in compilazione, o null
   spazi: [],                 // spazi comuni prenotabili: {id, nome, colore, note}
   spazioEditor: null,
@@ -2341,6 +2343,7 @@ function clienteToRow(c){
     ghi_storico: c.ghiStorico || [],
     sistema_test_selezionati: Array.from(c.sistemaTestSelezionati || []),
     schede_osteopatia: c.schedeOsteopatia || [],
+    schede_energetica: c.schedeEnergetica || [],
     schede_fisioterapia: c.schedeFisioterapia || [],
     trattamenti_fisioterapia: c.trattamentiFisioterapia || [],
     valutazioni_fisioterapia: c.valutazioniFisioterapia || []
@@ -2370,6 +2373,7 @@ function rowToCliente(r){
     ghiStorico: r.ghi_storico || [],
     sistemaTestSelezionati: new Set(r.sistema_test_selezionati || []),
     schedeOsteopatia: r.schede_osteopatia || [],
+    schedeEnergetica: r.schede_energetica || [],
     schedeFisioterapia: r.schede_fisioterapia || [],
     trattamentiFisioterapia: r.trattamenti_fisioterapia || [],
     valutazioniFisioterapia: r.valutazioni_fisioterapia || []
@@ -5025,6 +5029,82 @@ function emptySchedaOsteopatia(){
     _privataOpen: {}        // campo transitorio del solo draft: quali box "nota privata" sono aperti (idBase -> bool), mai salvato
   };
 }
+// ==================== AREA HUMAN — Ottimizzazione energetica (Nutrizionista) ====================
+// stessa struttura della scheda osteopatia (una scheda per seduta, ogni area
+// con nota "per il report" + nota "privata" condivisibile, PDF, storico), ma
+// le tre aree sono SEMPRE attive: non si selezionano, vanno tutte compilate/
+// lasciate vuote a piacere. Una scheda salvata ha s.campi{chiave:{report,privata}}.
+const ENERGETICA_LABELS = {
+  test_consapevolezza:'Test consapevolezza alimentare',
+  costruzione_pasto:'Costruzione del pasto',
+  rimedi_naturali:'Rimedi naturali di riequilibrio'
+};
+function emptySchedaEnergetica(){
+  const campi = {};
+  Object.keys(ENERGETICA_LABELS).forEach(k=> campi[k] = emptyOsteoCampo());
+  return {
+    id: 'se_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
+    data: fmtDateISO(new Date()),
+    campi,
+    condividiPrivateCon: [],
+    professionistaId: null,
+    segnalazioneId: null,
+    segnalaFlag: false, segnalaAProfId: '', segnalaTesto: '', // solo draft
+    _privataOpen: {}                                           // solo draft
+  };
+}
+function normalizeSchedaEnergetica(s){
+  if(!s.campi) s.campi = {};
+  Object.keys(ENERGETICA_LABELS).forEach(k=>{ if(!s.campi[k]) s.campi[k] = emptyOsteoCampo(); });
+  if(!s.condividiPrivateCon) s.condividiPrivateCon = [];
+  return s;
+}
+// stessa regola di visibilità delle note private dell'osteopatia
+function canSeeEnergeticaPrivata(s){ return canSeeOsteoPrivata(s); }
+function energeticaBlocks(s){
+  return Object.keys(ENERGETICA_LABELS).map(k=>({ titolo:ENERGETICA_LABELS[k], report:s.campi[k].report, privata:s.campi[k].privata }));
+}
+function apriReportEnergetica(c, s){
+  s = normalizeSchedaEnergetica(s);
+  const prof = state.professionisti.find(p=>p.id===s.professionistaId);
+  const dataFmt = s.data ? s.data.split('-').reverse().join('/') : '—';
+  const logoSrc = (document.querySelector('.mark-logo') || document.querySelector('.auth-logo') || {}).src || '';
+  // solo le note "per il report": le private restano fuori dal PDF
+  const sezioniHTML = energeticaBlocks(s).map(b=>
+    `<div class="rep-sezione"><h3>${escHtml(b.titolo)}</h3><div class="rep-testo">${b.report ? escHtml(b.report) : '<em>Nessuna nota</em>'}</div></div>`
+  ).join('');
+  const html = `<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8">
+    <title>Report ottimizzazione energetica — ${escHtml(c.nome || '')}</title>
+    <style>
+      body{font-family:-apple-system,Segoe UI,Arial,sans-serif;background:#fff;color:#111;padding:36px;max-width:760px;margin:0 auto;}
+      .rep-head{display:flex;align-items:center;gap:18px;border-bottom:2px solid #8a6d1d;padding-bottom:16px;margin-bottom:20px;}
+      .rep-head img{height:52px;filter:invert(1);background:#1b1b1b;padding:8px;border-radius:6px;}
+      .rep-head h1{font-size:20px;margin:0;}
+      .rep-head .rep-sub{color:#555;font-size:12.5px;margin-top:2px;}
+      .rep-meta{display:grid;grid-template-columns:1fr 1fr;gap:10px 24px;margin-bottom:24px;font-size:13px;}
+      .rep-meta .rep-meta-label{color:#777;text-transform:uppercase;font-size:10.5px;letter-spacing:.04em;display:block;}
+      .rep-sezione{margin-bottom:18px;}
+      .rep-sezione h3{font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:#8a6d1d;margin:0 0 6px;border-bottom:1px solid #e0d3a8;padding-bottom:4px;}
+      .rep-testo{font-size:13.5px;white-space:pre-wrap;line-height:1.5;}
+      .rep-print-btn{margin-top:28px;padding:10px 18px;background:#8a6d1d;color:#fff;border:none;border-radius:4px;font-size:13px;cursor:pointer;}
+      @media print{ .rep-print-btn{display:none;} body{padding:0;} }
+    </style></head><body>
+    <div class="rep-head">
+      ${logoSrc ? `<img src="${logoSrc}" alt="HRL">` : ''}
+      <div><h1>Report — Ottimizzazione energetica</h1><div class="rep-sub">HRL Performance Pathways</div></div>
+    </div>
+    <div class="rep-meta">
+      <div><span class="rep-meta-label">Cliente</span>${escHtml(c.nome || '—')}</div>
+      <div><span class="rep-meta-label">Data seduta</span>${dataFmt}</div>
+      <div><span class="rep-meta-label">Operatore</span>${prof ? escHtml(prof.nome) : '—'}</div>
+    </div>
+    ${sezioniHTML}
+    <button class="rep-print-btn" onclick="window.print()">Stampa / Salva come PDF</button>
+    </body></html>`;
+  const win = window.open('', '_blank');
+  if(!win){ alert('Il browser ha bloccato l\'apertura della finestra di report. Consenti i popup per questo sito e riprova.'); return; }
+  win.document.open(); win.document.write(html); win.document.close();
+}
 // individua nel testo estratto dal PDF (extractPdfText, righe separate da
 // \t per colonna) la tabella "Healthspan analysis" e ne legge SOLO la prima
 // riga di dati (la più recente — le successive, già presenti nel referto,
@@ -5393,9 +5473,24 @@ function renderAreaHumanTab(){
   const prof = state.professionista;
   const isAdmin = !!(prof && prof.ruolo==='admin');
   const area = prof ? prof.area : '';
-  if(isAdmin || area==='Osteopata'){ renderAreaHumanOsteopatia(); return; }
-  if(area==='Nutrizionista' || area==='Sleep Coach'){
-    box.innerHTML = `<div class="val-empty">L'area Human dedicata a ${escHtml(area)} è in arrivo: per ora questa scheda cliente mostra solo gli strumenti di Osteopatia.</div>`;
+  if(isAdmin){
+    // admin: vede entrambi gli strumenti, con un selettore in cima
+    const sub = state.humanSubTab || 'osteopatia';
+    box.innerHTML = `<div class="cal-mode-toggle" style="margin-bottom:16px;">
+        <div class="cal-mode-opt ${sub==='osteopatia'?'active':''}" data-human-sub="osteopatia">Osteopatia</div>
+        <div class="cal-mode-opt ${sub==='energetica'?'active':''}" data-human-sub="energetica">Ottimizzazione energetica</div>
+      </div><div id="areaHumanSubContent"></div>`;
+    box.querySelectorAll('[data-human-sub]').forEach(b=>{
+      b.onclick = ()=>{ state.humanSubTab = b.dataset.humanSub; renderAreaHumanTab(); };
+    });
+    if(sub==='energetica') renderAreaHumanEnergetica(document.getElementById('areaHumanSubContent'));
+    else renderAreaHumanOsteopatia(document.getElementById('areaHumanSubContent'));
+    return;
+  }
+  if(area==='Osteopata'){ renderAreaHumanOsteopatia(box); return; }
+  if(area==='Nutrizionista'){ renderAreaHumanEnergetica(box); return; }
+  if(area==='Sleep Coach'){
+    box.innerHTML = `<div class="val-empty">L'area Human dedicata a ${escHtml(area)} è in arrivo.</div>`;
     return;
   }
   box.innerHTML = `<div class="val-empty">Nessuno strumento disponibile qui per la tua area.</div>`;
@@ -5437,9 +5532,9 @@ function renderCondividiModalContent(){
     };
   });
 }
-function renderAreaHumanOsteopatia(){
+function renderAreaHumanOsteopatia(box){
   const c = activeClient();
-  const box = document.getElementById('areaHumanContent');
+  if(!box) box = document.getElementById('areaHumanContent');
   if(!c || !box) return;
   if(!c.schedeOsteopatia) c.schedeOsteopatia = [];
   c.schedeOsteopatia.forEach(normalizeSchedaOsteopatia);
@@ -5637,6 +5732,170 @@ function renderAreaHumanOsteopatia(){
     btn.onclick = ()=>{
       const s = c.schedeOsteopatia.find(x=>x.id===btn.dataset.reportOsteo);
       if(s) apriReportOsteopatia(c, s);
+    };
+  });
+}
+
+function renderAreaHumanEnergetica(box){
+  const c = activeClient();
+  if(!c || !box) return;
+  if(!c.schedeEnergetica) c.schedeEnergetica = [];
+  c.schedeEnergetica.forEach(normalizeSchedaEnergetica);
+  if(!state.schedaEnergeticaDraft) state.schedaEnergeticaDraft = emptySchedaEnergetica();
+  const draft = state.schedaEnergeticaDraft;
+  const profOptions = state.professionisti.filter(p=> !state.professionista || p.id!==state.professionista.id);
+
+  const rows = c.schedeEnergetica.slice().sort((a,b)=> (b.data||'').localeCompare(a.data||''));
+  const listHTML = rows.length ? rows.map(s=>{
+    const prof = state.professionisti.find(p=>p.id===s.professionistaId);
+    const vedePrivata = canSeeEnergeticaPrivata(s);
+    const dettaglioHTML = energeticaBlocks(s).map(b=>{
+      const reportLine = `<div><b>${escHtml(b.titolo)}:</b> ${b.report ? escHtml(b.report) : '<em>nessuna nota</em>'}</div>`;
+      const privataLine = vedePrivata ? `<div style="color:var(--ink-mute);">🔒 <i>Privata:</i> ${b.privata ? escHtml(b.privata) : '<em>nessuna</em>'}</div>` : '';
+      return reportLine + privataLine;
+    }).join('');
+    return `<div class="val-card">
+      <div class="val-card-top">
+        <div class="val-card-date">${s.data ? s.data.split('-').reverse().join('/') : '—'}</div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button class="val-card-del" data-report-energ="${s.id}" title="Report PDF" style="color:var(--ink-mute);">📄</button>
+          <button class="val-card-del" data-del-energ="${s.id}" title="Elimina scheda">×</button>
+        </div>
+      </div>
+      <div class="val-card-autore">Ottimizzazione energetica${prof ? ' · ' + escHtml(prof.nome) : ''}${s.segnalazioneId ? ' · <span class="osteo-flag-badge" title="Ha generato una segnalazione a un collega">🚩 segnalata</span>' : ''}${(s.condividiPrivateCon&&s.condividiPrivateCon.length) ? ' · <span title="Note private condivise">🔓 condivisa</span>' : ''}</div>
+      <div class="val-card-motivo">${dettaglioHTML}</div>
+    </div>`;
+  }).join('') : `<div class="val-empty">Nessuna scheda di ottimizzazione energetica ancora registrata per questo cliente.</div>`;
+
+  if(!draft._privataOpen) draft._privataOpen = {};
+  function campoHTML(k){
+    const campo = draft.campi[k];
+    const idBase = 'energ_'+k;
+    const isOpen = draft._privataOpen[idBase] || !!campo.privata;
+    return `
+      <div class="client-section-label-row" style="margin-top:14px;"><div class="client-section-label" style="font-size:11px;">${escHtml(ENERGETICA_LABELS[k])}</div></div>
+      <div class="osteo-note-box osteo-note-report">
+        <label>Note per il report (nel PDF e nello storico del cliente)</label>
+        <textarea class="editable" id="${idBase}Report" rows="3" placeholder="Scrivi qui, visibile nel report">${escHtml(campo.report)}</textarea>
+      </div>
+      <label class="osteo-privata-toggle"><input type="checkbox" data-privata-toggle-e="${idBase}" ${isOpen?'checked':''}> 🔒 Aggiungi nota privata</label>
+      ${isOpen ? `
+        <div class="osteo-note-box osteo-note-privata">
+          <label>Nota privata (solo per te, salvo condivisione)</label>
+          <textarea class="editable" id="${idBase}Privata" rows="2" placeholder="Note personali, non esportate nel report">${escHtml(campo.privata)}</textarea>
+        </div>
+      ` : ''}
+    `;
+  }
+
+  box.innerHTML = `
+    <div class="client-section-label-row"><div class="client-section-label">Storico ottimizzazione energetica</div></div>
+    <div id="energList" style="margin:14px 0 24px;">${listHTML}</div>
+
+    <div class="client-section-label-row"><div class="client-section-label">Nuova scheda ottimizzazione energetica</div></div>
+    <div class="ghi-draft-box">
+      <div class="ev-row">
+        <div class="ev-field"><label>Data seduta</label><input class="editable" type="date" id="energData" value="${escAttr(draft.data)}"></div>
+      </div>
+      ${Object.keys(ENERGETICA_LABELS).map(campoHTML).join('')}
+
+      <div class="osteo-flag-box" style="margin-top:16px;">
+        <label style="font-size:11px;color:var(--ink-mute);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:8px;">Note private</label>
+        <button type="button" class="osteo-condividi-btn" id="btnEnergCondividi"></button>
+      </div>
+
+      <div class="osteo-flag-box">
+        <label class="osteo-flag-toggle">
+          <input type="checkbox" id="energFlagCheck" ${draft.segnalaFlag?'checked':''}>
+          Segnala ad un altro professionista
+        </label>
+        ${draft.segnalaFlag ? `
+          <div class="ev-row" style="margin-top:10px;">
+            <div class="ev-field"><label>Professionista</label>
+              <select id="energFlagProf">
+                <option value="">— Seleziona —</option>
+                ${profOptions.map(p=>`<option value="${p.id}" ${draft.segnalaAProfId===p.id?'selected':''}>${escHtml(p.nome)}${p.area?' ('+escHtml(p.area)+')':''}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+          <div class="ev-field"><label>Nota per il collega</label><textarea class="editable" id="energFlagTesto" rows="2" placeholder="Cosa vuoi segnalare?">${escHtml(draft.segnalaTesto)}</textarea></div>
+        ` : ''}
+      </div>
+
+      <button class="btn-gold" id="btnSaveEnerg" style="margin-top:16px;">Salva scheda</button>
+    </div>
+  `;
+
+  document.getElementById('energData').onchange = (e)=>{ draft.data = e.target.value; };
+  box.querySelectorAll('[data-privata-toggle-e]').forEach(chk=>{
+    chk.onchange = (e)=>{ draft._privataOpen[chk.dataset.privataToggleE] = e.target.checked; renderAreaHumanTab(); };
+  });
+  Object.keys(ENERGETICA_LABELS).forEach(k=>{
+    const campo = draft.campi[k], idBase = 'energ_'+k;
+    const rEl = document.getElementById(idBase+'Report'); if(rEl) rEl.oninput = (e)=>{ campo.report = e.target.value; };
+    const pEl = document.getElementById(idBase+'Privata'); if(pEl) pEl.oninput = (e)=>{ campo.privata = e.target.value; };
+  });
+  updateCondividiBtnLabel(draft, 'btnEnergCondividi');
+  document.getElementById('btnEnergCondividi').onclick = ()=> openCondividiModal(draft, 'btnEnergCondividi');
+  document.getElementById('energFlagCheck').onchange = (e)=>{ draft.segnalaFlag = e.target.checked; renderAreaHumanTab(); };
+  const fp = document.getElementById('energFlagProf'); if(fp) fp.onchange = (e)=>{ draft.segnalaAProfId = e.target.value; };
+  const ft = document.getElementById('energFlagTesto'); if(ft) ft.oninput = (e)=>{ draft.segnalaTesto = e.target.value; };
+
+  document.getElementById('btnSaveEnerg').onclick = async ()=>{
+    if(draft.segnalaFlag){
+      if(!draft.segnalaAProfId){ alert('Seleziona il professionista a cui inviare la segnalazione.'); return; }
+      if(!draft.segnalaTesto || !draft.segnalaTesto.trim()){ alert('Scrivi una nota per il collega prima di segnalare.'); return; }
+    }
+    const btn = document.getElementById('btnSaveEnerg');
+    btn.disabled = true; btn.textContent = 'Salvataggio…';
+    const campi = {};
+    Object.keys(ENERGETICA_LABELS).forEach(k=> campi[k] = { report: draft.campi[k].report, privata: draft.campi[k].privata });
+    const scheda = {
+      id: draft.id, data: draft.data, campi,
+      condividiPrivateCon: draft.condividiPrivateCon.slice(),
+      professionistaId: state.professionista ? state.professionista.id : null,
+      segnalazioneId: null
+    };
+    let seg = null;
+    if(draft.segnalaFlag){
+      // riusa il campo schedaOsteopatiaId della segnalazione come "id scheda di origine" generico
+      seg = {
+        id: 'seg_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
+        clienteId: c.id, schedaOsteopatiaId: scheda.id,
+        daProfessionistaId: state.professionista ? state.professionista.id : null,
+        aProfessionistaId: draft.segnalaAProfId,
+        testo: draft.segnalaTesto.trim(), letta: false,
+        createdAt: new Date().toISOString()
+      };
+      scheda.segnalazioneId = seg.id;
+    }
+    c.schedeEnergetica.push(scheda);
+    if(seg){
+      const okSeg = await db.saveSegnalazione(seg);
+      if(!okSeg){
+        c.schedeEnergetica = c.schedeEnergetica.filter(x=>x.id!==scheda.id);
+        btn.disabled = false; btn.textContent = 'Salva scheda';
+        alert('Non è stato possibile inviare la segnalazione al collega. Controlla la connessione e riprova.');
+        return;
+      }
+      state.segnalazioni.push(seg);
+      renderSegnalazioniBadge();
+    }
+    db.saveCliente(c);
+    state.schedaEnergeticaDraft = emptySchedaEnergetica();
+    renderAreaHumanTab();
+  };
+  box.querySelectorAll('[data-del-energ]').forEach(btn=>{
+    btn.onclick = ()=>{
+      c.schedeEnergetica = c.schedeEnergetica.filter(x=>x.id!==btn.dataset.delEnerg);
+      db.saveCliente(c);
+      renderAreaHumanTab();
+    };
+  });
+  box.querySelectorAll('[data-report-energ]').forEach(btn=>{
+    btn.onclick = ()=>{
+      const s = c.schedeEnergetica.find(x=>x.id===btn.dataset.reportEnerg);
+      if(s) apriReportEnergetica(c, s);
     };
   });
 }
@@ -6669,7 +6928,7 @@ function storicoAreaOf(a){
   if(a.tipo==='retest' || a.tipo==='ans') return 'sistema';
   const prof = a.professionistaId ? state.professionisti.find(p=>p.id===a.professionistaId) : null;
   if(prof && prof.area==='Fisioterapista') return 'fisioterapia';
-  if(prof && prof.area==='Osteopata') return 'areaHuman';
+  if(prof && (prof.area==='Osteopata' || prof.area==='Nutrizionista')) return 'areaHuman';
   return 'performance';
 }
 const STORICO_AREA_LBL = {performance:'Area Performance', sistema:'Sistema', fisioterapia:'Fisioterapia', areaHuman:'Area Human'};
@@ -6687,12 +6946,13 @@ function renderStoricoTab(){
   const todayStr = fmtDateISO(new Date());
   const tuttiApp = state.appuntamenti.filter(a=>a.clienteId===c.id);
   const schedeOsteo = (c.schedeOsteopatia || []).map(normalizeSchedaOsteopatia);
+  const schedeEnerg = (c.schedeEnergetica || []).map(normalizeSchedaEnergetica);
   // se per un giorno è già stata registrata una scheda trattamento (es.
   // osteopatia), l'appuntamento di quel giorno è già stato svolto: non deve
   // comparire anche tra i "Prossimi appuntamenti" (capita tipicamente lo
   // stesso giorno, quando il professionista compila la scheda appena dopo
   // la seduta, prima che passi la mezzanotte)
-  const giorniConTrattamentoSvolto = new Set(schedeOsteo.map(s=>s.data).filter(Boolean));
+  const giorniConTrattamentoSvolto = new Set(schedeOsteo.concat(schedeEnerg).map(s=>s.data).filter(Boolean));
   // un allenamento già eseguito dal cliente è "svolto" anche se è oggi
   const svoltiApp = tuttiApp.filter(a=>a.day < todayStr || a.esecuzione);
   const prossimi = tuttiApp.filter(a=>a.day >= todayStr && !a.esecuzione && !giorniConTrattamentoSvolto.has(a.day));
@@ -6703,6 +6963,7 @@ function renderStoricoTab(){
   const profIds = new Set();
   tuttiApp.forEach(a=>{ if(a.professionistaId) profIds.add(a.professionistaId); });
   schedeOsteo.forEach(s=>{ if(s.professionistaId) profIds.add(s.professionistaId); });
+  schedeEnerg.forEach(s=>{ if(s.professionistaId) profIds.add(s.professionistaId); });
   trattamentiFisio.forEach(s=>{ if(s.professionistaId) profIds.add(s.professionistaId); });
   valutazioniFisio.forEach(v=>{ if(v.professionistaId) profIds.add(v.professionistaId); });
   const profOptions = state.professionisti.filter(p=> profIds.has(p.id));
@@ -6824,6 +7085,25 @@ function renderStoricoTab(){
       </div>
     </div>`;
   }
+  function energeticaHTML(s){
+    const prof = s.professionistaId ? state.professionisti.find(p=>p.id===s.professionistaId) : null;
+    const vedePrivata = canSeeEnergeticaPrivata(s);
+    const dettaglioHTML = energeticaBlocks(s).map(b=>{
+      const reportPart = `<b>${escHtml(b.titolo)}:</b> ${b.report ? escHtml(b.report) : 'nessuna nota'}`;
+      const privataPart = vedePrivata && b.privata ? ` <span style="color:var(--ink-mute);">(🔒 ${escHtml(b.privata)})</span>` : '';
+      return `<div>${reportPart}${privataPart}</div>`;
+    }).join('');
+    return `<div class="upcoming-item tipo-border-allenamento">
+      <div class="ui-info">
+        <div class="uid"><span class="tipo-tag tipo-tag-allenamento">Ottimizzazione energetica</span></div>
+        <div class="uim">${s.data ? s.data.split('-').reverse().join('/') : '—'} · Area Human${prof ? ' · '+escHtml(prof.nome) : ''}</div>
+        <div class="uim" style="margin-top:4px;">${dettaglioHTML}</div>
+      </div>
+      <div style="display:flex;align-items:center;">
+        <button class="btn-small" data-storico-report-energ="${s.id}">📄 Report PDF</button>
+      </div>
+    </div>`;
+  }
   function osteoHTML(s){
     const prof = s.professionistaId ? state.professionisti.find(p=>p.id===s.professionistaId) : null;
     const tipiLbl = s.tipi.map(t=>TRATTAMENTO_OSTEO_LABELS[t] || t).join(', ') || '—';
@@ -6860,6 +7140,12 @@ function renderStoricoTab(){
       if(f.a && (s.data||'') > f.a) return false;
       return true;
     }).map(s=>({ key: (s.data||'')+'z', html: osteoHTML(s), kind:'trattamento' }));
+    const svoltiEnerg = (f.area && f.area!=='areaHuman') ? [] : schedeEnerg.filter(s=>{
+      if(f.profId && s.professionistaId!==f.profId) return false;
+      if(f.da && (s.data||'') < f.da) return false;
+      if(f.a && (s.data||'') > f.a) return false;
+      return true;
+    }).map(s=>({ key: (s.data||'')+'x', html: energeticaHTML(s), kind:'trattamento' }));
     const svoltiFisioTratt = (f.area && f.area!=='fisioterapia') ? [] : trattamentiFisio.filter(s=>{
       if(f.profId && s.professionistaId!==f.profId) return false;
       if(f.da && (s.data||'') < f.da) return false;
@@ -6885,7 +7171,7 @@ function renderStoricoTab(){
       if(f.a && (v.data||'') > f.a) return false;
       return true;
     }).map(v=>({ key: (v.data||'')+'b', html: valFisioHTML(v), kind:'valutazione' }));
-    let svoltiAll = svoltiRows.concat(svoltiOsteo).concat(svoltiFisioTratt).concat(svoltiValGenerali).concat(svoltiRevisioni).concat(svoltiValFisio);
+    let svoltiAll = svoltiRows.concat(svoltiOsteo).concat(svoltiEnerg).concat(svoltiFisioTratt).concat(svoltiValGenerali).concat(svoltiRevisioni).concat(svoltiValFisio);
     if(f.nascondiTrattamenti) svoltiAll = svoltiAll.filter(r=> r.kind!=='trattamento');
     svoltiAll = svoltiAll.sort((a,b)=> b.key.localeCompare(a.key));
 
@@ -6904,6 +7190,12 @@ function renderStoricoTab(){
       btn.onclick = ()=>{
         const s = schedeOsteo.find(x=>x.id===btn.dataset.storicoReportOsteo);
         if(s) apriReportOsteopatia(c, s);
+      };
+    });
+    svBox.querySelectorAll('[data-storico-report-energ]').forEach(btn=>{
+      btn.onclick = ()=>{
+        const s = schedeEnerg.find(x=>x.id===btn.dataset.storicoReportEnerg);
+        if(s) apriReportEnergetica(c, s);
       };
     });
     svBox.querySelectorAll('[data-storico-report-fisiotratt]').forEach(btn=>{
