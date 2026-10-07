@@ -6381,7 +6381,7 @@ function apriReportAndamentoFisio(c){
   const valutazioniHTML = valutazioni.length ? valutazioni.map(v=>{
     normalizeValutazioneFisio(v);
     const obiettiviHTML = v.obiettiviFunzionali.length ? `<ul class="rep-list">${v.obiettiviFunzionali.map(o=>`<li>${o.raggiunto?'✓ ':''}${escHtml(o.testo)}${o.raggiunto?' (raggiunto)':''}</li>`).join('')}</ul>` : '';
-    const flagsHTML = anyRedFlag(v) ? `<div class="rep-redflag">⚠ Red flags: ${Object.keys(RED_FLAGS_FISIO).filter(k=>v.redFlags[k]).map(k=>escHtml(RED_FLAGS_FISIO[k])).join('; ')}</div>` : '';
+    const flagsHTML = '';
     return `<div class="rep-sezione">
       <h3>${v.data ? v.data.split('-').reverse().join('/') : '—'}</h3>
       ${flagsHTML}
@@ -6652,13 +6652,11 @@ function renderFisioValutazioneSection(c){
         <button class="val-card-del" data-del-valfisio="${v.id}" title="Elimina">×</button>
       </div>
       <div class="val-card-autore">${prof ? escHtml(prof.nome) : '—'}</div>
-      ${anyRedFlag(v) ? `<div class="redflag-banner" style="margin-top:6px;">⚠ Red flags presenti</div>` : ''}
       <div class="val-card-motivo">${escHtml(v.motivo || 'Nessun motivo indicato')}</div>
     </div>`;
   }).join('') : `<div class="val-empty">Nessuna valutazione fisioterapica ancora registrata per questo cliente.</div>`;
 
   const box = document.getElementById('fisioValContent');
-  const flagsChecked = anyRedFlag(draft);
   box.innerHTML = `
     <div class="client-section-label-row"><div class="client-section-label">Valutazioni svolte</div></div>
     <div style="margin:14px 0 10px;">${listHTML}</div>
@@ -6674,12 +6672,6 @@ function renderFisioValutazioneSection(c){
       <div class="client-section-label-row" style="margin-top:18px;"><div class="client-section-label" style="font-size:15px;">Dolore iniziale</div></div>
       ${bodyMapHTML(draft.dolorePunti, 'vfPain', draft._selectedPainId)}
 
-      <div class="client-section-label-row" style="margin-top:18px;"><div class="client-section-label" style="font-size:15px;">Red flags</div></div>
-      ${flagsChecked ? `<div class="redflag-banner">⚠ Red flags presenti — valutare l'invio al medico/specialista prima di procedere con il trattamento.</div>` : ''}
-      <div style="display:flex;flex-direction:column;gap:6px;margin:8px 0;">
-        ${Object.keys(RED_FLAGS_FISIO).map(k=>`<label style="display:flex;align-items:center;gap:8px;font-size:13px;"><input type="checkbox" data-redflag="${k}" ${draft.redFlags[k]?'checked':''}> ${escHtml(RED_FLAGS_FISIO[k])}</label>`).join('')}
-      </div>
-      <div class="ev-field"><label>Note sui red flags (opzionale)</label><textarea class="editable" id="vfRedFlagsNote" rows="2">${escHtml(draft.redFlagsNote)}</textarea></div>
 
       <div class="client-section-label-row" style="margin-top:18px;"><div class="client-section-label" style="font-size:15px;">Obiettivi funzionali</div></div>
       <div id="vfObiettiviList" style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px;">
@@ -6703,12 +6695,8 @@ function renderFisioValutazioneSection(c){
   document.getElementById('vfMotivo').oninput = e=> draft.motivo = e.target.value;
   document.getElementById('vfEsame').oninput = e=> draft.esameObiettivo = e.target.value;
   document.getElementById('vfDiagnosi').oninput = e=> draft.diagnosiFunzionale = e.target.value;
-  document.getElementById('vfRedFlagsNote').oninput = e=> draft.redFlagsNote = e.target.value;
   document.getElementById('vfCriteriDimissione').oninput = e=> draft.criteriDimissione = e.target.value;
   document.getElementById('vfNote').oninput = e=> draft.note = e.target.value;
-  box.querySelectorAll('[data-redflag]').forEach(chk=>{
-    chk.onchange = (e)=>{ draft.redFlags[chk.dataset.redflag] = e.target.checked; renderFisioValutazioneSection(c); };
-  });
   bindBodyMap('vfPain',
     ()=>draft.dolorePunti, (pts)=>{ draft.dolorePunti = pts; },
     draft._selectedPainId,
@@ -7219,7 +7207,7 @@ function renderStoricoTab(){
     const prof = v.professionistaId ? state.professionisti.find(p=>p.id===v.professionistaId) : null;
     return `<div class="upcoming-item tipo-border-retest">
       <div class="ui-info">
-        <div class="uid"><span class="tipo-tag tipo-tag-retest">Valutazione fisioterapica</span> ${escHtml(v.motivo || 'Nessun motivo indicato')}${anyRedFlag(v) ? ' <span class="redflag-banner" style="margin:0;padding:2px 8px;display:inline;">⚠ Red flags</span>' : ''}</div>
+        <div class="uid"><span class="tipo-tag tipo-tag-retest">Valutazione fisioterapica</span> ${escHtml(v.motivo || 'Nessun motivo indicato')}</div>
         <div class="uim">${v.data ? v.data.split('-').reverse().join('/') : '—'} · Area Fisioterapia${prof ? ' · '+escHtml(prof.nome) : ''}</div>
       </div>
     </div>`;
