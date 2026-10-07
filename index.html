@@ -2029,15 +2029,12 @@ body[data-theme="light"]{
 
 <div class="cli-wrap" id="segreteriaArea" style="display:none;">
   <div class="cli-header"><h2 style="margin:0;font-size:24px;">Segreteria</h2></div>
-  <div class="cal-mode-toggle" id="segTabs" style="margin:14px 0 20px;">
-    <div class="cal-mode-opt" data-segtab="clienti">Clienti</div>
-    <div class="cal-mode-opt" data-segtab="appuntamento">Nuovo appuntamento multi-professionista</div>
-    <div class="cal-mode-opt" data-segtab="richieste">Richieste di spostamento</div>
-  </div>
+  <div id="segTabs" style="margin:14px 0 20px;"></div>
   <div id="segContent"></div>
 </div>
 
 <div class="cal-wrap" id="calendarArea" style="display:none;">
+  <div id="segBarCal" style="display:none;margin-bottom:16px;"></div>
   <div class="cal-header">
     <button class="btn-ghost" id="btnBackToPathway">← Pathway</button>
     <div class="cal-mode-toggle">
@@ -3695,6 +3692,7 @@ function showView(name){
   document.getElementById('clientiArea').style.display = name==='clienti' ? 'block' : 'none';
   document.getElementById('mainWrap').style.display = name==='pathway' ? 'block' : 'none';
   document.getElementById('calendarArea').style.display = name==='calendario' ? 'block' : 'none';
+  if(name!=='calendario' && name!=='segreteria') state.segFlag = false;
   const sa = document.getElementById('segreteriaArea'); if(sa) sa.style.display = name==='segreteria' ? 'block' : 'none';
   const sb = document.getElementById('btnSegreteria'); if(sb) sb.style.display = canManageAll() ? '' : 'none';
   window.scrollTo(0,0);
@@ -10388,6 +10386,12 @@ function renderCalendar(){
   const modeMultiBtn = document.getElementById('calModeMulti');
   if(modeMultiBtn) modeMultiBtn.style.display = manageAll ? 'inline-block' : 'none';
   if(!manageAll && state.calViewMode==='multi') state.calViewMode = 'settimana';
+  const segBar = document.getElementById('segBarCal');
+  if(segBar){
+    segBar.style.display = state.segFlag ? 'block' : 'none';
+    if(state.segFlag) renderSegBar('segBarCal', state.calViewMode==='multi' ? 'multi' : 'calendario');
+    const bb = document.getElementById('btnBackToPathway'); if(bb) bb.style.display = state.segFlag ? 'none' : '';
+  }
   renderCalFilterProf();
   if(state.calViewMode==='multi' && manageAll) renderCalendarMulti();
   else if(state.calViewMode==='mese') renderCalendarMonth();
@@ -11014,6 +11018,7 @@ function saveEventEditor(){
 
 // ---------------- calendario: wiring ----------------
 document.getElementById('btnCalendario').onclick = ()=>{
+  state.segFlag = false;
   showView('calendario');
   renderCalendar();
 };
@@ -11065,10 +11070,7 @@ function segFmtDay(d){ return d.split('-').reverse().join('/'); }
 function segNomeProf(id){ const p = state.professionisti.find(x=>x.id===id); return p ? p.nome : '—'; }
 function renderSegreteria(){
   if(!state.segTab) state.segTab = 'clienti';
-  document.querySelectorAll('#segTabs [data-segtab]').forEach(b=>{
-    b.classList.toggle('active', b.dataset.segtab===state.segTab);
-    b.onclick = ()=>{ state.segTab = b.dataset.segtab; renderSegreteria(); };
-  });
+  renderSegBar('segTabs', state.segTab);
   const box = document.getElementById('segContent');
   if(state.segTab==='appuntamento') renderSegAppuntamento(box);
   else if(state.segTab==='richieste') renderSegRichieste(box);
@@ -11215,7 +11217,26 @@ function renderSegRichieste(box){
     r.stato = 'rifiutata'; r.letta = false; db.saveRichiesta(r); renderRichBadge(); renderSegreteria();
   });
 }
-document.getElementById('btnSegreteria').onclick = ()=>{ showView('segreteria'); renderSegreteria(); };
+function renderSegBar(id, active){
+  const el = document.getElementById(id); if(!el) return;
+  const items = [['calendario','Calendario'],['multi','Multicalendario giornaliero'],['clienti','Clienti'],['appuntamento','Nuovo appuntamento multi-professionista'],['richieste','Richieste di spostamento']];
+  el.innerHTML = `<div class="cal-mode-toggle">${items.map(([k,l])=>`<div class="cal-mode-opt ${k===active?'active':''}" data-segnav="${k}">${l}</div>`).join('')}</div>`;
+  el.querySelectorAll('[data-segnav]').forEach(b=> b.onclick = ()=> segNavigate(b.dataset.segnav));
+}
+function segNavigate(k){
+  state.segFlag = true;
+  if(k==='calendario' || k==='multi'){
+    if(k==='calendario' && !state.calFilterProfId){
+      const p = state.professionisti.find(x=>x.area!=='Segreteria');
+      if(p) state.calFilterProfId = p.id;
+    }
+    showView('calendario');
+    document.querySelector(k==='multi' ? '#calModeMulti' : '[data-calmode="settimana"]').click();
+  } else {
+    state.segTab = k; showView('segreteria'); renderSegreteria();
+  }
+}
+document.getElementById('btnSegreteria').onclick = ()=> segNavigate('calendario');
 document.getElementById('btnBackToPathway').onclick = ()=>{
   if(activeClient()){
     showView('pathway');
