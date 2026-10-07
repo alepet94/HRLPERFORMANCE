@@ -5615,24 +5615,16 @@ function renderOsteoTrattamenti(box){
       <div class="ev-row">
         <div class="ev-field"><label>Data seduta</label><input class="editable" type="date" id="osteoData" value="${escAttr(draft.data)}"></div>
       </div>
-      <div style="margin:10px 0 16px;">
-        <label style="font-size:11px;color:var(--ink-mute);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:6px;">Tipologia trattamento (selezionabili insieme)</label>
-        <div style="display:flex;gap:18px;flex-wrap:wrap;">
-          <label style="display:flex;align-items:center;gap:6px;font-size:13.5px;"><input type="checkbox" data-tipo-osteo="viscerale" ${draft.tipi.includes('viscerale')?'checked':''}> Viscerale</label>
-          <label style="display:flex;align-items:center;gap:6px;font-size:13.5px;"><input type="checkbox" data-tipo-osteo="cranio_sacrale" ${draft.tipi.includes('cranio_sacrale')?'checked':''}> Cranio sacrale</label>
-          <label style="display:flex;align-items:center;gap:6px;font-size:13.5px;"><input type="checkbox" data-tipo-osteo="strutturale" ${draft.tipi.includes('strutturale')?'checked':''}> Strutturale</label>
-        </div>
-      </div>
+      <div class="val-legacy-note" style="margin:10px 0 8px;">Le tre tipologie sono sempre attive: un'area lasciata vuota non compare nel report.</div>
       <div id="osteoCampiWrap">
-        ${!draft.tipi.length ? `<div class="val-empty">Seleziona almeno una tipologia di trattamento per continuare.</div>` : ''}
-        ${draft.tipi.includes('viscerale') ? campoHTML('osteoVisc', 'Viscerale', draft.viscerale) : ''}
-        ${draft.tipi.includes('cranio_sacrale') ? campoHTML('osteoCS', 'Cranio sacrale', draft.cranio_sacrale) : ''}
-        ${draft.tipi.includes('strutturale') ? `
+        ${campoHTML('osteoVisc', 'Viscerale', draft.viscerale)}
+        ${campoHTML('osteoCS', 'Cranio sacrale', draft.cranio_sacrale)}
+        ${`
           <div class="client-section-label-row" style="margin-top:16px;"><div class="client-section-label">Strutturale</div></div>
           ${campoHTML('osteoStrutArt', 'Strutturale', draft.strutturale.articolare, 'Articolare')}
           ${campoHTML('osteoStrutFun', 'Strutturale', draft.strutturale.funzionale, 'Funzionale')}
           ${campoHTML('osteoStrutMus', 'Strutturale', draft.strutturale.muscolare, 'Muscolare')}
-        ` : ''}
+        `}
       </div>
 
       <div class="osteo-flag-box" style="margin-top:16px;">
@@ -5663,14 +5655,6 @@ function renderOsteoTrattamenti(box){
   `;
 
   document.getElementById('osteoData').onchange = (e)=>{ draft.data = e.target.value; };
-  box.querySelectorAll('[data-tipo-osteo]').forEach(chk=>{
-    chk.onchange = (e)=>{
-      const t = chk.dataset.tipoOsteo;
-      if(e.target.checked){ if(!draft.tipi.includes(t)) draft.tipi.push(t); }
-      else { draft.tipi = draft.tipi.filter(x=>x!==t); }
-      renderAreaHumanTab();
-    };
-  });
   box.querySelectorAll('[data-privata-toggle]').forEach(chk=>{
     chk.onchange = (e)=>{
       draft._privataOpen[chk.dataset.privataToggle] = e.target.checked;
@@ -5693,7 +5677,12 @@ function renderOsteoTrattamenti(box){
   const flagTestoEl = document.getElementById('osteoFlagTesto'); if(flagTestoEl) flagTestoEl.oninput = (e)=>{ draft.segnalaTesto = e.target.value; };
 
   document.getElementById('btnSaveOsteo').onclick = async ()=>{
-    if(!draft.tipi.length){ alert('Seleziona almeno una tipologia di trattamento.'); return; }
+    const _f = c=> !!((c.report||'').trim() || (c.privata||'').trim());
+    draft.tipi = [];
+    if(_f(draft.viscerale)) draft.tipi.push('viscerale');
+    if(_f(draft.cranio_sacrale)) draft.tipi.push('cranio_sacrale');
+    if(_f(draft.strutturale.articolare)||_f(draft.strutturale.funzionale)||_f(draft.strutturale.muscolare)) draft.tipi.push('strutturale');
+    if(!draft.tipi.length){ alert('Compila almeno una tipologia di trattamento.'); return; }
     if(draft.segnalaFlag){
       if(!draft.segnalaAProfId){ alert('Seleziona il professionista a cui inviare la segnalazione.'); return; }
       if(!draft.segnalaTesto || !draft.segnalaTesto.trim()){ alert('Scrivi una nota per il collega prima di segnalare.'); return; }
@@ -6680,7 +6669,7 @@ function renderFisioValutazioneSection(c){
       <div class="ev-row"><div class="ev-field"><label>Data</label><input class="editable" type="date" id="vfData" value="${escAttr(draft.data)}"></div></div>
       <div class="ev-field"><label>Motivo di invio / anamnesi</label><textarea class="editable" id="vfMotivo" rows="3">${escHtml(draft.motivo)}</textarea></div>
       <div class="ev-field"><label>Esame obiettivo</label><textarea class="editable" id="vfEsame" rows="3">${escHtml(draft.esameObiettivo)}</textarea></div>
-      <div class="ev-field"><label>Diagnosi funzionale / ipotesi di lavoro</label><textarea class="editable" id="vfDiagnosi" rows="3">${escHtml(draft.diagnosiFunzionale)}</textarea></div>
+      <div class="ev-field"><label>Valutazione funzionale / ipotesi di lavoro</label><textarea class="editable" id="vfDiagnosi" rows="3">${escHtml(draft.diagnosiFunzionale)}</textarea></div>
 
       <div class="client-section-label-row" style="margin-top:18px;"><div class="client-section-label" style="font-size:15px;">Dolore iniziale</div></div>
       ${bodyMapHTML(draft.dolorePunti, 'vfPain', draft._selectedPainId)}
