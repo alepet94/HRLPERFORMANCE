@@ -60,6 +60,7 @@ a{color:var(--gold);}
 body.client-auth-mode #btnClienti,
 body.client-auth-mode #btnDashboard,
 body.client-auth-mode #btnCalendario,
+body.client-auth-mode #btnSegreteria,
 body.client-auth-mode #btnTemplate,
 body.client-auth-mode #btnEsercizi,
 body.client-auth-mode #btnBlocchiOperativi,
@@ -1775,6 +1776,7 @@ body[data-theme="light"]{
     <button class="btn-ghost" id="btnClienti">Clienti</button>
     <button class="btn-ghost" id="btnDashboard">Dashboard</button>
     <button class="btn-ghost" id="btnCalendario">Calendario</button>
+    <button class="btn-ghost" id="btnSegreteria" style="display:none;">Segreteria</button>
     <button class="btn-ghost" id="btnTemplate">Template</button>
     <button class="btn-ghost" id="btnEsercizi">Libreria esercizi</button>
     <button class="btn-ghost" id="btnBlocchiOperativi">Blocchi operativi</button>
@@ -2024,6 +2026,16 @@ body[data-theme="light"]{
   </div>
 </div>
 
+
+<div class="cli-wrap" id="segreteriaArea" style="display:none;">
+  <div class="cli-header"><h2 style="margin:0;font-size:24px;">Segreteria</h2></div>
+  <div class="cal-mode-toggle" id="segTabs" style="margin:14px 0 20px;">
+    <div class="cal-mode-opt" data-segtab="clienti">Clienti</div>
+    <div class="cal-mode-opt" data-segtab="appuntamento">Nuovo appuntamento multi-professionista</div>
+    <div class="cal-mode-opt" data-segtab="richieste">Richieste di spostamento</div>
+  </div>
+  <div id="segContent"></div>
+</div>
 
 <div class="cal-wrap" id="calendarArea" style="display:none;">
   <div class="cal-header">
@@ -3683,6 +3695,8 @@ function showView(name){
   document.getElementById('clientiArea').style.display = name==='clienti' ? 'block' : 'none';
   document.getElementById('mainWrap').style.display = name==='pathway' ? 'block' : 'none';
   document.getElementById('calendarArea').style.display = name==='calendario' ? 'block' : 'none';
+  const sa = document.getElementById('segreteriaArea'); if(sa) sa.style.display = name==='segreteria' ? 'block' : 'none';
+  const sb = document.getElementById('btnSegreteria'); if(sb) sb.style.display = canManageAll() ? '' : 'none';
   window.scrollTo(0,0);
 }
 
@@ -11014,6 +11028,205 @@ document.getElementById('btnCalendario').onclick = ()=>{
   showView('calendario');
   renderCalendar();
 };
+
+// ---------------- Area Segreteria ----------------
+// Tre strumenti: elenco di tutti i clienti, creazione di appuntamenti che
+// coinvolgono più professionisti insieme (un appuntamento per ciascuno, nello
+// stesso giorno/orario) e gestione delle richieste di spostamento con
+// proposta automatica della prima disponibilità del professionista.
+function segApProf(ap){
+  if(ap.professionistaId) return ap.professionistaId;
+  const o = ap.clienteId ? state.clienti.find(x=>x.id===ap.clienteId) : null;
+  return o ? clienteProfIds(o)[0] : null;
+}
+// vero se il professionista è libero in quel giorno/fascia (orari di
+// ricevimento, "non disponibile", capienza e — se non ha orari impostati —
+// nessuna sovrapposizione con altri suoi appuntamenti)
+function segSlotConflict(profId, day, s, e, exclId){
+  const c = checkDispConflict({id: exclId || '__new', professionistaId: profId}, day, s, e);
+  if(c) return c;
+  const dow = new Date(day + 'T00:00:00').getDay();
+  const hasBlocks = state.disponibilitaRicorrenti.some(b=>b.professionistaId===profId && b.tipo==='disponibile' && dispBlockAppliesTo(b,day,dow));
+  if(!hasBlocks){
+    const clash = state.appuntamenti.some(ap=> ap.id!==exclId && ap.day===day && segApProf(ap)===profId && timeToMinutes(ap.start) < e && timeToMinutes(ap.end) > s);
+    if(clash) return 'Ha già un altro appuntamento in quella fascia.';
+  }
+  return null;
+}
+function segFindFirstFree(profIds, durMin, fromDay, fromMin, exclId){
+  const cs = state.calSettings;
+  const now = new Date();
+  const todayStr = fmtDateISO(now);
+  let day = fromDay < todayStr ? todayStr : fromDay;
+  let minFrom = fromMin;
+  if(day===todayStr) minFrom = Math.max(minFrom, now.getHours()*60 + now.getMinutes() + 15);
+  for(let i=0; i<120; i++){
+    const d = new Date(day + 'T00:00:00'); d.setDate(d.getDate()+i);
+    const ds = fmtDateISO(d);
+    if(!cs.activeDays.includes(d.getDay())) continue;
+    let st = (ds===day) ? Math.max(minFrom, cs.startHour*60) : cs.startHour*60;
+    st = Math.ceil(st/15)*15;
+    for(; st+durMin <= cs.endHour*60; st+=15){
+      if(profIds.every(p=> !segSlotConflict(p, ds, st, st+durMin, exclId))) return {day:ds, start:st, end:st+durMin};
+    }
+  }
+  return null;
+}
+function segFmtDay(d){ return d.split('-').reverse().join('/'); }
+function segNomeProf(id){ const p = state.professionisti.find(x=>x.id===id); return p ? p.nome : '—'; }
+function renderSegreteria(){
+  if(!state.segTab) state.segTab = 'clienti';
+  document.querySelectorAll('#segTabs [data-segtab]').forEach(b=>{
+    b.classList.toggle('active', b.dataset.segtab===state.segTab);
+    b.onclick = ()=>{ state.segTab = b.dataset.segtab; renderSegreteria(); };
+  });
+  const box = document.getElementById('segContent');
+  if(state.segTab==='appuntamento') renderSegAppuntamento(box);
+  else if(state.segTab==='richieste') renderSegRichieste(box);
+  else renderSegClienti(box);
+}
+function renderSegClienti(box){
+  const q = (state.segSearch||'').toLowerCase();
+  const list = state.clienti.filter(c=>!c.eliminato && (!q || ((c.nome||'')+' '+(c.email||'')).toLowerCase().includes(q)))
+    .sort((a,b)=>(a.nome||'').localeCompare(b.nome||''));
+  box.innerHTML = `<input class="editable" id="segSearch" placeholder="Cerca cliente per nome o email…" value="${escAttr(state.segSearch||'')}" style="max-width:420px;margin-bottom:14px;">
+    <div style="font-size:12.5px;color:var(--ink-mute);margin-bottom:10px;">${list.length} clienti</div>
+    <div style="display:flex;flex-direction:column;gap:8px;">${list.map(c=>{
+      const profs = clienteProfIds(c).map(segNomeProf).join(', ');
+      return `<div class="val-card" style="cursor:pointer;" data-seg-cli="${c.id}"><div class="val-card-top"><div class="val-card-date" style="font-size:15px;">${escHtml(c.nome||'—')}</div></div>
+        <div class="val-card-autore">${escHtml(c.email||'—')}${profs ? ' · Seguito da: '+escHtml(profs) : ''}</div></div>`;
+    }).join('') || '<div class="val-empty">Nessun cliente.</div>'}</div>`;
+  const inp = document.getElementById('segSearch');
+  inp.oninput = e=>{ state.segSearch = e.target.value; const pos = e.target.selectionStart; renderSegClienti(box); const n = document.getElementById('segSearch'); n.focus(); n.setSelectionRange(pos,pos); };
+  box.querySelectorAll('[data-seg-cli]').forEach(el=> el.onclick = ()=> openClientForRole(el.dataset.segCli));
+}
+function renderSegAppuntamento(box){
+  const d = state.segDraft || (state.segDraft = { clienteId:'', titolo:'', day: fmtDateISO(new Date()), start:'09:00', durata:60, profIds:[] });
+  const profs = state.professionisti.filter(p=>p.area!=='Segreteria');
+  const clienti = state.clienti.filter(c=>!c.eliminato).sort((a,b)=>(a.nome||'').localeCompare(b.nome||''));
+  const startMin = timeToMinutes(d.start), endMin = startMin + (parseInt(d.durata)||60);
+  const status = p=>{
+    if(!d.profIds.includes(p.id)) return '';
+    const c = segSlotConflict(p.id, d.day, startMin, endMin, null);
+    return c ? `<span style="color:#E0776A;font-size:12px;">⚠ ${escHtml(c)}</span>` : `<span style="color:#4CAF50;font-size:12px;">✓ libero</span>`;
+  };
+  box.innerHTML = `<div class="ghi-draft-box">
+    <div class="ev-field"><label>Cliente</label><select class="editable" id="sgCli"><option value="">— nessun cliente (impegno interno) —</option>${clienti.map(c=>`<option value="${c.id}" ${d.clienteId===c.id?'selected':''}>${escHtml(c.nome)}</option>`).join('')}</select></div>
+    <div class="ev-field"><label>Titolo</label><input class="editable" id="sgTitolo" value="${escAttr(d.titolo)}" placeholder="Es. Visita di primo accesso"></div>
+    <div class="ev-row"><div class="ev-field"><label>Data</label><input class="editable" type="date" id="sgDay" value="${escAttr(d.day)}"></div>
+      <div class="ev-field"><label>Ora inizio</label><input class="editable" type="time" id="sgStart" value="${escAttr(d.start)}"></div>
+      <div class="ev-field"><label>Durata (min)</label><input class="editable" type="number" min="15" step="15" id="sgDur" value="${escAttr(String(d.durata))}"></div></div>
+    <div class="ev-field"><label>Professionisti coinvolti</label>
+      <div style="display:flex;flex-direction:column;gap:6px;">${profs.map(p=>`<label style="display:flex;align-items:center;gap:8px;font-size:13.5px;"><input type="checkbox" data-sg-prof="${p.id}" ${d.profIds.includes(p.id)?'checked':''}> ${escHtml(p.nome)}${p.area?` <span style="color:var(--ink-mute);font-size:12px;">(${escHtml(p.area)})</span>`:''} ${status(p)}</label>`).join('')}</div></div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;">
+      <button class="btn-ghost" id="sgTrova">🔎 Trova il primo orario libero per tutti</button>
+      <button class="btn-gold" id="sgCrea">Crea appuntamenti</button></div>
+    <div id="sgMsg" style="margin-top:10px;font-size:13px;"></div></div>`;
+  const rr = ()=> renderSegAppuntamento(box);
+  document.getElementById('sgCli').onchange = e=>{ d.clienteId = e.target.value; };
+  document.getElementById('sgTitolo').oninput = e=>{ d.titolo = e.target.value; };
+  document.getElementById('sgDay').onchange = e=>{ d.day = e.target.value; rr(); };
+  document.getElementById('sgStart').onchange = e=>{ d.start = e.target.value; rr(); };
+  document.getElementById('sgDur').onchange = e=>{ d.durata = parseInt(e.target.value)||60; rr(); };
+  box.querySelectorAll('[data-sg-prof]').forEach(chk=> chk.onchange = e=>{
+    const id = chk.dataset.sgProf;
+    d.profIds = e.target.checked ? d.profIds.concat([id]) : d.profIds.filter(x=>x!==id);
+    rr();
+  });
+  const msg = document.getElementById('sgMsg');
+  document.getElementById('sgTrova').onclick = ()=>{
+    if(!d.profIds.length){ msg.textContent = 'Seleziona almeno un professionista.'; return; }
+    const f = segFindFirstFree(d.profIds, parseInt(d.durata)||60, d.day, timeToMinutes(d.start), null);
+    if(!f){ msg.textContent = 'Nessun orario libero comune nei prossimi 120 giorni.'; return; }
+    d.day = f.day; d.start = minutesToTime(f.start); rr();
+    document.getElementById('sgMsg').textContent = `Primo orario libero per tutti: ${segFmtDay(f.day)} alle ${minutesToTime(f.start)}.`;
+  };
+  document.getElementById('sgCrea').onclick = ()=>{
+    if(!d.profIds.length){ msg.textContent = 'Seleziona almeno un professionista.'; return; }
+    if(!d.day || !d.start){ msg.textContent = 'Inserisci data e ora.'; return; }
+    const conflitti = d.profIds.map(id=>({id, c: segSlotConflict(id, d.day, startMin, endMin, null)})).filter(x=>x.c);
+    if(conflitti.length && !confirm('Attenzione:\n'+conflitti.map(x=>segNomeProf(x.id)+': '+x.c).join('\n')+'\n\nCreare comunque gli appuntamenti?')) return;
+    const cli = state.clienti.find(x=>x.id===d.clienteId);
+    d.profIds.forEach((pid,i)=>{
+      const a = { id:'ev_'+Date.now()+'_'+i+'_'+Math.random().toString(36).slice(2,6), clienteId:d.clienteId||'', day:d.day, start:d.start, end:minutesToTime(endMin),
+        tipo:'impegno', titolo:d.titolo || (cli ? 'Appuntamento — '+cli.nome : 'Appuntamento'), schedaId:'', noteSessione:'', operatore:'', seriesId:null, colore:null, esecuzione:null,
+        professionistaId:pid, retestData:null, spazioId:null };
+      state.appuntamenti.push(a); db.saveAppuntamento(a);
+    });
+    const n = d.profIds.length;
+    state.segDraft = null; renderSegAppuntamento(box);
+    document.getElementById('sgMsg').textContent = `✓ Creati ${n} appuntamenti (uno per professionista) il ${segFmtDay(d.day)} alle ${d.start}.`;
+  };
+}
+async function segApplicaRichiesta(r, day, startMin){
+  const a = r.appuntamentoId ? state.appuntamenti.find(x=>x.id===r.appuntamentoId) : null;
+  const dur = a ? timeToMinutes(a.end)-timeToMinutes(a.start) : (timeToMinutes(r.end)-timeToMinutes(r.start));
+  const start = minutesToTime(startMin), end = minutesToTime(startMin+dur);
+  const c = state.clienti.find(x=>x.id===r.clienteId);
+  if(a){
+    a.day = day; a.start = start; a.end = end; db.saveAppuntamento(a);
+    if(a.clienteId) notifyClienteSpostamento(a.clienteId, `Il tuo appuntamento "${a.titolo || tipoLabel(a.tipo)}" è stato spostato: ora è il ${segFmtDay(day)} alle ${start}.`);
+  } else {
+    const nuovo = { id:'ev_'+Date.now(), clienteId:r.clienteId, day, start, end, tipo:'impegno',
+      titolo: r.servizio ? `${r.servizio} — ${c ? c.nome : 'cliente'}` : `Richiesta di ${c ? c.nome : 'cliente'}`, schedaId:'', noteSessione:r.nota||'', operatore:'', seriesId:null, colore:null, esecuzione:null,
+      professionistaId: r.professionistaId || (c ? clienteProfIds(c)[0] : null) || null };
+    state.appuntamenti.push(nuovo); db.saveAppuntamento(nuovo);
+    if(r.clienteId) notifyClienteSpostamento(r.clienteId, `Il tuo appuntamento è confermato: ${segFmtDay(day)} alle ${start}.`);
+  }
+  if(r.fasciaId){ state.fasceDisponibili = state.fasceDisponibili.filter(f=>f.id!==r.fasciaId); db.deleteFascia(r.fasciaId); }
+  r.stato = 'approvata'; r.letta = false;
+  const ok = await db.saveRichiesta(r);
+  if(!ok) alert('Attenzione: l\'azione è stata applicata qui ma potrebbe non essersi salvata sul server. Ricarica la pagina per verificare.');
+  renderRichBadge(); renderSegreteria();
+}
+function renderSegRichieste(box){
+  const pending = state.richieste.filter(r=>r.stato==='in attesa' && (r.tipo||(r.appuntamentoId?'modifica':'nuovo'))!=='cancellazione');
+  const nCanc = state.richieste.filter(r=>r.stato==='in attesa' && r.tipo==='cancellazione').length;
+  if(!pending.length){
+    box.innerHTML = `<div class="val-empty">Nessuna richiesta di spostamento o prenotazione in attesa.</div>${nCanc?`<div class="val-legacy-note" style="margin-top:10px;">Ci sono ${nCanc} richieste di cancellazione: gestiscile da "Richieste" nel calendario.</div>`:''}`;
+    return;
+  }
+  const todayStr = fmtDateISO(new Date());
+  box.innerHTML = pending.map(r=>{
+    const a = r.appuntamentoId ? state.appuntamenti.find(x=>x.id===r.appuntamentoId) : null;
+    const c = state.clienti.find(x=>x.id===r.clienteId);
+    const pid = r.professionistaId || (a ? segApProf(a) : null) || (c ? clienteProfIds(c)[0] : null);
+    const dur = a ? timeToMinutes(a.end)-timeToMinutes(a.start) : (timeToMinutes(r.end)-timeToMinutes(r.start));
+    const reqS = timeToMinutes(r.start);
+    const reqConf = pid ? segSlotConflict(pid, r.day, reqS, reqS+dur, a?a.id:null) : null;
+    const fromToday = pid ? segFindFirstFree([pid], dur, todayStr, 0, a?a.id:null) : null;
+    const fromReq = pid ? segFindFirstFree([pid], dur, r.day, reqS, a?a.id:null) : null;
+    const prop = (lbl, f, key)=> f ? `<button class="btn-gold" data-seg-apply="${r.id}" data-seg-day="${f.day}" data-seg-start="${f.start}" style="margin:4px 6px 0 0;">${lbl}: ${segFmtDay(f.day)} ore ${minutesToTime(f.start)}</button>` : '';
+    const same = fromToday && fromReq && fromToday.day===fromReq.day && fromToday.start===fromReq.start;
+    return `<div class="rich-item">
+      <div class="ri-top"><div class="ri-cliente">${escHtml(c ? c.nome : 'Cliente eliminato')} · ${escHtml(segNomeProf(pid))}</div></div>
+      <div class="ri-detail">${a ? `Attuale: <b>${segFmtDay(a.day)} · ${a.start}–${a.end}</b>` : '<b>Nuova prenotazione</b>'}${r.servizio?` — ${escHtml(r.servizio)}`:''}</div>
+      <div class="ri-detail">Richiesto: <b>${segFmtDay(r.day)} · ore ${r.start}</b> ${reqConf ? `<span style="color:#E0776A;">⚠ ${escHtml(reqConf)}</span>` : '<span style="color:#4CAF50;">✓ il professionista è libero</span>'}</div>
+      ${r.nota?`<div class="ri-detail">Nota: ${escHtml(r.nota)}</div>`:''}
+      <div class="ri-detail" style="margin-top:6px;">Prima disponibilità di ${escHtml(segNomeProf(pid))}:</div>
+      <div>${fromToday||fromReq ? (prop('Dal primo posto libero', fromToday) + (same?'':prop('Dopo la data richiesta', fromReq))) : '<span style="color:var(--ink-mute);font-size:13px;">Nessuno spazio libero nei prossimi 120 giorni.</span>'}</div>
+      <div class="ri-actions"><button class="btn-small" data-seg-asreq="${r.id}" ${reqConf?'':'style="font-weight:700;"'}>Approva come richiesto</button>
+        <button class="btn-small danger" data-seg-rifiuta="${r.id}">Rifiuta</button></div></div>`;
+  }).join('') + (nCanc?`<div class="val-legacy-note" style="margin-top:10px;">Ci sono ${nCanc} richieste di cancellazione: gestiscile da "Richieste" nel calendario.</div>`:'');
+  box.querySelectorAll('[data-seg-apply]').forEach(b=> b.onclick = ()=>{
+    const r = state.richieste.find(x=>x.id===b.dataset.segApply); b.disabled = true;
+    segApplicaRichiesta(r, b.dataset.segDay, parseInt(b.dataset.segStart));
+  });
+  box.querySelectorAll('[data-seg-asreq]').forEach(b=> b.onclick = ()=>{
+    const r = state.richieste.find(x=>x.id===b.dataset.segAsreq);
+    const a = r.appuntamentoId ? state.appuntamenti.find(x=>x.id===r.appuntamentoId) : null;
+    const pid = r.professionistaId || (a ? segApProf(a) : null);
+    const dur = a ? timeToMinutes(a.end)-timeToMinutes(a.start) : (timeToMinutes(r.end)-timeToMinutes(r.start));
+    const conf = pid ? segSlotConflict(pid, r.day, timeToMinutes(r.start), timeToMinutes(r.start)+dur, a?a.id:null) : null;
+    if(conf && !confirm(conf+'\n\nApprovare comunque?')) return;
+    b.disabled = true; segApplicaRichiesta(r, r.day, timeToMinutes(r.start));
+  });
+  box.querySelectorAll('[data-seg-rifiuta]').forEach(b=> b.onclick = ()=>{
+    const r = state.richieste.find(x=>x.id===b.dataset.segRifiuta);
+    r.stato = 'rifiutata'; r.letta = false; db.saveRichiesta(r); renderRichBadge(); renderSegreteria();
+  });
+}
+document.getElementById('btnSegreteria').onclick = ()=>{ showView('segreteria'); renderSegreteria(); };
 document.getElementById('btnBackToPathway').onclick = ()=>{
   if(activeClient()){
     showView('pathway');
