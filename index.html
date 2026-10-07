@@ -2631,7 +2631,7 @@ function areaAccessForProfessionista(prof){
   }
   const area = prof.area || '';
   if(area==='Segreteria'){
-    return {tabs:[], ahSub:null, isAdmin:false, isSegreteria:true};
+    return {tabs:['storico','calendario'], ahSub:null, isAdmin:false, isSegreteria:true};
   }
   const tabs = ['valutazioni','sistema','storico','calendario'];
   let ahSub = null;
@@ -3752,11 +3752,6 @@ function loadClientIntoWorkspace(id){
 function openClientForRole(id){
   const c = state.clienti.find(x=>x.id===id);
   if(!c) return;
-  if(isSegreteriaOnly()){
-    renderCliAnagraficaModal(c);
-    document.getElementById('cliAnagraficaModal').classList.add('open');
-    return;
-  }
   loadClientIntoWorkspace(id);
   showView('pathway');
   renderContextBar();
@@ -11133,7 +11128,7 @@ function renderSegClienti(box){
     }).join('') || '<div class="val-empty">Nessun cliente.</div>'}</div>`;
   const inp = document.getElementById('segSearch');
   inp.oninput = e=>{ state.segSearch = e.target.value; const pos = e.target.selectionStart; renderSegClienti(box); const n = document.getElementById('segSearch'); n.focus(); n.setSelectionRange(pos,pos); };
-  box.querySelectorAll('[data-seg-cli]').forEach(el=> el.onclick = (e)=>{ const c = state.clienti.find(x=>x.id===el.dataset.segCli); if(!c) return; renderCliAnagraficaModal(c, !!e.target.closest('.cli-edit')); document.getElementById('cliAnagraficaModal').classList.add('open'); });
+  box.querySelectorAll('[data-seg-cli]').forEach(el=> el.onclick = (e)=>{ const c = state.clienti.find(x=>x.id===el.dataset.segCli); if(!c) return; if(!e.target.closest('.cli-edit')){ openClientForRole(c.id); return; } renderCliAnagraficaModal(c, true); document.getElementById('cliAnagraficaModal').classList.add('open'); });
 }
 function renderSegAppuntamento(box){
   const d = state.segDraft || (state.segDraft = { clienteId:'', titolo:'', day: fmtDateISO(new Date()), start:'09:00', durata:60, profIds:[] });
