@@ -5791,8 +5791,8 @@ function apriReportValutazioneOsteo(c, v){
   const prof = state.professionisti.find(p=>p.id===v.professionistaId);
   const logoSrc = (document.querySelector('.mark-logo') || document.querySelector('.auth-logo') || {}).src || '';
   const sez = (titolo, testo)=> (testo||'').trim() ? `<div class="rep-sezione"><h3>${escHtml(titolo)}</h3><div class="rep-testo">${escHtml(testo)}</div></div>` : '';
-  const flagsList = Object.keys(RED_FLAGS_FISIO).filter(k=>v.redFlags[k]).map(k=>escHtml(RED_FLAGS_FISIO[k]));
-  const flagsHTML = flagsList.length ? `<div class="rep-sezione"><h3>Red flags</h3><div class="rep-redflag">⚠ ${flagsList.join('; ')}</div>${(v.redFlagsNote||'').trim() ? `<div class="rep-testo">${escHtml(v.redFlagsNote)}</div>` : ''}</div>` : '';
+  const flagsList = [];
+  const flagsHTML = '';
   const doloreHTML = v.dolorePunti.length ? `<div class="rep-sezione"><h3>Dolore iniziale</h3><div class="rep-testo">${v.dolorePunti.map(p=>escHtml((p.zona?p.zona+' — ':'')+'NRS '+p.nrs+'/10'+(p.nota?' ('+p.nota+')':''))).join('\n')}</div></div>` : '';
   // le aree di lavoro vuote non compaiono nel report
   const areeHTML = valOsteoAreeCompilate(v).map(a=> sez(a.titolo, a.testo)).join('');
@@ -5854,7 +5854,6 @@ function renderOsteoValutazione(box, c){
         </div>
       </div>
       <div class="val-card-autore">${prof ? escHtml(prof.nome) : '—'}${aree.length ? ' · '+aree.map(a=>escHtml(a.titolo)).join(', ') : ''}</div>
-      ${anyRedFlag(v) ? `<div class="redflag-banner" style="margin-top:6px;">⚠ Red flags presenti</div>` : ''}
       <div class="val-card-motivo">${escHtml(v.motivo || 'Nessun motivo indicato')}</div>
     </div>`;
   }).join('') : `<div class="val-empty">Nessuna valutazione osteopatica ancora registrata per questo cliente.</div>`;
@@ -5871,12 +5870,6 @@ function renderOsteoValutazione(box, c){
       <div class="client-section-label-row" style="margin-top:18px;"><div class="client-section-label" style="font-size:15px;">Dolore iniziale</div></div>
       ${bodyMapHTML(draft.dolorePunti, 'voPain', draft._selectedPainId)}
 
-      <div class="client-section-label-row" style="margin-top:18px;"><div class="client-section-label" style="font-size:15px;">Red flags</div></div>
-      ${anyRedFlag(draft) ? `<div class="redflag-banner">⚠ Red flags presenti — valutare l'invio al medico/specialista prima di procedere.</div>` : ''}
-      <div style="display:flex;flex-direction:column;gap:6px;margin:8px 0;">
-        ${Object.keys(RED_FLAGS_FISIO).map(k=>`<label style="display:flex;align-items:center;gap:8px;font-size:13px;"><input type="checkbox" data-vo-redflag="${k}" ${draft.redFlags[k]?'checked':''}> ${escHtml(RED_FLAGS_FISIO[k])}</label>`).join('')}
-      </div>
-      <div class="ev-field"><label>Note sui red flags (opzionale)</label><textarea class="editable" id="voRedFlagsNote" rows="2">${escHtml(draft.redFlagsNote)}</textarea></div>
 
       <div class="client-section-label-row" style="margin-top:18px;"><div class="client-section-label" style="font-size:15px;">Aree di lavoro</div></div>
       <div class="val-legacy-note" style="margin-bottom:8px;">Tutte opzionali: un'area lasciata vuota non compare nel report.</div>
@@ -5889,12 +5882,8 @@ function renderOsteoValutazione(box, c){
   document.getElementById('voMotivo').oninput = e=> draft.motivo = e.target.value;
   document.getElementById('voEsame').oninput = e=> draft.esameObiettivo = e.target.value;
   document.getElementById('voIpotesi').oninput = e=> draft.ipotesi = e.target.value;
-  document.getElementById('voRedFlagsNote').oninput = e=> draft.redFlagsNote = e.target.value;
   document.getElementById('voNote').oninput = e=> draft.note = e.target.value;
   Object.keys(VAL_OSTEO_AREE).forEach(k=>{ document.getElementById('voArea_'+k).oninput = e=> draft.aree[k] = e.target.value; });
-  box.querySelectorAll('[data-vo-redflag]').forEach(chk=>{
-    chk.onchange = (e)=>{ draft.redFlags[chk.dataset.voRedflag] = e.target.checked; renderAreaHumanTab(); };
-  });
   bindBodyMap('voPain',
     ()=>draft.dolorePunti, (pts)=>{ draft.dolorePunti = pts; },
     draft._selectedPainId,
@@ -7264,7 +7253,7 @@ function renderStoricoTab(){
     const prof = v.professionistaId ? state.professionisti.find(p=>p.id===v.professionistaId) : null;
     return `<div class="upcoming-item tipo-border-retest">
       <div class="ui-info">
-        <div class="uid"><span class="tipo-tag tipo-tag-retest">Valutazione osteopatica</span> ${escHtml(v.motivo || 'Nessun motivo indicato')}${anyRedFlag(v) ? ' <span class="redflag-banner" style="margin:0;padding:2px 8px;display:inline;">⚠ Red flags</span>' : ''}</div>
+        <div class="uid"><span class="tipo-tag tipo-tag-retest">Valutazione osteopatica</span> ${escHtml(v.motivo || 'Nessun motivo indicato')}</div>
         <div class="uim">${v.data ? v.data.split('-').reverse().join('/') : '—'} · Area Human${prof ? ' · '+escHtml(prof.nome) : ''}</div>
       </div>
       <div style="display:flex;align-items:center;"><button class="btn-small" data-storico-report-valosteo="${v.id}">📄 Report PDF</button></div>
