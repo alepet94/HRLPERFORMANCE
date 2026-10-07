@@ -3766,11 +3766,30 @@ function renderCliAnagraficaModal(c){
   const profs = clienteProfIds(c).map(id=>state.professionisti.find(p=>p.id===id)).filter(Boolean);
   document.getElementById('cliAnagraficaTitle').textContent = c.nome;
   box.innerHTML = `
-    ${c.dataNascita ? `<div class="ev-field"><label>Data di nascita</label><div>${c.dataNascita.split('-').reverse().join('/')}${clienteEtaAnni(c)!==null ? ' · ' + clienteEtaAnni(c) + ' anni' : ''}</div></div>` : ''}
-    ${c.email ? `<div class="ev-field"><label>Email</label><div>${escHtml(c.email)}</div></div>` : ''}
+    <div class="ev-field"><label>Nome e cognome</label><input class="editable" id="anNome" value="${escAttr(c.nome||'')}"></div>
+    <div class="ev-row">
+      <div class="ev-field"><label>Data di nascita${clienteEtaAnni(c)!==null ? ' · '+clienteEtaAnni(c)+' anni' : ''}</label><input class="editable" type="date" id="anNascita" value="${escAttr(c.dataNascita||'')}"></div>
+      <div class="ev-field"><label>Email</label><input class="editable" type="email" id="anEmail" value="${escAttr(c.email||'')}"></div>
+    </div>
+    <div class="ev-field"><label>Note</label><textarea class="editable" id="anNote" rows="3">${escHtml(c.note||'')}</textarea></div>
     <div class="ev-field"><label>Professionisti assegnati</label><div>${profs.length ? profs.map(p=>escHtml(p.nome)+(p.area?' ('+escHtml(p.area)+')':'')).join(', ') : '— Nessuno —'}</div></div>
+    <div style="display:flex;gap:10px;align-items:center;margin-top:14px;"><button class="btn-gold" id="anSalva">Salva anagrafica</button><span id="anMsg" style="font-size:13px;color:#4CAF50;"></span></div>
     <div style="font-size:11.5px;color:var(--ink-mute);margin-top:14px;">La Segreteria vede e gestisce i calendari di tutti, ma non le schede cliniche dei clienti.</div>
   `;
+  document.getElementById('anSalva').onclick = ()=>{
+    const nome = document.getElementById('anNome').value.trim();
+    if(!nome){ alert('Il nome non può essere vuoto.'); return; }
+    c.nome = nome;
+    c.dataNascita = document.getElementById('anNascita').value;
+    c.email = document.getElementById('anEmail').value.trim();
+    c.note = document.getElementById('anNote').value;
+    db.saveCliente(c);
+    document.getElementById('cliAnagraficaTitle').textContent = c.nome;
+    document.getElementById('anMsg').textContent = '✓ Salvato';
+    try{ renderClientiList(document.getElementById('cliSearchInput').value); }catch(e){}
+    try{ if(state.clienteAttivoId===c.id) renderContextBar(); }catch(e){}
+    if(document.getElementById('segContent') && document.getElementById('segreteriaArea').style.display!=='none') renderSegreteria();
+  };
 }
 
 function renderPathwayView(){
@@ -11089,7 +11108,7 @@ function renderSegClienti(box){
     }).join('') || '<div class="val-empty">Nessun cliente.</div>'}</div>`;
   const inp = document.getElementById('segSearch');
   inp.oninput = e=>{ state.segSearch = e.target.value; const pos = e.target.selectionStart; renderSegClienti(box); const n = document.getElementById('segSearch'); n.focus(); n.setSelectionRange(pos,pos); };
-  box.querySelectorAll('[data-seg-cli]').forEach(el=> el.onclick = ()=> openClientForRole(el.dataset.segCli));
+  box.querySelectorAll('[data-seg-cli]').forEach(el=> el.onclick = ()=>{ const c = state.clienti.find(x=>x.id===el.dataset.segCli); if(!c) return; renderCliAnagraficaModal(c); document.getElementById('cliAnagraficaModal').classList.add('open'); });
 }
 function renderSegAppuntamento(box){
   const d = state.segDraft || (state.segDraft = { clienteId:'', titolo:'', day: fmtDateISO(new Date()), start:'09:00', durata:60, profIds:[] });
