@@ -9159,6 +9159,7 @@ function renderContextBar(){
   box.innerHTML = `
     <div class="ccb-left">
       <button class="btn-ghost" id="btnBackToClienti">← Clienti</button>
+      ${canManageAll() ? `<button class="btn-ghost" id="btnEditAnagCtx">✎ Anagrafica</button>` : ''}
       <div>
         <div class="ccb-name">${c.nome}</div>
         <div class="ccb-meta">${summary || 'Nessun pathway assegnato ancora'}${clienteEtaAnni(c) ? ' · ' + clienteEtaAnni(c) + ' anni' : ''}</div>
@@ -9171,6 +9172,8 @@ function renderContextBar(){
       ${showAssign ? `<span class="ccb-meta">Seguito da</span>${profAssignHTML(clienteProfIds(c),'ccb')}` : ''}
     </div>
   `;
+  const eb = document.getElementById('btnEditAnagCtx');
+  if(eb) eb.onclick = ()=>{ renderCliAnagraficaModal(c); document.getElementById('cliAnagraficaModal').classList.add('open'); };
   document.getElementById('btnBackToClienti').onclick = ()=>{
     showView('clienti');
     renderClientiList(document.getElementById('cliSearchInput').value);
@@ -9228,6 +9231,7 @@ function renderClientiList(filter){
     return `<div class="cli-card" data-open-cliente="${c.id}">
       ${isAdmin ? `<button class="cli-del" data-del-cliente="${c.id}" title="Elimina cliente">×</button>` : ''}
       <div class="cli-name">${c.nome}</div>
+      ${canManageAll() ? `<button class="btn-small" data-edit-anag="${c.id}" style="margin:6px 0;">✎ Modifica anagrafica</button>` : ''}
       <div class="cli-status ${summary?'':'empty'}">${summary || 'Nessun pathway assegnato'}</div>
       <div class="cli-meta">${clienteEtaAnni(c) ? clienteEtaAnni(c) + ' anni · ' : ''}${schedeCount} sched${schedeCount===1?'a':'e'}${profNames ? ' · '+profNames : ''}</div>
     </div>`;
@@ -9236,7 +9240,15 @@ function renderClientiList(filter){
   box.querySelectorAll('[data-open-cliente]').forEach(card=>{
     card.onclick = (e)=>{
       if(e.target.closest('[data-del-cliente]')) return;
+      if(e.target.closest('[data-edit-anag]')) return;
       openClientForRole(card.dataset.openCliente);
+    };
+  });
+  box.querySelectorAll('[data-edit-anag]').forEach(btn=>{
+    btn.onclick = (e)=>{
+      e.stopPropagation();
+      const c = state.clienti.find(x=>x.id===btn.dataset.editAnag); if(!c) return;
+      renderCliAnagraficaModal(c); document.getElementById('cliAnagraficaModal').classList.add('open');
     };
   });
   box.querySelectorAll('[data-del-cliente]').forEach(btn=>{
@@ -11104,7 +11116,7 @@ function renderSegClienti(box){
     <div style="display:flex;flex-direction:column;gap:8px;">${list.map(c=>{
       const profs = clienteProfIds(c).map(segNomeProf).join(', ');
       return `<div class="val-card" style="cursor:pointer;" data-seg-cli="${c.id}"><div class="val-card-top"><div class="val-card-date" style="font-size:15px;">${escHtml(c.nome||'—')}</div></div>
-        <div class="val-card-autore">${escHtml(c.email||'—')}${profs ? ' · Seguito da: '+escHtml(profs) : ''}</div></div>`;
+        <div class="val-card-autore">${escHtml(c.email||'—')}${profs ? ' · Seguito da: '+escHtml(profs) : ''}</div><div style="margin-top:6px;font-size:12.5px;color:var(--gold);">✎ Clicca per modificare l'anagrafica</div></div>`;
     }).join('') || '<div class="val-empty">Nessun cliente.</div>'}</div>`;
   const inp = document.getElementById('segSearch');
   inp.oninput = e=>{ state.segSearch = e.target.value; const pos = e.target.selectionStart; renderSegClienti(box); const n = document.getElementById('segSearch'); n.focus(); n.setSelectionRange(pos,pos); };
