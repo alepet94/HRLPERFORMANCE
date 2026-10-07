@@ -781,6 +781,8 @@ header.top{
   color:var(--ink-mute);font-size:16px;cursor:pointer;line-height:1;
 }
 .cli-card .cli-del:hover{color:#e0776a;}
+.cli-edit{position:absolute;top:10px;background:none;border:none;color:var(--ink-mute);font-size:17px;cursor:pointer;line-height:1;padding:2px 4px;}
+.cli-edit:hover{color:var(--gold);}
 .cli-card .cli-name{font-family:var(--serif);font-size:16px;color:var(--ink);margin-bottom:6px;padding-right:16px;}
 .cli-card .cli-status{font-size:12px;color:var(--gold-bright);margin-bottom:4px;}
 .cli-card .cli-status.empty{color:var(--ink-mute);}
@@ -3760,11 +3762,21 @@ function openClientForRole(id){
   renderContextBar();
   activateClientTab(state.clientTab);
 }
-function renderCliAnagraficaModal(c){
+function renderCliAnagraficaModal(c, edit){
   const box = document.getElementById('cliAnagraficaContent');
   if(!box) return;
   const profs = clienteProfIds(c).map(id=>state.professionisti.find(p=>p.id===id)).filter(Boolean);
   document.getElementById('cliAnagraficaTitle').textContent = c.nome;
+  if(!edit){
+    box.innerHTML = `
+      ${c.dataNascita ? `<div class="ev-field"><label>Data di nascita</label><div>${c.dataNascita.split('-').reverse().join('/')}${clienteEtaAnni(c)!==null ? ' · ' + clienteEtaAnni(c) + ' anni' : ''}</div></div>` : ''}
+      ${c.email ? `<div class="ev-field"><label>Email</label><div>${escHtml(c.email)}</div></div>` : ''}
+      ${c.note ? `<div class="ev-field"><label>Note</label><div style="white-space:pre-wrap;">${escHtml(c.note)}</div></div>` : ''}
+      <div class="ev-field"><label>Professionisti assegnati</label><div>${profs.length ? profs.map(p=>escHtml(p.nome)+(p.area?' ('+escHtml(p.area)+')':'')).join(', ') : '— Nessuno —'}</div></div>
+      <div style="font-size:11.5px;color:var(--ink-mute);margin-top:14px;">La Segreteria vede e gestisce i calendari di tutti, ma non le schede cliniche dei clienti. Per modificare i dati anagrafici usa la matita ✎ sulla scheda del cliente.</div>
+    `;
+    return;
+  }
   box.innerHTML = `
     <div class="ev-field"><label>Nome e cognome</label><input class="editable" id="anNome" value="${escAttr(c.nome||'')}"></div>
     <div class="ev-row">
@@ -9173,7 +9185,7 @@ function renderContextBar(){
     </div>
   `;
   const eb = document.getElementById('btnEditAnagCtx');
-  if(eb) eb.onclick = ()=>{ renderCliAnagraficaModal(c); document.getElementById('cliAnagraficaModal').classList.add('open'); };
+  if(eb) eb.onclick = ()=>{ renderCliAnagraficaModal(c, true); document.getElementById('cliAnagraficaModal').classList.add('open'); };
   document.getElementById('btnBackToClienti').onclick = ()=>{
     showView('clienti');
     renderClientiList(document.getElementById('cliSearchInput').value);
@@ -9229,9 +9241,10 @@ function renderClientiList(filter){
     const schedeCount = Object.values(c.schede||{}).reduce((tot,arr)=>tot+arr.length,0);
     const profNames = showProf ? clienteProfIds(c).map(id=>state.professionisti.find(p=>p.id===id)).filter(Boolean).map(p=>p.nome).join(', ') : '';
     return `<div class="cli-card" data-open-cliente="${c.id}">
+      ${canManageAll() ? `<button class="cli-edit" data-edit-anag="${c.id}" title="Modifica anagrafica" style="right:${isAdmin?40:12}px;">✎</button>` : ''}
       ${isAdmin ? `<button class="cli-del" data-del-cliente="${c.id}" title="Elimina cliente">×</button>` : ''}
       <div class="cli-name">${c.nome}</div>
-      ${canManageAll() ? `<button class="btn-small" data-edit-anag="${c.id}" style="margin:6px 0;">✎ Modifica anagrafica</button>` : ''}
+
       <div class="cli-status ${summary?'':'empty'}">${summary || 'Nessun pathway assegnato'}</div>
       <div class="cli-meta">${clienteEtaAnni(c) ? clienteEtaAnni(c) + ' anni · ' : ''}${schedeCount} sched${schedeCount===1?'a':'e'}${profNames ? ' · '+profNames : ''}</div>
     </div>`;
@@ -9248,7 +9261,7 @@ function renderClientiList(filter){
     btn.onclick = (e)=>{
       e.stopPropagation();
       const c = state.clienti.find(x=>x.id===btn.dataset.editAnag); if(!c) return;
-      renderCliAnagraficaModal(c); document.getElementById('cliAnagraficaModal').classList.add('open');
+      renderCliAnagraficaModal(c, true); document.getElementById('cliAnagraficaModal').classList.add('open');
     };
   });
   box.querySelectorAll('[data-del-cliente]').forEach(btn=>{
@@ -11115,12 +11128,12 @@ function renderSegClienti(box){
     <div style="font-size:12.5px;color:var(--ink-mute);margin-bottom:10px;">${list.length} clienti</div>
     <div style="display:flex;flex-direction:column;gap:8px;">${list.map(c=>{
       const profs = clienteProfIds(c).map(segNomeProf).join(', ');
-      return `<div class="val-card" style="cursor:pointer;" data-seg-cli="${c.id}"><div class="val-card-top"><div class="val-card-date" style="font-size:15px;">${escHtml(c.nome||'—')}</div></div>
-        <div class="val-card-autore">${escHtml(c.email||'—')}${profs ? ' · Seguito da: '+escHtml(profs) : ''}</div><div style="margin-top:6px;font-size:12.5px;color:var(--gold);">✎ Clicca per modificare l'anagrafica</div></div>`;
+      return `<div class="val-card" style="cursor:pointer;" data-seg-cli="${c.id}"><div class="val-card-top"><div class="val-card-date" style="font-size:15px;">${escHtml(c.nome||'—')}</div><button class="cli-edit" style="position:static;" title="Modifica anagrafica">✎</button></div>
+        <div class="val-card-autore">${escHtml(c.email||'—')}${profs ? ' · Seguito da: '+escHtml(profs) : ''}</div></div>`;
     }).join('') || '<div class="val-empty">Nessun cliente.</div>'}</div>`;
   const inp = document.getElementById('segSearch');
   inp.oninput = e=>{ state.segSearch = e.target.value; const pos = e.target.selectionStart; renderSegClienti(box); const n = document.getElementById('segSearch'); n.focus(); n.setSelectionRange(pos,pos); };
-  box.querySelectorAll('[data-seg-cli]').forEach(el=> el.onclick = ()=>{ const c = state.clienti.find(x=>x.id===el.dataset.segCli); if(!c) return; renderCliAnagraficaModal(c); document.getElementById('cliAnagraficaModal').classList.add('open'); });
+  box.querySelectorAll('[data-seg-cli]').forEach(el=> el.onclick = (e)=>{ const c = state.clienti.find(x=>x.id===el.dataset.segCli); if(!c) return; renderCliAnagraficaModal(c, !!e.target.closest('.cli-edit')); document.getElementById('cliAnagraficaModal').classList.add('open'); });
 }
 function renderSegAppuntamento(box){
   const d = state.segDraft || (state.segDraft = { clienteId:'', titolo:'', day: fmtDateISO(new Date()), start:'09:00', durata:60, profIds:[] });
