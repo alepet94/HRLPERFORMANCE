@@ -1379,7 +1379,7 @@ body[data-theme="light"]{
 .cli-cal-wrap .retest-badge{color:var(--client-accent);border-color:var(--client-accent);}
 
 .client-section-label{
-  font-family:var(--serif);font-size:14px;color:var(--client-accent-bright);
+  font-family:var(--serif);font-size:19px;color:var(--client-accent-bright);
   margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--client-accent-line);
 }
 .client-section-label-row{
@@ -5570,7 +5570,7 @@ function renderAreaHumanOsteopatia(box){
   function campoHTML(idBase, tipoLbl, campo, subLbl){
     const isOpen = draft._privataOpen[idBase] || !!campo.privata;
     return `
-      <div class="client-section-label-row" style="margin-top:14px;"><div class="client-section-label" style="font-size:11px;">${escHtml(subLbl || tipoLbl)}</div></div>
+      <div class="client-section-label-row" style="margin-top:14px;"><div class="client-section-label" style="font-size:15px;">${escHtml(subLbl || tipoLbl)}</div></div>
       <div class="osteo-note-box osteo-note-report">
         <label>Note per il report (nel PDF e nello storico del cliente)</label>
         <textarea class="editable" id="${idBase}Report" rows="2" placeholder="Contenuto del trattamento, visibile nel report">${escHtml(campo.report)}</textarea>
@@ -5773,7 +5773,7 @@ function renderAreaHumanEnergetica(box){
     const idBase = 'energ_'+k;
     const isOpen = draft._privataOpen[idBase] || !!campo.privata;
     return `
-      <div class="client-section-label-row" style="margin-top:14px;"><div class="client-section-label" style="font-size:11px;">${escHtml(ENERGETICA_LABELS[k])}</div></div>
+      <div class="client-section-label-row" style="margin-top:14px;"><div class="client-section-label" style="font-size:15px;">${escHtml(ENERGETICA_LABELS[k])}</div></div>
       <div class="osteo-note-box osteo-note-report">
         <label>Note per il report (nel PDF e nello storico del cliente)</label>
         <textarea class="editable" id="${idBase}Report" rows="3" placeholder="Scrivi qui, visibile nel report">${escHtml(campo.report)}</textarea>
@@ -6305,7 +6305,7 @@ function renderFisioTrattamentiSection(c){
     const idBase = 'fisioCampo_'+t;
     const isOpen = draft._privataOpen[idBase] || !!campo.privata;
     return `
-      <div class="client-section-label-row" style="margin-top:14px;"><div class="client-section-label" style="font-size:11px;">${escHtml(TRATTAMENTO_FISIO_LABELS[t])}</div></div>
+      <div class="client-section-label-row" style="margin-top:14px;"><div class="client-section-label" style="font-size:15px;">${escHtml(TRATTAMENTO_FISIO_LABELS[t])}</div></div>
       <div class="osteo-note-box osteo-note-report">
         <label>Note per il report (nel PDF e nello storico del cliente)</label>
         <textarea class="editable" id="${idBase}Report" rows="2" placeholder="Contenuto del trattamento, visibile nel report">${escHtml(campo.report)}</textarea>
@@ -6346,7 +6346,7 @@ function renderFisioTrattamentiSection(c){
         ${draft.tipi.map(campoHTML).join('')}
       </div>
 
-      <div class="client-section-label-row" style="margin-top:18px;"><div class="client-section-label" style="font-size:11px;">Dolore rilevato in questa seduta</div></div>
+      <div class="client-section-label-row" style="margin-top:18px;"><div class="client-section-label" style="font-size:15px;">Dolore rilevato in questa seduta</div></div>
       ${bodyMapHTML(draft.dolorePunti, 'fisioTrattPain', draft._selectedPainId, draft.collegataAValutazioneId ? ((c.valutazioniFisioterapia||[]).find(v=>v.id===draft.collegataAValutazioneId)||{}).dolorePunti : null)}
 
       <div class="osteo-flag-box" style="margin-top:16px;">
@@ -6500,17 +6500,17 @@ function renderFisioValutazioneSection(c){
       <div class="ev-field"><label>Esame obiettivo</label><textarea class="editable" id="vfEsame" rows="3">${escHtml(draft.esameObiettivo)}</textarea></div>
       <div class="ev-field"><label>Diagnosi funzionale / ipotesi di lavoro</label><textarea class="editable" id="vfDiagnosi" rows="3">${escHtml(draft.diagnosiFunzionale)}</textarea></div>
 
-      <div class="client-section-label-row" style="margin-top:18px;"><div class="client-section-label" style="font-size:11px;">Dolore iniziale</div></div>
+      <div class="client-section-label-row" style="margin-top:18px;"><div class="client-section-label" style="font-size:15px;">Dolore iniziale</div></div>
       ${bodyMapHTML(draft.dolorePunti, 'vfPain', draft._selectedPainId)}
 
-      <div class="client-section-label-row" style="margin-top:18px;"><div class="client-section-label" style="font-size:11px;">Red flags</div></div>
+      <div class="client-section-label-row" style="margin-top:18px;"><div class="client-section-label" style="font-size:15px;">Red flags</div></div>
       ${flagsChecked ? `<div class="redflag-banner">⚠ Red flags presenti — valutare l'invio al medico/specialista prima di procedere con il trattamento.</div>` : ''}
       <div style="display:flex;flex-direction:column;gap:6px;margin:8px 0;">
         ${Object.keys(RED_FLAGS_FISIO).map(k=>`<label style="display:flex;align-items:center;gap:8px;font-size:13px;"><input type="checkbox" data-redflag="${k}" ${draft.redFlags[k]?'checked':''}> ${escHtml(RED_FLAGS_FISIO[k])}</label>`).join('')}
       </div>
       <div class="ev-field"><label>Note sui red flags (opzionale)</label><textarea class="editable" id="vfRedFlagsNote" rows="2">${escHtml(draft.redFlagsNote)}</textarea></div>
 
-      <div class="client-section-label-row" style="margin-top:18px;"><div class="client-section-label" style="font-size:11px;">Obiettivi funzionali</div></div>
+      <div class="client-section-label-row" style="margin-top:18px;"><div class="client-section-label" style="font-size:15px;">Obiettivi funzionali</div></div>
       <div id="vfObiettiviList" style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px;">
         ${draft.obiettiviFunzionali.map(o=>`<div style="display:flex;align-items:center;gap:8px;">
           <input type="checkbox" data-obf-raggiunto="${o.id}" ${o.raggiunto?'checked':''} title="Raggiunto">
