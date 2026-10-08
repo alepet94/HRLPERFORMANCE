@@ -10407,8 +10407,8 @@ function calFasciaGet(){
   if(!state.calFascia) state.calFascia = new Date().getHours()>=13 ? 'pomeriggio' : 'mattina';
   return state.calFascia;
 }
-function calStartMin(){ return calFasciaGet()==='pomeriggio' ? 780 : 390; }
-function calEndMin(){ return calFasciaGet()==='pomeriggio' ? 1140 : 780; }
+function calStartMin(){ return calFasciaGet()==='pomeriggio' ? 780 : 390; } // 'giorno' = tutta la giornata 6:30–19:00
+function calEndMin(){ return calFasciaGet()==='mattina' ? 780 : 1140; }
 function calClamp(s,e){ const a=Math.max(s,calStartMin()), b=Math.min(e,calEndMin()); return b>a ? [a,b] : null; }
 function calHourLabels(PX){
   let h = '';
@@ -10511,7 +10511,7 @@ function renderCalendar(){
     ft.style.display = state.calViewMode==='mese' ? 'none' : '';
     ft.querySelectorAll('[data-calfascia]').forEach(o=>{
       o.classList.toggle('active', o.dataset.calfascia===calFasciaGet());
-      o.onclick = ()=>{ state.calFascia = o.dataset.calfascia; renderCalendar(); };
+      o.onclick = ()=>{ state.calFascia = (calFasciaGet()===o.dataset.calfascia) ? 'giorno' : o.dataset.calfascia; renderCalendar(); };
     });
   }
   const segBar = document.getElementById('segBarCal');
