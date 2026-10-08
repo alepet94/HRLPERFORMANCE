@@ -1764,6 +1764,16 @@ body[data-theme="light"]{
   .phase-panel{display:block !important;margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid #ccc;}
   .phase-rail{display:none;}
 }
+.paz-lk{position:relative;}
+.paz-lk .editable{width:100%;padding-right:34px;box-sizing:border-box;}
+.paz-lk-x{position:absolute;right:6px;top:6px;background:none;border:none;color:var(--ink-mute);font-size:18px;cursor:pointer;line-height:1;}
+.paz-lk-list{position:absolute;left:0;right:0;top:100%;z-index:50;background:var(--navy-850);border:1px solid var(--line);border-radius:8px;margin-top:2px;max-height:300px;overflow:auto;box-shadow:0 8px 24px rgba(0,0,0,.35);}
+.paz-lk-it{padding:8px 12px;cursor:pointer;font-size:14px;}
+.paz-lk-it span{color:var(--ink-mute);font-size:12px;margin-left:6px;}
+.paz-lk-it:hover,.paz-lk-it.hi{background:rgba(212,175,55,.18);}
+.paz-lk-none{color:var(--ink-mute);font-style:italic;}
+.paz-lk-empty{padding:8px 12px;font-size:12.5px;color:var(--ink-mute);}
+body[data-theme="light"] .paz-lk-list{background:#fff;border-color:#ccc;}
 </style>
 </head>
 <body>
@@ -1804,7 +1814,7 @@ body[data-theme="light"]{
     <h2>I tuoi clienti</h2>
     <div class="cli-header-actions">
       <select class="editable" id="cliFilterProf" style="display:none;max-width:220px;"></select>
-      <input class="editable" id="cliSearchInput" placeholder="Cerca cliente...">
+      <input class="editable" id="cliSearchInput" placeholder="Cerca cliente: nome, telefono o email…">
       <button class="btn-ghost" id="btnTeam" style="display:none;">Team</button>
       <button class="btn-ghost" id="btnSpazi" style="display:none;">Spazi comuni</button>
       <button class="btn-ghost" id="btnNuovoProfessionista" style="display:none;">+ Nuovo professionista</button>
@@ -9286,6 +9296,63 @@ function renderCliFilterProf(){
   sel.value = state.calFilterProfId || '';
   sel.onchange = ()=>{ state.calFilterProfId = sel.value || null; renderClientiList(document.getElementById('cliSearchInput').value); };
 }
+
+// ===== Lookup pazienti (digita il nome) =====
+function normStr(x){ return String(x||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,''); }
+function pazMatch(c,q){
+  const toks = normStr(q).split(/\s+/).filter(Boolean);
+  if(!toks.length) return true;
+  const hay = normStr((c.nome||'')+' '+(c.telefono||'')+' '+(c.email||''));
+  return toks.every(t=>hay.includes(t));
+}
+function pazLookupHtml(id, selId, nessuno){
+  const c = selId ? state.clienti.find(x=>x.id===selId) : null;
+  const nm = c ? (c.nome||'')+(c.eliminato?' (eliminato)':'') : '';
+  return `<div class="paz-lk"><input type="hidden" id="${id}" value="${escAttr(selId||'')}">
+    <input class="editable" id="${id}-q" autocomplete="off" placeholder="Digita il nome del paziente…" value="${escAttr(nm)}">
+    <button type="button" class="paz-lk-x" id="${id}-x" title="${escAttr(nessuno)}">×</button>
+    <div class="paz-lk-list" id="${id}-list" style="display:none;"></div></div>`;
+}
+function bindPazLookup(id, nessuno, onChange, keepId){
+  const hid = document.getElementById(id), q = document.getElementById(id+'-q'),
+        list = document.getElementById(id+'-list'), x = document.getElementById(id+'-x');
+  if(!hid||!q||!list) return;
+  const MAX = 8; let items = [], hi = -1;
+  const nameOf = v => { const c = state.clienti.find(z=>z.id===v); return c ? (c.nome||'')+(c.eliminato?' (eliminato)':'') : ''; };
+  function show(){
+    const typed = q.value;
+    const showAll = typed === nameOf(hid.value) && hid.value;
+    const base = state.clienti.filter(c=>!c.eliminato || c.id===keepId).sort((a,b)=>(a.nome||'').localeCompare(b.nome||''));
+    const m = (showAll ? base : base.filter(c=>pazMatch(c,typed)));
+    items = m.slice(0,MAX); hi = items.length && !showAll && typed.trim() ? 0 : -1;
+    paint(m.length);
+  }
+  function paint(total){
+    list.innerHTML = `<div class="paz-lk-it paz-lk-none" data-v="">${escHtml(nessuno)}</div>` +
+      (items.length ? items.map((c,i)=>`<div class="paz-lk-it ${i===hi?'hi':''}" data-v="${c.id}"><b>${escHtml(c.nome||'—')}</b>${c.telefono?` <span>${escHtml(c.telefono)}</span>`:''}${c.eliminato?' <span>(eliminato)</span>':''}</div>`).join('')
+        : `<div class="paz-lk-empty">Nessun paziente trovato</div>`) +
+      (total>MAX ? `<div class="paz-lk-empty">+${total-MAX} altri — continua a digitare per restringere</div>` : '');
+    list.style.display = 'block';
+  }
+  function pick(v){
+    hid.value = v; q.value = nameOf(v); list.style.display = 'none';
+    onChange(v);
+  }
+  q.addEventListener('focus', ()=>{ q.select(); show(); });
+  q.addEventListener('input', ()=>{ hid.value = hid.value; show(); });
+  q.addEventListener('keydown', e=>{
+    if(e.key==='ArrowDown'){ e.preventDefault(); if(list.style.display==='none') show(); hi = Math.min(items.length-1, hi+1); paint(0); }
+    else if(e.key==='ArrowUp'){ e.preventDefault(); hi = Math.max(0, hi-1); paint(0); }
+    else if(e.key==='Enter'){ if(list.style.display!=='none' && hi>=0 && items[hi]){ e.preventDefault(); pick(items[hi].id); } }
+    else if(e.key==='Escape'){ list.style.display='none'; q.value = nameOf(hid.value); }
+  });
+  q.addEventListener('blur', ()=>{ setTimeout(()=>{ list.style.display='none'; q.value = nameOf(hid.value); }, 150); });
+  list.addEventListener('mousedown', e=>{
+    const it = e.target.closest('.paz-lk-it'); if(!it) return;
+    e.preventDefault(); pick(it.dataset.v);
+  });
+  if(x) x.onclick = ()=> pick('');
+}
 function renderClientiList(filter){
   renderCliFilterProf();
   const box = document.getElementById('cliGrid');
@@ -9297,7 +9364,7 @@ function renderClientiList(filter){
     btnCestino.style.display = isAdminForCestino ? 'inline-flex' : 'none';
     btnCestino.textContent = nEliminati ? `🗑 Cestino (${nEliminati})` : '🗑 Cestino';
   }
-  let list = state.clienti.filter(c=> !c.eliminato && (!f || c.nome.toLowerCase().includes(f)));
+  let list = state.clienti.filter(c=> !c.eliminato && (!f || pazMatch(c,f)));
   if(canManageAll() && state.calFilterProfId){
     list = list.filter(c=>clienteHasProf(c,state.calFilterProfId));
   }
@@ -10966,10 +11033,7 @@ function renderEventModal(){
     </div>
     <div class="ev-field"><label>Titolo / nota</label><input class="editable" id="evTitolo" value="${ed.titolo||''}" placeholder="es. Allenamento forza / Retest 1RM / Impegno personale"></div>
     <div class="ev-field"><label>Cliente (opzionale)</label>
-      <select id="evCliente" class="editable">
-        <option value="">— Nessuno / impegno personale —</option>
-        ${state.clienti.filter(c=>!c.eliminato || c.id===ed.clienteId).map(c=>`<option value="${c.id}" ${ed.clienteId===c.id?'selected':''}>${c.nome}${c.eliminato?' (eliminato)':''}</option>`).join('')}
-      </select>
+      ${pazLookupHtml('evCliente', ed.clienteId, '— Nessuno / impegno personale —')}
     </div>
     <div style="margin:-6px 0 12px;">
       <button type="button" class="btn-small" id="evNuovoPazBtn">${state.evNewPaz ? '× Annulla nuovo paziente' : '+ Nuovo paziente'}</button>
@@ -11099,12 +11163,12 @@ function renderEventModal(){
     state.evNewPaz = false;
     renderEventModal();
   };
-  document.getElementById('evCliente').onchange = (e)=>{
-    ed.clienteId = e.target.value;
+  bindPazLookup('evCliente','— Nessuno / impegno personale —',(v)=>{
+    ed.clienteId = v;
     const newClient = ed.clienteId ? state.clienti.find(c=>c.id===ed.clienteId) : null;
     ed.professionistaId = newClient ? (clienteProfIds(newClient)[0] || null) : (state.professionista ? state.professionista.id : null);
     renderEventModal();
-  };
+  }, ed.clienteId);
   const evProfSel = document.getElementById('evProf');
   if(evProfSel) evProfSel.onchange = (e)=>{ ed.professionistaId = e.target.value || null; };
   const evSpazioSel = document.getElementById('evSpazio');
@@ -11310,9 +11374,9 @@ function renderSegreteria(){
 }
 function renderSegClienti(box){
   const q = (state.segSearch||'').toLowerCase();
-  const list = state.clienti.filter(c=>!c.eliminato && (!q || ((c.nome||'')+' '+(c.email||'')).toLowerCase().includes(q)))
+  const list = state.clienti.filter(c=>!c.eliminato && (!q || pazMatch(c,q)))
     .sort((a,b)=>(a.nome||'').localeCompare(b.nome||''));
-  box.innerHTML = `<input class="editable" id="segSearch" placeholder="Cerca cliente per nome o email…" value="${escAttr(state.segSearch||'')}" style="max-width:420px;margin-bottom:14px;">
+  box.innerHTML = `<input class="editable" id="segSearch" placeholder="Cerca cliente: nome, telefono o email…" value="${escAttr(state.segSearch||'')}" style="max-width:420px;margin-bottom:14px;">
     <div style="font-size:12.5px;color:var(--ink-mute);margin-bottom:10px;">${list.length} clienti</div>
     <div style="display:flex;flex-direction:column;gap:8px;">${list.map(c=>{
       const profs = clienteProfIds(c).map(segNomeProf).join(', ');
@@ -11334,7 +11398,7 @@ function renderSegAppuntamento(box){
     return c ? `<span style="color:#E0776A;font-size:12px;">⚠ ${escHtml(c)}</span>` : `<span style="color:#4CAF50;font-size:12px;">✓ libero</span>`;
   };
   box.innerHTML = `<div class="ghi-draft-box">
-    <div class="ev-field"><label>Cliente</label><select class="editable" id="sgCli"><option value="">— nessun cliente (impegno interno) —</option>${clienti.map(c=>`<option value="${c.id}" ${d.clienteId===c.id?'selected':''}>${escHtml(c.nome)}</option>`).join('')}</select></div>
+    <div class="ev-field"><label>Cliente</label>${pazLookupHtml('sgCli', d.clienteId, '— nessun cliente (impegno interno) —')}</div>
     <div class="ev-field"><label>Titolo</label><input class="editable" id="sgTitolo" value="${escAttr(d.titolo)}" placeholder="Es. Visita di primo accesso"></div>
     <div class="ev-row"><div class="ev-field"><label>Data</label><input class="editable" type="date" id="sgDay" value="${escAttr(d.day)}"></div>
       <div class="ev-field"><label>Ora inizio</label><input class="editable" type="time" id="sgStart" value="${escAttr(d.start)}"></div>
@@ -11346,7 +11410,7 @@ function renderSegAppuntamento(box){
       <button class="btn-gold" id="sgCrea">Crea appuntamenti</button></div>
     <div id="sgMsg" style="margin-top:10px;font-size:13px;"></div></div>`;
   const rr = ()=> renderSegAppuntamento(box);
-  document.getElementById('sgCli').onchange = e=>{ d.clienteId = e.target.value; };
+  bindPazLookup('sgCli','— nessun cliente (impegno interno) —',v=>{ d.clienteId = v; });
   document.getElementById('sgTitolo').oninput = e=>{ d.titolo = e.target.value; };
   document.getElementById('sgDay').onchange = e=>{ d.day = e.target.value; rr(); };
   document.getElementById('sgStart').onchange = e=>{ d.start = e.target.value; rr(); };
