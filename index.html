@@ -904,6 +904,10 @@ header.top{
 .cal-grid-scroll{overflow-x:auto;border:1px solid var(--line-soft);border-radius:5px;margin-top:10px;}
 .cal-grid{display:grid;grid-template-columns:52px repeat(7,minmax(120px,1fr));min-width:900px;}
 .cal-multi-grid{display:grid;}
+/* calendario professionisti: scorre dentro il proprio riquadro, così le intestazioni
+   (nomi dei professionisti / giorni) restano fisse in alto mentre si scende con le ore */
+#calWeekWrap,#calMultiWrap{overflow:auto;max-height:max(400px,calc(100vh - 345px));}
+#calWeekWrap .cal-axis-head,#calMultiWrap .cal-axis-head{position:sticky;top:0;z-index:3;background:var(--navy-900);}
 .cal-multi-grid .cal-col-head{position:sticky;top:0;}
 .cal-multi-grid .cal-col-head .cch-sub{font-size:10px;color:var(--ink-mute);margin-top:1px;}
 .cal-multi-grid .cal-col-head.spazio-head{background:var(--gold-dim);}
