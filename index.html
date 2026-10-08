@@ -8878,6 +8878,7 @@ document.getElementById('btnDisponibilita').onclick = ()=>{
 document.getElementById('closeDispRicorrente').onclick = ()=> document.getElementById('dispRicorrenteModal').classList.remove('open');
 document.getElementById('dispRicorrenteModal').onclick = (e)=>{ if(e.target.id==='dispRicorrenteModal') document.getElementById('dispRicorrenteModal').classList.remove('open'); };
 
+const DISP_FASCE = { mattina:['06:30','13:00'], pomeriggio:['13:00','19:00'] };
 function renderDispRicorrenteModal(prefill){
   const box = document.getElementById('dispRicorrenteContent');
   const order = [1,2,3,4,5,6,0];
@@ -8926,6 +8927,12 @@ function renderDispRicorrenteModal(prefill){
       <div class="cal-day-chip ${curTipo==='non_disponibile'?'on':''}" data-tipo="non_disponibile" style="width:auto;padding:0 12px;">Non disponibile</div>
     </div>
   </div>
+  ${editing ? '' : `<div class="ev-field"><label>Fascia rapida (compila gli orari da sola)</label>
+    <div class="cal-days-toggle" id="dispRicFasce">
+      <div class="cal-day-chip ${(state.dispRicNewFasce||[]).includes('mattina')?'on':''}" data-fascia="mattina" style="width:auto;padding:0 12px;">Mattina 6:30–13:00</div>
+      <div class="cal-day-chip ${(state.dispRicNewFasce||[]).includes('pomeriggio')?'on':''}" data-fascia="pomeriggio" style="width:auto;padding:0 12px;">Pomeriggio 13:00–19:00</div>
+    </div>
+    <div style="font-size:11.5px;color:var(--ink-mute);margin-top:4px;">Scegline una, entrambe (due blocchi, mattina e pomeriggio) oppure nessuna per usare gli orari qui sotto.</div></div>`}
   <div class="ev-row">
     <div class="ev-field"><label>Inizio</label><input class="editable" type="time" id="dispRicStart" value="${editing ? editing.start : (state.dispRicNewStart||'09:00')}"></div>
     <div class="ev-field"><label>Fine</label><input class="editable" type="time" id="dispRicEnd" value="${editing ? editing.end : (state.dispRicNewEnd||'13:00')}"></div>
@@ -8989,16 +8996,32 @@ function renderDispRicorrenteModal(prefill){
       renderDispRicorrenteModal();
     };
   });
+  box.querySelectorAll('#dispRicFasce .cal-day-chip').forEach(chip=>{
+    chip.onclick = ()=>{
+      const f = chip.dataset.fascia;
+      const cur = state.dispRicNewFasce || [];
+      state.dispRicNewFasce = cur.includes(f) ? cur.filter(x=>x!==f) : cur.concat([f]);
+      if(state.dispRicNewFasce.length){
+        const fs = state.dispRicNewFasce.map(x=>DISP_FASCE[x]);
+        state.dispRicNewStart = fs.map(x=>x[0]).sort()[0];
+        state.dispRicNewEnd = fs.map(x=>x[1]).sort().slice(-1)[0];
+      }
+      renderDispRicorrenteModal();
+    };
+  });
   const startInp = document.getElementById('dispRicStart');
   const endInp = document.getElementById('dispRicEnd');
   const postiInp = document.getElementById('dispRicPosti');
   const dataInp = document.getElementById('dispRicData');
   if(!editing){
-    startInp.oninput = e=> state.dispRicNewStart = e.target.value;
-    endInp.oninput = e=> state.dispRicNewEnd = e.target.value;
+    const clearFasce = ()=>{ state.dispRicNewFasce = []; box.querySelectorAll('#dispRicFasce .cal-day-chip').forEach(c=>c.classList.remove('on')); };
+    startInp.oninput = e=>{ state.dispRicNewStart = e.target.value; clearFasce(); };
+    endInp.oninput = e=>{ state.dispRicNewEnd = e.target.value; clearFasce(); };
     if(postiInp) postiInp.oninput = e=> state.dispRicNewPosti = e.target.value;
     if(dataInp) dataInp.oninput = e=> state.dispRicNewData = e.target.value;
   }
+  const dispRanges = (start, end)=> (!editing && state.dispRicNewFasce && state.dispRicNewFasce.length)
+    ? state.dispRicNewFasce.map(f=>DISP_FASCE[f]) : [[start,end]];
   document.getElementById('btnDispRicSalva').onclick = ()=>{
     const start = startInp.value, end = endInp.value;
     const posti = postiInp ? Math.max(1, parseInt(postiInp.value,10) || 1) : 1;
@@ -9013,21 +9036,26 @@ function renderDispRicorrenteModal(prefill){
       if(!data){ alert('Seleziona una data.'); return; }
       const tipo = state.dispRicNewTipo || 'disponibile';
       const weekday = new Date(data+'T00:00:00').getDay();
-      const nuovo = { id: 'dr_' + Date.now(), professionistaId: targetProfId, weekday, data, start, end, posti, tipo };
-      state.disponibilitaRicorrenti.push(nuovo);
-      db.saveDispRicorrente(nuovo);
+      dispRanges(start, end).forEach(([rs,re],i)=>{
+        const nuovo = { id: 'dr_' + Date.now() + '_' + i, professionistaId: targetProfId, weekday, data, start:rs, end:re, posti, tipo };
+        state.disponibilitaRicorrenti.push(nuovo);
+        db.saveDispRicorrente(nuovo);
+      });
       state.dispRicNewData = null;
     } else {
       const days = state.dispRicNewDays && state.dispRicNewDays.length ? state.dispRicNewDays : null;
       if(!days){ alert('Seleziona almeno un giorno della settimana.'); return; }
       const tipo = state.dispRicNewTipo || 'disponibile';
       days.forEach(weekday=>{
-        const nuovo = { id: 'dr_' + Date.now() + '_' + weekday, professionistaId: targetProfId, weekday, data: null, start, end, posti, tipo };
-        state.disponibilitaRicorrenti.push(nuovo);
-        db.saveDispRicorrente(nuovo);
+        dispRanges(start, end).forEach(([rs,re],i)=>{
+          const nuovo = { id: 'dr_' + Date.now() + '_' + weekday + '_' + i, professionistaId: targetProfId, weekday, data: null, start:rs, end:re, posti, tipo };
+          state.disponibilitaRicorrenti.push(nuovo);
+          db.saveDispRicorrente(nuovo);
+        });
       });
       state.dispRicNewDays = [];
     }
+    state.dispRicNewFasce = [];
     renderDispRicorrenteModal();
     if(document.getElementById('calendarArea').style.display!=='none') renderCalendar();
   };
@@ -11421,11 +11449,11 @@ document.getElementById('btnWeekNext').onclick = ()=>{
   }
   renderCalendar();
 };
-document.querySelectorAll('#calendarArea .cal-mode-opt').forEach(opt=>{
+document.querySelectorAll('#calendarArea [data-calmode]').forEach(opt=>{
   opt.onclick = ()=>{
     state.calViewMode = opt.dataset.calmode;
     if(state.calViewMode==='multi' && !state.calMultiDay) state.calMultiDay = fmtDateISO(new Date());
-    document.querySelectorAll('#calendarArea .cal-mode-opt').forEach(o=>o.classList.toggle('active', o===opt));
+    document.querySelectorAll('#calendarArea [data-calmode]').forEach(o=>o.classList.toggle('active', o===opt));
     document.getElementById('calWeekWrap').style.display = state.calViewMode==='settimana' ? 'block' : 'none';
     document.getElementById('calMonthWrap').style.display = state.calViewMode==='mese' ? 'block' : 'none';
     document.getElementById('calMultiWrap').style.display = state.calViewMode==='multi' ? 'block' : 'none';
@@ -11456,7 +11484,7 @@ document.getElementById('calMonthGrid').addEventListener('click', (e)=>{
   if(moreEl){
     state.calWeekStart = mondayOf(new Date(moreEl.dataset.goweek + 'T00:00:00'));
     state.calViewMode = 'settimana';
-    document.querySelectorAll('#calendarArea .cal-mode-opt').forEach(o=>o.classList.toggle('active', o.dataset.calmode==='settimana'));
+    document.querySelectorAll('#calendarArea [data-calmode]').forEach(o=>o.classList.toggle('active', o.dataset.calmode==='settimana'));
     document.getElementById('calWeekWrap').style.display = 'block';
     document.getElementById('calMonthWrap').style.display = 'none';
     document.getElementById('calSettings').style.display = 'flex';
