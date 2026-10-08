@@ -10411,7 +10411,7 @@ function downloadScheda(scheda){
 function timeToMinutes(t){ const [h,m]=t.split(':').map(Number); return h*60+m; }
 // fasce del calendario professionisti: mattina 6:30–13:00, pomeriggio 13:00–19:00
 function calFasciaGet(){
-  if(!state.calFascia) state.calFascia = new Date().getHours()>=13 ? 'pomeriggio' : 'mattina';
+  if(!state.calFascia) state.calFascia = 'giorno'; // di default si vede tutta la giornata
   return state.calFascia;
 }
 function calStartMin(){ return calFasciaGet()==='pomeriggio' ? 780 : 390; } // 'giorno' = tutta la giornata 6:30–19:00
