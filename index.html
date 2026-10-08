@@ -66,6 +66,8 @@ body.client-auth-mode #btnEsercizi,
 body.client-auth-mode #btnBlocchiOperativi,
 body.client-auth-mode #btnHelp{display:none;}
 body.seg-only-mode #btnCalendario,
+body.seg-only-mode #btnAvvisi,
+body.seg-only-mode #btnSegnalazioni,
 body.seg-only-mode #btnTemplate,
 body.seg-only-mode #btnEsercizi,
 body.seg-only-mode #btnBlocchiOperativi{display:none;}
@@ -3464,7 +3466,7 @@ async function bootApp(){
   renderRichBadge();
   document.body.classList.toggle('seg-only-mode', isSegreteriaOnly());
   renderClientiList('');
-  if(isSegreteriaOnly()) segNavigate('calendario');
+  if(isSegreteriaOnly()) segNavigate(state.richieste.some(r=>r.stato==='in attesa') ? 'richieste' : 'calendario');
   else showView('clienti');
 }
 
@@ -8498,7 +8500,7 @@ function seedSeenSegnalazioni(){
   state.seenSegnalazioniIds = new Set(segnalazioniPerMe().filter(s=>!s.letta).map(s=>s.id));
 }
 async function pollNuoveSegnalazioni(){
-  if(!dbEnabled || !sb || !state.professionista) return;
+  if(!dbEnabled || !sb || !state.professionista || isSegreteriaOnly()) return;
   try{
     const { data, error } = await sb.from('segnalazioni').select('*').eq('a_professionista_id', state.professionista.id).eq('letta', false);
     if(error){ console.error('poll segnalazioni (probabile migrazione mancante)', error); return; }
@@ -8524,6 +8526,11 @@ function renderRichBadge(){
   badge.style.display = n>0 ? 'inline-block' : 'none';
   renderAvvisiBadge();
   renderSegnalazioniBadge();
+  try{
+    const sa = document.getElementById('segreteriaArea');
+    if(sa && sa.style.display==='block'){ renderSegBar('segTabs', state.segTab); if(state.segTab==='richieste') renderSegRichieste(document.getElementById('segContent')); }
+    else if(state.segFlag && document.getElementById('segBarCal')) renderSegBar('segBarCal', state.calViewMode==='multi' ? (state.calMultiSolo ? 'giorno' : 'multi') : 'calendario');
+  }catch(ex){}
 }
 
 function getReadinessAlerts(){
@@ -11521,8 +11528,9 @@ function renderSegRichieste(box){
 }
 function renderSegBar(id, active){
   const el = document.getElementById(id); if(!el) return;
-  const items = [['calendario','Calendario'],['giorno','Giornaliero professionista'],['multi','Multicalendario giornaliero'],['clienti','Clienti'],['appuntamento','Nuovo appuntamento multi-professionista'],['richieste','Richieste di spostamento']];
-  el.innerHTML = `<div class="cal-mode-toggle">${items.map(([k,l])=>`<div class="cal-mode-opt ${k===active?'active':''}" data-segnav="${k}">${l}</div>`).join('')}</div>`;
+  const nRich = state.richieste.filter(r=>r.stato==='in attesa').length;
+  const items = [['richieste','Richieste di spostamento'],['calendario','Calendario'],['giorno','Giornaliero professionista'],['multi','Multicalendario giornaliero'],['clienti','Clienti'],['appuntamento','Nuovo appuntamento multi-professionista']];
+  el.innerHTML = `<div class="cal-mode-toggle">${items.map(([k,l])=>`<div class="cal-mode-opt ${k===active?'active':''}" data-segnav="${k}">${l}${k==='richieste' && nRich ? ` <span class="rich-badge" style="display:inline-block;">${nRich}</span>` : ''}</div>`).join('')}</div>`;
   el.querySelectorAll('[data-segnav]').forEach(b=> b.onclick = ()=> segNavigate(b.dataset.segnav));
 }
 function segNavigate(k){
