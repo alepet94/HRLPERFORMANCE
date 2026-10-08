@@ -2049,6 +2049,7 @@ body[data-theme="light"]{
     <div class="cal-mode-toggle">
       <div class="cal-mode-opt active" data-calmode="settimana">Settimana</div>
       <div class="cal-mode-opt" data-calmode="mese">Mese</div>
+      <div class="cal-mode-opt" id="calModeGiorno" data-calmode="giorno" style="display:none;">Giornaliero</div>
       <div class="cal-mode-opt" id="calModeMulti" data-calmode="multi" style="display:none;">Multicalendario</div>
     </div>
     <div class="cal-nav">
@@ -10507,6 +10508,8 @@ function renderCalendar(){
   const manageAll = canManageAll();
   const modeMultiBtn = document.getElementById('calModeMulti');
   if(modeMultiBtn) modeMultiBtn.style.display = manageAll ? 'inline-block' : 'none';
+  const modeGiornoBtn = document.getElementById('calModeGiorno');
+  if(modeGiornoBtn) modeGiornoBtn.style.display = manageAll ? 'inline-block' : 'none';
   if(!manageAll && state.calViewMode==='multi') state.calViewMode = 'settimana';
   const ft = document.getElementById('calFasciaToggle');
   if(ft){
@@ -10519,7 +10522,7 @@ function renderCalendar(){
   const segBar = document.getElementById('segBarCal');
   if(segBar){
     segBar.style.display = state.segFlag ? 'block' : 'none';
-    if(state.segFlag) renderSegBar('segBarCal', state.calViewMode==='multi' ? 'multi' : 'calendario');
+    if(state.segFlag) renderSegBar('segBarCal', state.calViewMode==='multi' ? (state.calMultiSolo ? 'giorno' : 'multi') : 'calendario');
     const bb = document.getElementById('btnBackToPathway'); if(bb) bb.style.display = state.segFlag ? 'none' : '';
   }
   renderCalFilterProf();
@@ -10583,7 +10586,9 @@ function renderCalendarMulti(){
   document.getElementById('calRangeLabel').textContent = dateLabel;
   document.getElementById('calSettings').innerHTML = '';
 
-  const cols = [
+  const cols = state.calMultiSolo
+    ? state.professionisti.filter(p=>(state.calDayProfIds||[]).includes(p.id)).map(p=>({kind:'prof', id:p.id, label:p.nome, sub:p.area||'', obj:p}))
+    : [
     ...state.professionisti.map(p=>({kind:'prof', id:p.id, label:p.nome, sub:p.area||'', obj:p})),
     ...state.spazi.map(s=>({kind:'spazio', id:s.id, label:s.nome, sub:'Spazio comune', obj:s}))
   ].filter(col=> !state.calMultiHidden.has(multiColKey(col.kind, col.id)));
@@ -10596,7 +10601,7 @@ function renderCalendarMulti(){
   const grid = document.getElementById('calMultiGrid');
   if(!cols.length){
     grid.style.gridTemplateColumns = '52px 1fr';
-    grid.innerHTML = `<div class="cal-axis-head"></div><div class="cal-col-head">Nessuna colonna visibile — usa "Colonne visibili" per mostrarne almeno una.</div>`;
+    grid.innerHTML = `<div class="cal-axis-head"></div><div class="cal-col-head">Nessuna colonna visibile — usa il menu in alto per scegliere almeno un professionista.</div>`;
     return;
   }
   grid.style.gridTemplateColumns = `52px repeat(${cols.length}, minmax(160px, 1fr))`;
@@ -10689,6 +10694,23 @@ function renderCalMultiVisDropdown(){
   const dd = document.getElementById('calMultiVisDropdown');
   if(!wrap || !dd) return;
   wrap.style.display = state.calViewMode==='multi' ? 'inline-block' : 'none';
+  const visBtn = document.getElementById('calMultiVisBtn');
+  if(visBtn) visBtn.textContent = state.calMultiSolo ? 'Professionisti da vedere' : 'Colonne visibili';
+  if(state.calMultiSolo){
+    const sel = state.calDayProfIds || [];
+    dd.innerHTML = state.professionisti.filter(p=>p.area!=='Segreteria').map(p=>`
+      <label class="prof-dropdown-item" style="display:flex;align-items:center;gap:8px;">
+        <input type="checkbox" data-dayprof="${p.id}" ${sel.includes(p.id)?'checked':''}> ${escHtml(p.nome+(p.area?' ('+p.area+')':''))}
+      </label>`).join('');
+    dd.querySelectorAll('[data-dayprof]').forEach(chk=>{
+      chk.onchange = ()=>{
+        const cur = state.calDayProfIds || [];
+        state.calDayProfIds = chk.checked ? cur.concat([chk.dataset.dayprof]) : cur.filter(x=>x!==chk.dataset.dayprof);
+        renderCalendarMulti();
+      };
+    });
+    return;
+  }
   const items = [
     ...state.professionisti.map(p=>({key:multiColKey('prof',p.id), label:p.nome+(p.area?' ('+p.area+')':'')})),
     ...state.spazi.map(s=>({key:multiColKey('spazio',s.id), label:s.nome+' (spazio)'}))
@@ -10809,13 +10831,6 @@ function renderCalendarWeek(){
         <div class="cb-time">${ev.start}–${ev.end}</div>
       </div>`;
     });
-    if(!off){
-      computeFreeWindows(dateStr).forEach(w=>{
-        const top = (w.start - calStartMin())*PX;
-        const height = (w.end - w.start)*PX;
-        html += `<div class="cal-free" data-free-day="${dateStr}" data-free-start="${w.start}" data-free-end="${w.end}" style="top:${top}px;height:${height}px;">+ ${w.end-w.start} min</div>`;
-      });
-    }
     html += `</div>`;
   });
 
@@ -11401,19 +11416,19 @@ function renderSegRichieste(box){
 }
 function renderSegBar(id, active){
   const el = document.getElementById(id); if(!el) return;
-  const items = [['calendario','Calendario'],['multi','Multicalendario giornaliero'],['clienti','Clienti'],['appuntamento','Nuovo appuntamento multi-professionista'],['richieste','Richieste di spostamento']];
+  const items = [['calendario','Calendario'],['giorno','Giornaliero professionista'],['multi','Multicalendario giornaliero'],['clienti','Clienti'],['appuntamento','Nuovo appuntamento multi-professionista'],['richieste','Richieste di spostamento']];
   el.innerHTML = `<div class="cal-mode-toggle">${items.map(([k,l])=>`<div class="cal-mode-opt ${k===active?'active':''}" data-segnav="${k}">${l}</div>`).join('')}</div>`;
   el.querySelectorAll('[data-segnav]').forEach(b=> b.onclick = ()=> segNavigate(b.dataset.segnav));
 }
 function segNavigate(k){
   state.segFlag = true;
-  if(k==='calendario' || k==='multi'){
+  if(k==='calendario' || k==='multi' || k==='giorno'){
     if(k==='calendario' && !state.calFilterProfId){
       const p = state.professionisti.find(x=>x.area!=='Segreteria');
       if(p) state.calFilterProfId = p.id;
     }
     showView('calendario');
-    document.querySelector(k==='multi' ? '#calModeMulti' : '[data-calmode="settimana"]').click();
+    document.querySelector(k==='multi' ? '#calModeMulti' : (k==='giorno' ? '#calModeGiorno' : '[data-calmode="settimana"]')).click();
   } else {
     state.segTab = k; showView('segreteria'); renderSegreteria();
   }
@@ -11454,6 +11469,14 @@ document.getElementById('btnWeekNext').onclick = ()=>{
 document.querySelectorAll('#calendarArea [data-calmode]').forEach(opt=>{
   opt.onclick = ()=>{
     state.calViewMode = opt.dataset.calmode;
+    state.calMultiSolo = state.calViewMode==='giorno';
+    if(state.calMultiSolo){
+      state.calViewMode = 'multi';
+      if(!(state.calDayProfIds||[]).length){
+        const first = state.calFilterProfId || (state.professionista && state.professionista.area!=='Segreteria' ? state.professionista.id : null) || (state.professionisti.find(p=>p.area!=='Segreteria')||{}).id;
+        state.calDayProfIds = first ? [first] : [];
+      }
+    }
     if(state.calViewMode==='multi' && !state.calMultiDay) state.calMultiDay = fmtDateISO(new Date());
     document.querySelectorAll('#calendarArea [data-calmode]').forEach(o=>o.classList.toggle('active', o===opt));
     document.getElementById('calWeekWrap').style.display = state.calViewMode==='settimana' ? 'block' : 'none';
