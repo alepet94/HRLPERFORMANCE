@@ -988,6 +988,9 @@ header.top{
 .cal-recv-block.cal-nondisp-block .crb-label:hover{background:rgba(224,119,106,0.22);}
 .cal-block[draggable="true"]{cursor:grab;}
 .cal-block.dragging{opacity:0.4;}
+.cal-block.movable{cursor:grab;user-select:none;}
+.cal-block.moving{cursor:grabbing;z-index:50;box-shadow:0 6px 18px rgba(0,0,0,.45);opacity:.92;transition:none;}
+.cal-mv-tip{position:fixed;z-index:9999;background:#000;color:#fff;font-size:12px;padding:4px 8px;border-radius:5px;pointer-events:none;border:1px solid var(--gold);}
 .cal-day-col.drop-target{box-shadow:inset 0 0 0 2px var(--gold);}
 .cal-drag-select{
   position:absolute;left:3px;right:3px;border-radius:3px;
@@ -2051,6 +2054,10 @@ body[data-theme="light"]{
       <div class="cal-range" id="calRangeLabel"></div>
       <button class="btn-ghost" id="btnWeekNext">›</button>
     </div>
+    <div class="cal-mode-toggle" id="calFasciaToggle">
+      <div class="cal-mode-opt" data-calfascia="mattina">Mattina 6:30–13</div>
+      <div class="cal-mode-opt" data-calfascia="pomeriggio">Pomeriggio 13–19</div>
+    </div>
     <select class="btn-ghost" id="calFilterProf" style="display:none;"></select>
     <div class="prof-add-wrap" id="calMultiVisWrap" style="display:none;">
       <button type="button" class="btn-ghost" id="calMultiVisBtn">Colonne visibili</button>
@@ -2119,6 +2126,15 @@ body[data-theme="light"]{
     <h3>Disponibilità settimanale</h3>
     <p style="font-size:12.5px;color:var(--ink-mute);margin:-8px 0 16px;">Imposta i blocchi orari in cui ricevi i pazienti: si ripetono automaticamente ogni settimana finché non li modifichi o li rimuovi. Per ogni blocco puoi indicare quanti pazienti puoi seguire in contemporanea nella stessa ora.</p>
     <div id="dispRicorrenteContent"></div>
+  </div>
+</div>
+
+<div class="modal-bg" id="eventInfoModal">
+  <div class="modal">
+    <button class="modal-close" id="closeEventInfo">×</button>
+    <button class="modal-close" id="editEventInfo" title="Modifica appuntamento" style="margin-right:14px;">✎</button>
+    <h3 id="eventInfoTitle">Appuntamento</h3>
+    <div id="eventInfoContent"></div>
   </div>
 </div>
 
@@ -10358,6 +10374,22 @@ function downloadScheda(scheda){
 
 // ---------------- calendario: helpers ----------------
 function timeToMinutes(t){ const [h,m]=t.split(':').map(Number); return h*60+m; }
+// fasce del calendario professionisti: mattina 6:30–13:00, pomeriggio 13:00–19:00
+function calFasciaGet(){
+  if(!state.calFascia) state.calFascia = new Date().getHours()>=13 ? 'pomeriggio' : 'mattina';
+  return state.calFascia;
+}
+function calStartMin(){ return calFasciaGet()==='pomeriggio' ? 780 : 390; }
+function calEndMin(){ return calFasciaGet()==='pomeriggio' ? 1140 : 780; }
+function calClamp(s,e){ const a=Math.max(s,calStartMin()), b=Math.min(e,calEndMin()); return b>a ? [a,b] : null; }
+function calHourLabels(PX){
+  let h = '';
+  for(let m=Math.ceil(calStartMin()/30)*30; m<=calEndMin(); m+=30){
+    const hh=Math.floor(m/60), mm=m%60;
+    h += `<div class="hr-label" style="top:${(m-calStartMin())*PX}px;">${hh}:${mm?'30':'00'}</div>`;
+  }
+  return h;
+}
 function minutesToTime(m){ const h=Math.floor(m/60), mm=m%60; return String(h).padStart(2,'0')+':'+String(mm).padStart(2,'0'); }
 function mondayOf(d){ const r=new Date(d); const day=r.getDay(); const diff=(day===0?-6:1-day); r.setDate(r.getDate()+diff); r.setHours(0,0,0,0); return r; }
 function addDays(d,n){ const r=new Date(d); r.setDate(r.getDate()+n); return r; }
@@ -10386,8 +10418,8 @@ function suggestedRetestDate(){
 function computeFreeWindows(dateStr, excludeId){
   const cs = state.calSettings;
   const dayEvents = state.appuntamenti.filter(a=>a.day===dateStr && a.id!==excludeId).sort((a,b)=>timeToMinutes(a.start)-timeToMinutes(b.start));
-  let cursor = cs.startHour*60;
-  const endMin = cs.endHour*60;
+  let cursor = calStartMin();
+  const endMin = calEndMin();
   const free = [];
   dayEvents.forEach(ev=>{
     const s=timeToMinutes(ev.start), e=timeToMinutes(ev.end);
@@ -10446,6 +10478,14 @@ function renderCalendar(){
   const modeMultiBtn = document.getElementById('calModeMulti');
   if(modeMultiBtn) modeMultiBtn.style.display = manageAll ? 'inline-block' : 'none';
   if(!manageAll && state.calViewMode==='multi') state.calViewMode = 'settimana';
+  const ft = document.getElementById('calFasciaToggle');
+  if(ft){
+    ft.style.display = state.calViewMode==='mese' ? 'none' : '';
+    ft.querySelectorAll('[data-calfascia]').forEach(o=>{
+      o.classList.toggle('active', o.dataset.calfascia===calFasciaGet());
+      o.onclick = ()=>{ state.calFascia = o.dataset.calfascia; renderCalendar(); };
+    });
+  }
   const segBar = document.getElementById('segBarCal');
   if(segBar){
     segBar.style.display = state.segFlag ? 'block' : 'none';
@@ -10521,7 +10561,7 @@ function renderCalendarMulti(){
   renderCalMultiVisDropdown();
 
   const PX = 1.2;
-  const totalMin = (cs.endHour - cs.startHour)*60;
+  const totalMin = (calEndMin() - calStartMin());
   const gridHeight = Math.max(totalMin*PX, 100);
   const grid = document.getElementById('calMultiGrid');
   if(!cols.length){
@@ -10540,17 +10580,16 @@ function renderCalendarMulti(){
   });
 
   html += `<div class="cal-axis" style="height:${gridHeight}px;">`;
-  for(let h=cs.startHour; h<=cs.endHour; h++){
-    html += `<div class="hr-label" style="top:${(h-cs.startHour)*60*PX}px;">${h}:00</div>`;
-  }
+  html += calHourLabels(PX);
   html += `</div>`;
 
   cols.forEach(col=>{
     html += `<div class="cal-day-col" data-multicol-kind="${col.kind}" data-multicol-id="${col.id}" style="height:${gridHeight}px;">`;
     if(col.kind==='prof'){
       state.disponibilitaRicorrenti.filter(b=>dispBlockAppliesTo(b,dateStr,dow) && b.professionistaId===col.id).forEach(b=>{
-        const s = timeToMinutes(b.start), e = timeToMinutes(b.end);
-        const top = (s - cs.startHour*60)*PX;
+        const cl = calClamp(timeToMinutes(b.start), timeToMinutes(b.end)); if(!cl) return;
+        const s = cl[0], e = cl[1];
+        const top = (s - calStartMin())*PX;
         const height = Math.max((e-s)*PX, 4);
         const isNd = b.tipo==='non_disponibile';
         const blockCls = isNd ? 'cal-recv-block cal-nondisp-block' : 'cal-recv-block';
@@ -10558,8 +10597,9 @@ function renderCalendarMulti(){
         html += `<div class="${blockCls}" style="top:${top}px;height:${height}px;"><span class="crb-label">${labelTxt}</span></div>`;
       });
       nonAvailableRangesForProfDay(col.id, dateStr, dow).forEach(g=>{
-        const top = (g.s - cs.startHour*60)*PX;
-        const height = (g.e - g.s)*PX;
+        const gc = calClamp(g.s, g.e); if(!gc) return;
+        const top = (gc[0] - calStartMin())*PX;
+        const height = (gc[1] - gc[0])*PX;
         html += `<div class="cal-off-hours" style="top:${top}px;height:${height}px;"></div>`;
       });
     }
@@ -10573,8 +10613,9 @@ function renderCalendarMulti(){
     });
     const colLanes = calLaneStyles(colEvents);
     colEvents.forEach(ev=>{
-      const s = timeToMinutes(ev.start), e = timeToMinutes(ev.end);
-      const top = (s - cs.startHour*60)*PX;
+      const cl = calClamp(timeToMinutes(ev.start), timeToMinutes(ev.end)); if(!cl) return;
+      const s = cl[0], e = cl[1];
+      const top = (s - calStartMin())*PX;
       const height = Math.max((e-s)*PX, 16);
       const evClient = ev.clienteId ? state.clienti.find(c=>c.id===ev.clienteId) : null;
       const colorStyle = ev.colore ? `border-color:${ev.colore};background:${ev.colore}22;` : '';
@@ -10592,7 +10633,7 @@ function renderCalendarMulti(){
     const evEl = e.target.closest('[data-event-id]');
     if(evEl){
       const ev = state.appuntamenti.find(a=>a.id===evEl.dataset.eventId);
-      if(ev) openEventEditor(ev, true);
+      if(ev) openEventInfo(ev);
       return;
     }
     const col = e.target.closest('[data-multicol-kind]');
@@ -10600,9 +10641,9 @@ function renderCalendarMulti(){
     const kind = col.dataset.multicolKind, id = col.dataset.multicolId;
     const rect = col.getBoundingClientRect();
     const offsetY = e.clientY - rect.top;
-    let startMin = cs.startHour*60 + Math.round(offsetY/PX/15)*15;
-    startMin = Math.max(cs.startHour*60, Math.min(startMin, cs.endHour*60 - 30));
-    const endMin = Math.min(startMin + 60, cs.endHour*60);
+    let startMin = calStartMin() + Math.round(offsetY/PX/15)*15;
+    startMin = Math.max(calStartMin(), Math.min(startMin, calEndMin() - 30));
+    const endMin = Math.min(startMin + 60, calEndMin());
     openEventEditor({
       day: dateStr, start: minutesToTime(startMin), end: minutesToTime(endMin), tipo:'impegno',
       professionistaId: kind==='prof' ? id : null,
@@ -10672,7 +10713,7 @@ function renderCalendarWeek(){
     : '';
 
   const PX = 1.2;
-  const totalMin = (cs.endHour - cs.startHour)*60;
+  const totalMin = (calEndMin() - calStartMin());
   const gridHeight = Math.max(totalMin*PX, 100);
 
   const todayStrOp = fmtDateISO(new Date());
@@ -10689,9 +10730,7 @@ function renderCalendarWeek(){
   });
 
   html += `<div class="cal-axis" style="height:${gridHeight}px;">`;
-  for(let h=cs.startHour; h<=cs.endHour; h++){
-    html += `<div class="hr-label" style="top:${(h-cs.startHour)*60*PX}px;">${h}:00</div>`;
-  }
+  html += calHourLabels(PX);
   html += `</div>`;
 
   weekDates.forEach(d=>{
@@ -10703,8 +10742,9 @@ function renderCalendarWeek(){
     const recvProfId = canManageAll() ? state.calFilterProfId : (state.professionista ? state.professionista.id : null);
     if(recvProfId){
       state.disponibilitaRicorrenti.filter(b=>dispBlockAppliesTo(b,dateStr,dow) && b.professionistaId===recvProfId).forEach(b=>{
-        const s = timeToMinutes(b.start), e = timeToMinutes(b.end);
-        const top = (s - cs.startHour*60)*PX;
+        const cl = calClamp(timeToMinutes(b.start), timeToMinutes(b.end)); if(!cl) return;
+        const s = cl[0], e = cl[1];
+        const top = (s - calStartMin())*PX;
         const height = Math.max((e-s)*PX, 4);
         const isNd = b.tipo==='non_disponibile';
         const blockCls = isNd ? 'cal-recv-block cal-nondisp-block' : 'cal-recv-block';
@@ -10716,22 +10756,24 @@ function renderCalendarWeek(){
       // d'occhio dove non c'è ricevimento — resta comunque cliccabile per
       // inserire un appuntamento/impegno, con avviso al salvataggio
       nonAvailableRangesForProfDay(recvProfId, dateStr, dow).forEach(g=>{
-        const top = (g.s - cs.startHour*60)*PX;
-        const height = (g.e - g.s)*PX;
+        const gc = calClamp(g.s, g.e); if(!gc) return;
+        const top = (gc[0] - calStartMin())*PX;
+        const height = (gc[1] - gc[0])*PX;
         html += `<div class="cal-off-hours" style="top:${top}px;height:${height}px;"></div>`;
       });
     }
     const dayEvs = state.appuntamenti.filter(a=>a.day===dateStr && apptMatchesCalFilter(a));
     const dayLanes = calLaneStyles(dayEvs);
     dayEvs.forEach(ev=>{
-      const s = timeToMinutes(ev.start), e = timeToMinutes(ev.end);
-      const top = (s - cs.startHour*60)*PX;
+      const cl = calClamp(timeToMinutes(ev.start), timeToMinutes(ev.end)); if(!cl) return;
+      const s = cl[0], e = cl[1];
+      const top = (s - calStartMin())*PX;
       const height = Math.max((e-s)*PX, 16);
       const evClient = ev.clienteId ? state.clienti.find(c=>c.id===ev.clienteId) : null;
       const evProfId = ev.professionistaId || (evClient ? clienteProfIds(evClient)[0] : null);
       const evProf = (canManageAll() && !state.calFilterProfId && evProfId) ? state.professionisti.find(p=>p.id===evProfId) : null;
       const colorStyle = ev.colore ? `border-color:${ev.colore};background:${ev.colore}22;` : '';
-      html += `<div class="cal-block tipo-${ev.tipo}" draggable="true" data-event-id="${ev.id}" style="top:${top}px;height:${height}px;${colorStyle}${dayLanes[ev.id]||''}">
+      html += `<div class="cal-block movable tipo-${ev.tipo}" data-event-id="${ev.id}" style="top:${top}px;height:${height}px;${colorStyle}${dayLanes[ev.id]||''}">
         <div${ev.colore ? ` style="color:${ev.colore};"` : ''}>${ev.titolo || tipoLabel(ev.tipo)}</div>
         ${evClient ? `<div class="cb-time">${evClient.nome}${evProf?' · '+evProf.nome:''}</div>` : ''}
         <div class="cb-time">${ev.start}–${ev.end}</div>
@@ -10739,7 +10781,7 @@ function renderCalendarWeek(){
     });
     if(!off){
       computeFreeWindows(dateStr).forEach(w=>{
-        const top = (w.start - cs.startHour*60)*PX;
+        const top = (w.start - calStartMin())*PX;
         const height = (w.end - w.start)*PX;
         html += `<div class="cal-free" data-free-day="${dateStr}" data-free-start="${w.start}" data-free-end="${w.end}" style="top:${top}px;height:${height}px;">+ ${w.end-w.start} min</div>`;
       });
@@ -10830,6 +10872,24 @@ function openEventEditor(data, isEdit){
   renderEventModal();
   document.getElementById('eventModal').classList.add('open');
 }
+function openEventInfo(ev){
+  const c = ev.clienteId ? state.clienti.find(x=>x.id===ev.clienteId) : null;
+  const pid = ev.professionistaId || (c ? clienteProfIds(c)[0] : null);
+  const prof = pid ? state.professionisti.find(p=>p.id===pid) : null;
+  const sp = ev.spazioId ? (state.spazi||[]).find(x=>x.id===ev.spazioId) : null;
+  const row = (l,v)=> v ? `<div class="ev-field"><label>${l}</label><div style="white-space:pre-wrap;">${v}</div></div>` : '';
+  document.getElementById('eventInfoTitle').textContent = ev.titolo || tipoLabel(ev.tipo);
+  document.getElementById('eventInfoContent').innerHTML =
+    row('Tipo', escHtml(tipoLabel(ev.tipo))) +
+    row('Data e ora', `${ev.day.split('-').reverse().join('/')} · ${ev.start}–${ev.end}`) +
+    row('Cliente', c ? escHtml(c.nome) : '') +
+    row('Professionista', prof ? escHtml(prof.nome)+(prof.area?' ('+escHtml(prof.area)+')':'') : '') +
+    row('Spazio', sp ? escHtml(sp.nome) : '') +
+    row('Note', ev.noteSessione ? escHtml(ev.noteSessione) : '');
+  state.eventInfoId = ev.id;
+  document.getElementById('eventInfoModal').classList.add('open');
+}
+function closeEventInfo(){ document.getElementById('eventInfoModal').classList.remove('open'); state.eventInfoId = null; }
 function closeEventModal(){
   document.getElementById('eventModal').classList.remove('open');
   state.eventEditor = null;
@@ -11150,9 +11210,9 @@ function segFindFirstFree(profIds, durMin, fromDay, fromMin, exclId){
     const d = new Date(day + 'T00:00:00'); d.setDate(d.getDate()+i);
     const ds = fmtDateISO(d);
     if(!cs.activeDays.includes(d.getDay())) continue;
-    let st = (ds===day) ? Math.max(minFrom, cs.startHour*60) : cs.startHour*60;
+    let st = (ds===day) ? Math.max(minFrom, 390) : 390;
     st = Math.ceil(st/15)*15;
-    for(; st+durMin <= cs.endHour*60; st+=15){
+    for(; st+durMin <= 1140; st+=15){
       if(profIds.every(p=> !segSlotConflict(p, ds, st, st+durMin, exclId))) return {day:ds, start:st, end:st+durMin};
     }
   }
@@ -11389,7 +11449,7 @@ document.getElementById('calMonthGrid').addEventListener('click', (e)=>{
   const evEl = e.target.closest('[data-event-id]');
   if(evEl){
     const ev = state.appuntamenti.find(a=>a.id===evEl.dataset.eventId);
-    if(ev) openEventEditor(ev, true);
+    if(ev) openEventInfo(ev);
     return;
   }
   const moreEl = e.target.closest('[data-goweek]');
@@ -11414,6 +11474,13 @@ document.getElementById('btnNewImpegno').onclick = ()=>{
   openEventEditor({day: fmtDateISO(new Date()), start:'09:00', end:'10:00', tipo:'impegno'}, false);
 };
 document.getElementById('closeEvent').onclick = closeEventModal;
+document.getElementById('closeEventInfo').onclick = closeEventInfo;
+document.getElementById('eventInfoModal').onclick = (e)=>{ if(e.target.id==='eventInfoModal') closeEventInfo(); };
+document.getElementById('editEventInfo').onclick = ()=>{
+  const ev = state.appuntamenti.find(a=>a.id===state.eventInfoId);
+  closeEventInfo();
+  if(ev) openEventEditor(ev, true);
+};
 document.getElementById('eventModal').onclick = (e)=>{ if(e.target.id==='eventModal') closeEventModal(); };
 document.getElementById('calGrid').addEventListener('click', (e)=>{
   if(window.__calDragSuppressClick){ window.__calDragSuppressClick = false; return; }
@@ -11440,7 +11507,7 @@ document.getElementById('calGrid').addEventListener('click', (e)=>{
   const evEl = e.target.closest('[data-event-id]');
   if(evEl){
     const ev = state.appuntamenti.find(a=>a.id===evEl.dataset.eventId);
-    if(ev) openEventEditor(ev, true);
+    if(ev) openEventInfo(ev);
     return;
   }
   // click su area vuota della colonna: aggiunta rapida (60 min di default)
@@ -11450,9 +11517,9 @@ document.getElementById('calGrid').addEventListener('click', (e)=>{
     const y = e.clientY - rect.top;
     const PX = 1.2;
     const cs = state.calSettings;
-    let startMin = cs.startHour*60 + Math.round((y/PX)/15)*15;
-    startMin = Math.max(cs.startHour*60, Math.min(startMin, cs.endHour*60 - 30));
-    const endMin = Math.min(startMin + 60, cs.endHour*60);
+    let startMin = calStartMin() + Math.round((y/PX)/15)*15;
+    startMin = Math.max(calStartMin(), Math.min(startMin, calEndMin() - 30));
+    const endMin = Math.min(startMin + 60, calEndMin());
     openEventEditor({
       day: col.dataset.day,
       start: minutesToTime(startMin),
@@ -11472,8 +11539,8 @@ document.getElementById('calGrid').addEventListener('mousedown', (e)=>{
   const PX = 1.2;
   const cs = state.calSettings;
   const yStart = e.clientY - rect.top;
-  let startMin = cs.startHour*60 + Math.round((yStart/PX)/15)*15;
-  startMin = Math.max(cs.startHour*60, Math.min(startMin, cs.endHour*60));
+  let startMin = calStartMin() + Math.round((yStart/PX)/15)*15;
+  startMin = Math.max(calStartMin(), Math.min(startMin, calEndMin()));
   __calDrag = { col, day: col.dataset.day, dow: parseInt(col.dataset.dow,10), startMin, curMin: startMin, startClientY: e.clientY, overlay: null, moved: false };
 });
 document.addEventListener('mousemove', (e)=>{
@@ -11485,8 +11552,8 @@ document.addEventListener('mousemove', (e)=>{
   const PX = 1.2;
   const cs = state.calSettings;
   const y = e.clientY - rect.top;
-  let curMin = cs.startHour*60 + Math.round((y/PX)/15)*15;
-  curMin = Math.max(cs.startHour*60, Math.min(curMin, cs.endHour*60));
+  let curMin = calStartMin() + Math.round((y/PX)/15)*15;
+  curMin = Math.max(calStartMin(), Math.min(curMin, calEndMin()));
   __calDrag.curMin = curMin;
   const lo = Math.min(__calDrag.startMin, curMin);
   const hi = Math.max(__calDrag.startMin, curMin);
@@ -11496,7 +11563,7 @@ document.addEventListener('mousemove', (e)=>{
     __calDrag.col.appendChild(ov);
     __calDrag.overlay = ov;
   }
-  __calDrag.overlay.style.top = ((lo - cs.startHour*60)*PX) + 'px';
+  __calDrag.overlay.style.top = ((lo - calStartMin())*PX) + 'px';
   __calDrag.overlay.style.height = Math.max((hi-lo)*PX, 4) + 'px';
 });
 document.addEventListener('mouseup', (e)=>{
@@ -11646,8 +11713,8 @@ document.getElementById('calGrid').addEventListener('drop', (e)=>{
   const cs = state.calSettings;
   const durMin = timeToMinutes(ev.end) - timeToMinutes(ev.start);
   const y = e.clientY - rect.top;
-  let newStart = cs.startHour*60 + Math.round((y/PX)/15)*15;
-  newStart = Math.max(cs.startHour*60, Math.min(newStart, cs.endHour*60 - durMin));
+  let newStart = calStartMin() + Math.round((y/PX)/15)*15;
+  newStart = Math.max(calStartMin(), Math.min(newStart, calEndMin() - durMin));
   const newEnd = newStart + durMin;
   const newDay = col.dataset.day;
   const conflict = checkDispConflict(ev, newDay, newStart, newEnd);
@@ -11664,6 +11731,84 @@ document.getElementById('calGrid').addEventListener('drop', (e)=>{
   ev.end = minutesToTime(newEnd);
   db.saveAppuntamento(ev);
   renderCalendar();
+});
+
+// ---------------- calendario: spostamento appuntamenti a trascinamento (scatti da 5 minuti) ----------------
+let __mv = null;
+function calApplyMove(ev, newDay, newStart){
+  const dur = timeToMinutes(ev.end) - timeToMinutes(ev.start);
+  const newEnd = newStart + dur;
+  const newStartTxt = minutesToTime(newStart);
+  if(ev.day===newDay && ev.start===newStartTxt){ renderCalendar(); return; }
+  const conflict = checkDispConflict(ev, newDay, newStart, newEnd);
+  if(conflict && !confirm(conflict + '\n\nSpostare comunque l\'appuntamento?')){ renderCalendar(); return; }
+  if(ev.clienteId){
+    notifyClienteSpostamento(ev.clienteId, `Il tuo appuntamento "${ev.titolo || tipoLabel(ev.tipo)}" è stato spostato: ora è il ${newDay.split('-').reverse().join('/')} alle ${newStartTxt}.`);
+  }
+  ev.day = newDay; ev.start = newStartTxt; ev.end = minutesToTime(newEnd);
+  db.saveAppuntamento(ev);
+  renderCalendar();
+}
+document.getElementById('calGrid').addEventListener('mousedown', (e)=>{
+  if(e.button!==0) return;
+  const el = e.target.closest('.cal-block[data-event-id]');
+  if(!el) return;
+  const ev = state.appuntamenti.find(a=>a.id===el.dataset.eventId);
+  if(!ev) return;
+  const r = el.getBoundingClientRect();
+  __mv = { el, ev, grabY: e.clientY - r.top, x0: e.clientX, y0: e.clientY, moved:false,
+    dur: timeToMinutes(ev.end)-timeToMinutes(ev.start), newDay: ev.day, newStart: timeToMinutes(ev.start), tip:null, col: el.parentNode };
+});
+document.addEventListener('mousemove', (e)=>{
+  if(!__mv) return;
+  if(!__mv.moved){
+    if(Math.abs(e.clientX-__mv.x0) < 5 && Math.abs(e.clientY-__mv.y0) < 5) return;
+    __mv.moved = true;
+    __mv.el.classList.add('moving');
+    __mv.tip = document.createElement('div'); __mv.tip.className = 'cal-mv-tip'; document.body.appendChild(__mv.tip);
+  }
+  const PX = 1.2;
+  let col = __mv.col;
+  document.querySelectorAll('#calGrid .cal-day-col:not(.off)').forEach(c=>{
+    const rc = c.getBoundingClientRect();
+    if(e.clientX>=rc.left && e.clientX<rc.right) col = c;
+  });
+  if(col !== __mv.col){
+    col.appendChild(__mv.el); __mv.col = col;
+    __mv.el.style.left = '3px'; __mv.el.style.right = '3px'; __mv.el.style.width = '';
+  }
+  const rc = col.getBoundingClientRect();
+  let start = calStartMin() + Math.round(((e.clientY - rc.top - __mv.grabY)/PX)/5)*5;
+  start = Math.max(calStartMin(), Math.min(start, Math.max(calStartMin(), calEndMin() - __mv.dur)));
+  __mv.newStart = start; __mv.newDay = col.dataset.day;
+  __mv.el.style.top = ((start - calStartMin())*PX) + 'px';
+  const d = new Date(__mv.newDay + 'T00:00:00');
+  __mv.tip.textContent = `${WEEKDAY_NAMES[d.getDay()]} ${d.getDate()}/${d.getMonth()+1} · ${minutesToTime(start)}–${minutesToTime(start+__mv.dur)}`;
+  __mv.tip.style.left = (e.clientX + 14) + 'px'; __mv.tip.style.top = (e.clientY + 14) + 'px';
+});
+document.addEventListener('mouseup', ()=>{
+  if(!__mv) return;
+  const m = __mv; __mv = null;
+  if(!m.moved) return;
+  if(m.tip) m.tip.remove();
+  window.__calDragSuppressClick = true;
+  setTimeout(()=>{ window.__calDragSuppressClick = false; }, 80);
+  calApplyMove(m.ev, m.newDay, m.newStart);
+});
+document.addEventListener('keydown', (e)=>{
+  if(e.key==='Escape' && __mv && __mv.moved){ if(__mv.tip) __mv.tip.remove(); __mv = null; renderCalendar(); }
+});
+// tasto destro su un punto vuoto del calendario settimanale: nuovo appuntamento
+document.getElementById('calGrid').addEventListener('contextmenu', (e)=>{
+  const evEl = e.target.closest('[data-event-id]');
+  if(evEl){ e.preventDefault(); const ev = state.appuntamenti.find(a=>a.id===evEl.dataset.eventId); if(ev) openEventInfo(ev); return; }
+  const col = e.target.closest('.cal-day-col');
+  if(!col || col.classList.contains('off')) return;
+  e.preventDefault();
+  const rect = col.getBoundingClientRect();
+  let startMin = calStartMin() + Math.round(((e.clientY - rect.top)/1.2)/15)*15;
+  startMin = Math.max(calStartMin(), Math.min(startMin, calEndMin() - 30));
+  openEventEditor({ day: col.dataset.day, start: minutesToTime(startMin), end: minutesToTime(Math.min(startMin+60, calEndMin())) }, false);
 });
 
 // ---------------- template (libreria di schede riutilizzabili) ----------------
