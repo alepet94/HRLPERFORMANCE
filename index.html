@@ -1927,6 +1927,8 @@ body[data-theme="light"]{
       <div class="cal-range" id="clientWeekListRangeLabel" style="font-size:11.5px;color:var(--ink-mute);"></div>
     </div>
     <div id="clientUpcomingList"></div>
+
+    <div id="segUpcomingBox" style="display:none;margin-top:24px;"></div>
   </div>
 
   <div class="val-wrap" id="valutazioniWrap" style="display:none;">
@@ -2631,7 +2633,7 @@ function areaAccessForProfessionista(prof){
   }
   const area = prof.area || '';
   if(area==='Segreteria'){
-    return {tabs:['storico','calendario'], ahSub:null, isAdmin:false, isSegreteria:true};
+    return {tabs:['calendario','storico'], ahSub:null, isAdmin:false, isSegreteria:true};
   }
   const tabs = ['valutazioni','sistema','storico','calendario'];
   let ahSub = null;
@@ -3862,6 +3864,7 @@ function renderCliTabs(){
   document.querySelectorAll('#cliTabs .cli-tab').forEach(t=>{
     const visible = access.tabs.includes(t.dataset.tab);
     t.style.display = visible ? '' : 'none';
+    t.style.order = access.isSegreteria ? (t.dataset.tab==='calendario' ? '-1' : '0') : '';
     t.classList.toggle('active', t.dataset.tab===state.clientTab);
     t.onclick = ()=> activateClientTab(t.dataset.tab);
   });
@@ -7555,6 +7558,24 @@ function renderClientCalendar(){
   renderClientRichiesteInCorso(c);
   renderClientPathwayTimeline();
   renderClientCalGrid();
+  renderSegUpcoming(c);
+}
+// sotto il calendario, per Segreteria/admin: tutti i prossimi appuntamenti del cliente
+function renderSegUpcoming(c){
+  const box = document.getElementById('segUpcomingBox');
+  if(!box) return;
+  if(!canManageAll()){ box.style.display = 'none'; return; }
+  box.style.display = 'block';
+  const todayStr = fmtDateISO(new Date());
+  const nowHM = String(new Date().getHours()).padStart(2,'0')+':'+String(new Date().getMinutes()).padStart(2,'0');
+  const list = state.appuntamenti.filter(a=> a.clienteId===c.id && !a.esecuzione && (a.day>todayStr || (a.day===todayStr && a.end>=nowHM)))
+    .sort((a,b)=> (a.day+a.start).localeCompare(b.day+b.start));
+  box.innerHTML = `<div class="client-section-label-row"><div class="client-section-label">Prossimi appuntamenti</div></div>` +
+    (list.length ? `<div style="display:flex;flex-direction:column;gap:8px;margin-top:10px;">${list.map(a=>{
+      const pid = segApProf(a);
+      return `<div class="val-card"><div class="val-card-top"><div class="val-card-date">${segFmtDay(a.day)} · ${a.start}–${a.end}</div></div>
+        <div class="val-card-autore">${escHtml(a.titolo || tipoLabel(a.tipo))}${pid ? ' · '+escHtml(segNomeProf(pid)) : ''}</div></div>`;
+    }).join('')}</div>` : `<div class="val-empty">Nessun appuntamento in programma.</div>`);
 }
 
 // timeline "percorso" nell'area cliente: riusa lo stesso markup/CSS della
