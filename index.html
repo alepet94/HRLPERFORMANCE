@@ -61,6 +61,7 @@ body.client-auth-mode #btnClienti,
 body.client-auth-mode #btnDashboard,
 body.client-auth-mode #btnCalendario,
 body.client-auth-mode #btnSegreteria,
+body.client-auth-mode #btnFatturazione,
 body.client-auth-mode #btnTemplate,
 body.client-auth-mode #btnEsercizi,
 body.client-auth-mode #btnBlocchiOperativi,
@@ -1780,6 +1781,35 @@ body[data-theme="light"]{
 .paz-lk-none{color:var(--ink-mute);font-style:italic;}
 .paz-lk-empty{padding:8px 12px;font-size:12.5px;color:var(--ink-mute);}
 body[data-theme="light"] .paz-lk-list{background:#fff;border-color:#ccc;}
+.fat-toolbar{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;}
+.fat-filters{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px;}
+.fat-sum{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px;}
+.fat-sum>div{background:var(--navy-850);border:1px solid var(--line-soft);border-radius:6px;padding:10px 16px;min-width:130px;}
+.fat-sum span{display:block;font-size:11.5px;color:var(--ink-mute);}
+.fat-sum b{font-size:18px;color:var(--gold-bright);}
+.fat-table-wrap{overflow:auto;max-height:max(400px,calc(100vh - 380px));border:1px solid var(--line-soft);border-radius:6px;}
+.fat-table{width:100%;border-collapse:collapse;font-size:13.5px;}
+.fat-table th{position:sticky;top:0;background:var(--navy-800);text-align:left;padding:9px 10px;font-size:12px;color:var(--ink-dim);z-index:1;}
+.fat-table td{padding:8px 10px;border-top:1px solid var(--line-soft);}
+.fat-table tbody tr{cursor:pointer;}
+.fat-table tbody tr:hover{background:var(--gold-dim);}
+.fat-table .n{text-align:right;font-variant-numeric:tabular-nums;}
+.fat-pill{font-size:11.5px;padding:2px 9px;border-radius:10px;border:1px solid var(--line);color:var(--ink-dim);}
+.fat-pill.pagata{color:#4CAF50;border-color:#4CAF50;}
+.fat-pill.parziale{color:#E8A33D;border-color:#E8A33D;}
+.fat-pill.da_incassare{color:#E0776A;border-color:#E0776A;}
+.fat-box{border:1px solid var(--line-soft);border-radius:6px;padding:14px 16px;margin:0 0 14px;}
+.fat-box-t{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-mute);margin-bottom:10px;}
+.fat-rg-head,.fat-rg{display:grid;grid-template-columns:3fr .6fr .9fr .7fr .8fr .9fr 34px;gap:8px;align-items:center;margin-bottom:6px;}
+.fat-rg-head{font-size:11.5px;color:var(--ink-mute);}
+.fat-rg-tot{text-align:right;font-variant-numeric:tabular-nums;}
+.fat-lst-head,.fat-lst-row{display:grid;grid-template-columns:3fr 1fr .8fr 1fr 34px;gap:8px;align-items:center;margin-bottom:6px;}
+.fat-lst-head{font-size:11.5px;color:var(--ink-mute);}
+.fat-tot{display:flex;gap:18px;flex-wrap:wrap;justify-content:flex-end;}
+.fat-tot span{display:block;font-size:11.5px;color:var(--ink-mute);}
+.fat-tot .grand b{font-size:20px;color:var(--gold-bright);}
+.fat-pg{display:grid;grid-template-columns:110px 1fr auto 34px;gap:8px;align-items:center;padding:4px 0;border-bottom:1px solid var(--line-soft);}
+@media(max-width:700px){.fat-rg-head{display:none}.fat-rg{grid-template-columns:1fr 1fr}}
 </style>
 </head>
 <body>
@@ -1804,6 +1834,7 @@ body[data-theme="light"] .paz-lk-list{background:#fff;border-color:#ccc;}
     <button class="btn-ghost" id="btnDashboard">Dashboard</button>
     <button class="btn-ghost" id="btnCalendario">Calendario</button>
     <button class="btn-ghost" id="btnSegreteria" style="display:none;">Segreteria</button>
+    <button class="btn-ghost" id="btnFatturazione" style="display:none;">Fatturazione</button>
     <button class="btn-ghost" id="btnTemplate">Template</button>
     <button class="btn-ghost" id="btnEsercizi">Libreria esercizi</button>
     <button class="btn-ghost" id="btnBlocchiOperativi">Blocchi operativi</button>
@@ -2061,6 +2092,14 @@ body[data-theme="light"] .paz-lk-list{background:#fff;border-color:#ccc;}
   <div id="segTabs" style="margin:14px 0 20px;"></div>
   <div id="segContent"></div>
 </div>
+
+<div class="cli-wrap" id="fatturazioneArea" style="display:none;">
+  <div class="cli-header"><h2 style="margin:0;font-size:24px;">Fatturazione e pagamenti</h2></div>
+  <div id="fattContent" style="margin-top:16px;"></div>
+</div>
+<div class="modal-bg" id="fattModal"><div class="modal modal-wide" style="max-height:90vh;"><button class="modal-close" id="fattClose">×</button><h3 id="fattTitle">Fattura</h3><div id="fattBody"></div></div></div>
+<div class="modal-bg" id="fattImpModal"><div class="modal"><button class="modal-close" id="fattImpClose">×</button><h3>Dati emittente</h3><div id="fattImpBody"></div></div></div>
+<div class="modal-bg" id="fattListinoModal"><div class="modal modal-wide"><button class="modal-close" id="fattListinoClose">×</button><h3>Listino prestazioni</h3><div id="fattListinoBody"></div></div></div>
 
 <div class="cal-wrap" id="calendarArea" style="display:none;">
   <div id="segBarCal" style="display:none;margin-bottom:16px;"></div>
@@ -3158,14 +3197,18 @@ const db = {
         sb.from('notifiche_cliente').select('*'),
         sb.from('blocchi_operativi').select('*'),
         sb.from('segnalazioni').select('*'),
-        sb.from('spazi').select('*')
+        sb.from('spazi').select('*'),
+        sb.from('fatture').select('*'),
+        sb.from('listino_prestazioni').select('*'),
+        sb.from('dati_fiscali_clienti').select('*'),
+        sb.from('fatturazione_impostazioni').select('*').eq('id',1).maybeSingle()
       ]);
     } catch(ex){
       console.error('Supabase load exception', ex);
       db.lastError = (ex && ex.message) ? ex.message : String(ex);
       return false;
     }
-    const [c,a,r,f,cs,t,ex,dr,nc,bop,seg,spz] = results;
+    const [c,a,r,f,cs,t,ex,dr,nc,bop,seg,spz,fat,lst,dfi,fimp] = results;
     // "segnalazioni" e "spazi" sono tabelle nuove: se Ale non ha ancora
     // eseguito le relative migrazioni su Supabase, la select fallisce
     // (tabella inesistente) — non deve bloccare il caricamento di tutto il
@@ -3190,6 +3233,11 @@ const db = {
     state.notificheCliente = (nc.data || []).map(rowToNotifica);
     state.segnalazioni = seg.error ? [] : (seg.data || []).map(rowToSegnalazione);
     state.spazi = spz.error ? [] : (spz.data || []).map(rowToSpazio);
+    // fatturazione: tabelle nuove, errore tollerato (migrazione mancante o ruolo senza accesso)
+    state.fatture = fat.error ? [] : (fat.data || []).map(fattRowToFattura);
+    state.listino = lst.error ? [] : (lst.data || []).map(l=>({id:l.id, descrizione:l.descrizione, prezzo:+l.prezzo||0, aliquota:+l.aliquota||0, natura:l.natura||'N4'}));
+    state.datiFiscali = {}; if(!dfi.error) (dfi.data || []).forEach(x=>{ state.datiFiscali[x.cliente_id] = x.dati || {}; });
+    state.fattImp = (fimp && !fimp.error && fimp.data && fimp.data.dati) ? fimp.data.dati : {};
     if(bop.data && bop.data.length){
       state.blocchiOperativi = bop.data.map(rowToBlockOperativo);
     } else {
@@ -3741,6 +3789,8 @@ function showView(name){
   document.getElementById('calendarArea').style.display = name==='calendario' ? 'block' : 'none';
   if(name!=='calendario' && name!=='segreteria') state.segFlag = false;
   const sa = document.getElementById('segreteriaArea'); if(sa) sa.style.display = name==='segreteria' ? 'block' : 'none';
+  const fa = document.getElementById('fatturazioneArea'); if(fa) fa.style.display = name==='fatturazione' ? 'block' : 'none';
+  const fb = document.getElementById('btnFatturazione'); if(fb) fb.style.display = canManageAll() ? '' : 'none';
   const sb = document.getElementById('btnSegreteria'); if(sb) sb.style.display = canManageAll() ? '' : 'none';
   window.scrollTo(0,0);
 }
@@ -11546,6 +11596,451 @@ function segNavigate(k){
     state.segTab = k; showView('segreteria'); renderSegreteria();
   }
 }
+// ================= FATTURAZIONE (admin + Segreteria) =================
+const FATT_NATURE = [['N4','N4 – Esente art. 10 (prestazioni sanitarie)'],['N2.2','N2.2 – Non soggetta (regime forfettario)'],['N1','N1 – Escluso art. 15'],['N2.1','N2.1 – Non soggetta artt. 7-7septies']];
+const FATT_MODALITA = [['contanti','Contanti','MP01'],['carta','Carta / POS','MP08'],['bonifico','Bonifico','MP05'],['assegno','Assegno','MP02'],['altro','Altro','MP01']];
+const FATT_SDI = [['pronto','Pronto per invio'],['inviata','Inviata – attesa esito'],['consegnata','Consegnata'],['scartata','Scartata']];
+function fattInit(){
+  if(!state.fatture) state.fatture = [];
+  if(!state.listino) state.listino = [];
+  if(!state.datiFiscali) state.datiFiscali = {};
+  if(!state.fattImp) state.fattImp = {};
+  if(!state.fattFiltro) state.fattFiltro = {dal:new Date().getFullYear()+'-01-01', al:fmtDateISO(new Date()), q:'', stato:''};
+}
+function r2(x){ return Math.round((Number(x||0)+Number.EPSILON)*100)/100; }
+function fattEur(n){ return Number(n||0).toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function fattData(iso){ return iso ? String(iso).split('-').reverse().join('/') : ''; }
+function fattXmlEsc(x){ return String(x==null?'':x).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;'); }
+function fattNuovoId(p){ return p+'_'+Date.now()+'_'+Math.random().toString(36).slice(2,7); }
+function fattRigaTot(r){ return r2((+r.qta||0)*(+r.prezzo||0)); }
+function fattCalc(d){
+  const righe = d.righe || [], gruppi = {};
+  righe.forEach(r=>{
+    const al = +r.aliquota || 0, nat = al>0 ? '' : (r.natura || 'N4'), k = al+'|'+nat;
+    if(!gruppi[k]) gruppi[k] = {aliquota:al, natura:nat, imponibile:0, imposta:0};
+    gruppi[k].imponibile = r2(gruppi[k].imponibile + fattRigaTot(r));
+  });
+  const riepilogo = Object.values(gruppi).map(g=>({...g, imposta: r2(g.imponibile*g.aliquota/100)}));
+  const imponibile = r2(riepilogo.reduce((s,g)=>s+g.imponibile,0));
+  const iva = r2(riepilogo.reduce((s,g)=>s+g.imposta,0));
+  const esente = r2(riepilogo.filter(g=>g.aliquota===0).reduce((s,g)=>s+g.imponibile,0));
+  const bolloImporto = r2(+(state.fattImp && state.fattImp.bollo) || 2);
+  const mode = d.bollo || 'auto';
+  const bollo = mode==='si' ? bolloImporto : (mode==='no' ? 0 : (esente > 77.47 ? bolloImporto : 0));
+  const totale = r2(imponibile + iva + (d.bolloAddebitato!==false ? bollo : 0));
+  return {riepilogo, imponibile, iva, esente, bollo, totale};
+}
+function fattPagato(f){ return r2(((f.dati&&f.dati.pagamenti)||[]).reduce((s,p)=>s+(+p.importo||0),0)); }
+function fattStatoPag(f){
+  if(f.stato==='bozza') return 'bozza';
+  const tot = fattCalc(f.dati||{}).totale, pag = fattPagato(f);
+  if(pag >= tot - 0.005) return 'pagata';
+  return pag > 0 ? 'parziale' : 'da_incassare';
+}
+const FATT_STATO_PAG_LBL = {bozza:'—', pagata:'Pagata', parziale:'Parziale', da_incassare:'Da incassare'};
+function fattNomeCliente(f){
+  const c = state.clienti.find(x=>x.id===f.clienteId);
+  const ces = (f.dati && f.dati.cessionario) || {};
+  return (ces.tipo==='azienda' ? ces.denominazione : ((ces.nome||'')+' '+(ces.cognome||'')).trim()) || (c ? c.nome : '—');
+}
+function fattRowToFattura(r){ return {id:r.id, anno:r.anno, numero:r.numero, data:r.data, clienteId:r.cliente_id, stato:r.stato, dati:r.dati||{}}; }
+function fattToRow(f){ return {id:f.id, anno:f.anno, numero:f.numero==null?null:f.numero, data:f.data, cliente_id:f.clienteId||null, stato:f.stato, dati:f.dati||{}}; }
+Object.assign(db, {
+  async saveFattura(f){ if(!dbEnabled || !sb) return {ok:true}; const {error} = await sb.from('fatture').upsert(fattToRow(f)); if(error){ console.error('Supabase saveFattura', error); return {ok:false, error}; } return {ok:true}; },
+  async deleteFattura(id){ if(!dbEnabled || !sb) return true; const {error} = await sb.from('fatture').delete().eq('id',id); if(error){ console.error('Supabase deleteFattura', error); return false; } return true; },
+  async saveListino(l){ if(!dbEnabled || !sb) return; const {error} = await sb.from('listino_prestazioni').upsert({id:l.id, descrizione:l.descrizione, prezzo:l.prezzo, aliquota:l.aliquota, natura:l.natura||null, attivo:true}); if(error) console.error('Supabase saveListino', error); },
+  async deleteListino(id){ if(!dbEnabled || !sb) return; const {error} = await sb.from('listino_prestazioni').delete().eq('id',id); if(error) console.error('Supabase deleteListino', error); },
+  async saveDatiFiscali(cid, dati){ if(!dbEnabled || !sb) return; const {error} = await sb.from('dati_fiscali_clienti').upsert({cliente_id:cid, dati}); if(error) console.error('Supabase saveDatiFiscali', error); },
+  async saveFattImp(dati){ if(!dbEnabled || !sb) return true; const {error} = await sb.from('fatturazione_impostazioni').upsert({id:1, dati}); if(error){ console.error('Supabase saveFattImp', error); return false; } return true; }
+});
+
+// ---------- elenco ----------
+function renderFatturazione(){
+  fattInit();
+  const box = document.getElementById('fattContent'); if(!box) return;
+  const fl = state.fattFiltro;
+  let list = state.fatture.filter(f=>{
+    if(fl.dal && f.data < fl.dal) return false;
+    if(fl.al && f.data > fl.al) return false;
+    if(fl.q && !pazMatch({nome:fattNomeCliente(f)}, fl.q)) return false;
+    const sp = fattStatoPag(f);
+    if(fl.stato==='bozza') return f.stato==='bozza';
+    if(fl.stato==='da_incassare') return f.stato==='emessa' && sp!=='pagata';
+    if(fl.stato==='pagata') return sp==='pagata';
+    if(fl.stato==='sdi') return f.stato==='emessa' && ((f.dati.sdi||{}).stato||'pronto')==='pronto';
+    return true;
+  }).sort((a,b)=> (b.data||'').localeCompare(a.data||'') || (b.numero||0)-(a.numero||0));
+  const emesse = list.filter(f=>f.stato==='emessa');
+  const tot = r2(emesse.reduce((s,f)=>s+fattCalc(f.dati).totale,0));
+  const inc = r2(emesse.reduce((s,f)=>s+fattPagato(f),0));
+  const nSdi = state.fatture.filter(f=>f.stato==='emessa' && ((f.dati.sdi||{}).stato||'pronto')==='pronto').length;
+  box.innerHTML = `
+    <div class="fat-toolbar">
+      <button class="btn-gold" id="fattNew">+ Nuova fattura</button>
+      <button class="btn-ghost" id="fattListinoBtn">Listino prestazioni</button>
+      <button class="btn-ghost" id="fattImpBtn">Dati emittente</button>
+      <button class="btn-ghost" id="fattCsvBtn">Esporta CSV</button>
+    </div>
+    <div class="fat-filters">
+      <div class="ev-field"><label>Dal</label><input type="date" class="editable" id="fattDal" value="${escAttr(fl.dal)}"></div>
+      <div class="ev-field"><label>Al</label><input type="date" class="editable" id="fattAl" value="${escAttr(fl.al)}"></div>
+      <div class="ev-field" style="flex:1;min-width:200px;"><label>Cliente</label><input class="editable" id="fattQ" placeholder="Digita il nome…" value="${escAttr(fl.q)}"></div>
+      <div class="ev-field"><label>Mostra</label><select class="editable" id="fattStato">
+        ${[['','Tutti i documenti'],['bozza','Bozze'],['da_incassare','Da incassare'],['pagata','Pagate'],['sdi','Pronte per invio SDI']].map(([v,l])=>`<option value="${v}" ${fl.stato===v?'selected':''}>${l}</option>`).join('')}
+      </select></div>
+    </div>
+    ${nSdi ? `<div class="val-legacy-note" style="margin-bottom:12px;">${nSdi} fatture emesse sono pronte per l'invio a SDI (scarica l'XML dal dettaglio).</div>` : ''}
+    <div class="fat-sum"><div><span>Fatturato</span><b>€ ${fattEur(tot)}</b></div><div><span>Incassato</span><b>€ ${fattEur(inc)}</b></div><div><span>Da incassare</span><b>€ ${fattEur(tot-inc)}</b></div><div><span>Documenti</span><b>${list.length}</b></div></div>
+    <div class="fat-table-wrap"><table class="fat-table"><thead><tr><th>Data</th><th>Numero</th><th>Nominativo del cliente</th><th class="n">Importo</th><th class="n">Pagato</th><th>Pagamento</th><th>Stato SDI</th></tr></thead><tbody>
+    ${list.map(f=>{
+      const c = fattCalc(f.dati), sp = fattStatoPag(f), sdi = (f.dati.sdi||{}).stato||'pronto';
+      return `<tr data-fatt="${f.id}"><td>${fattData(f.data)}</td><td>${f.numero!=null ? f.numero : '<i>bozza</i>'}</td><td>${escHtml(fattNomeCliente(f))}</td><td class="n">${fattEur(c.totale)}</td><td class="n">${f.stato==='bozza'?'':fattEur(fattPagato(f))}</td><td><span class="fat-pill ${sp}">${FATT_STATO_PAG_LBL[sp]}</span></td><td>${f.stato==='bozza' ? '' : escHtml((FATT_SDI.find(x=>x[0]===sdi)||[])[1]||'')}</td></tr>`;
+    }).join('') || '<tr><td colspan="7" class="val-empty">Nessun documento nel periodo.</td></tr>'}
+    </tbody></table></div>`;
+  const rerender = ()=> renderFatturazione();
+  document.getElementById('fattNew').onclick = ()=> fattApriEditor(null);
+  document.getElementById('fattListinoBtn').onclick = fattApriListino;
+  document.getElementById('fattImpBtn').onclick = fattApriImp;
+  document.getElementById('fattCsvBtn').onclick = ()=> fattCsv(list);
+  document.getElementById('fattDal').onchange = e=>{ fl.dal = e.target.value; rerender(); };
+  document.getElementById('fattAl').onchange = e=>{ fl.al = e.target.value; rerender(); };
+  document.getElementById('fattStato').onchange = e=>{ fl.stato = e.target.value; rerender(); };
+  const q = document.getElementById('fattQ');
+  q.oninput = e=>{ fl.q = e.target.value; const pos = e.target.selectionStart; rerender(); const n = document.getElementById('fattQ'); n.focus(); try{ n.setSelectionRange(pos,pos); }catch(ex){} };
+  box.querySelectorAll('[data-fatt]').forEach(tr=> tr.onclick = ()=> fattApriEditor(tr.dataset.fatt));
+}
+function fattCsv(list){
+  const rows = [['Data','Numero','Cliente','Imponibile','IVA','Bollo','Totale','Pagato','Stato pagamento','Stato SDI']];
+  list.forEach(f=>{ const c = fattCalc(f.dati); rows.push([fattData(f.data), f.numero==null?'':f.numero, fattNomeCliente(f), fattEur(c.imponibile), fattEur(c.iva), fattEur(c.bollo), fattEur(c.totale), f.stato==='bozza'?'':fattEur(fattPagato(f)), FATT_STATO_PAG_LBL[fattStatoPag(f)], f.stato==='bozza'?'':((FATT_SDI.find(x=>x[0]===((f.dati.sdi||{}).stato||'pronto'))||[])[1]||'')]); });
+  const csv = '﻿' + rows.map(r=>r.map(x=>'"'+String(x).replace(/"/g,'""')+'"').join(';')).join('\r\n');
+  fattScarica('fatture.csv', csv, 'text/csv;charset=utf-8');
+}
+function fattScarica(nome, testo, tipo){
+  const blob = new Blob([testo], {type:tipo}); const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = nome; document.body.appendChild(a); a.click();
+  setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 500);
+}
+
+// ---------- dati emittente ----------
+function fattApriImp(){
+  fattInit();
+  const d = state.fattImp, m = document.getElementById('fattImpModal');
+  const f = (id,l,v,ph)=>`<div class="ev-field"><label>${l}</label><input class="editable" id="${id}" value="${escAttr(v||'')}" ${ph?`placeholder="${ph}"`:''}></div>`;
+  document.getElementById('fattImpBody').innerHTML = `
+    ${f('fiDen','Denominazione / ragione sociale',d.denominazione)}
+    <div class="ev-row">${f('fiPiva','Partita IVA',d.piva)}${f('fiCf','Codice fiscale (se diverso)',d.cf)}</div>
+    <div class="ev-field"><label>Regime fiscale</label><select class="editable" id="fiReg">${[['RF01','RF01 – Ordinario'],['RF19','RF19 – Forfettario']].map(([v,l])=>`<option value="${v}" ${(d.regime||'RF01')===v?'selected':''}>${l}</option>`).join('')}</select></div>
+    ${f('fiInd','Indirizzo sede',d.indirizzo)}
+    <div class="ev-row">${f('fiCap','CAP',d.cap)}${f('fiCom','Comune',d.comune)}</div>
+    <div class="ev-row">${f('fiProv','Provincia (sigla)',d.provincia)}${f('fiIban','IBAN (facoltativo, per i bonifici)',d.iban)}</div>
+    <div class="ev-row">${f('fiBollo','Importo bollo (€)',d.bollo==null?'2.00':d.bollo)}${f('fiUlt','Ultimo numero fattura già emesso quest\'anno (altrove)',d.ultimoNumero||'', 'es. 3956')}</div>
+    <div class="val-legacy-note">Il bollo da € 2,00 si applica alle operazioni esenti sopra € 77,47. Se emetti ancora fatture dal vecchio gestionale, indica qui l'ultimo numero usato: la numerazione ripartirà da quello. Non emettere fatture in parallelo da due sistemi senza coordinare i numeri.</div>
+    <div class="ev-actions"><div></div><button class="btn-gold" id="fiSalva">Salva</button></div>`;
+  m.classList.add('open');
+  document.getElementById('fiSalva').onclick = async ()=>{
+    const g = id=>document.getElementById(id).value.trim();
+    state.fattImp = {denominazione:g('fiDen'), piva:g('fiPiva'), cf:g('fiCf'), regime:g('fiReg'), indirizzo:g('fiInd'), cap:g('fiCap'), comune:g('fiCom'), provincia:g('fiProv').toUpperCase(), iban:g('fiIban').replace(/\s+/g,''), bollo:parseFloat(g('fiBollo').replace(',','.'))||2, ultimoNumero:parseInt(g('fiUlt'))||0};
+    const ok = await db.saveFattImp(state.fattImp);
+    if(!ok) alert('Salvataggio non riuscito: controlla di aver eseguito il blocco SQL della Fatturazione.');
+    m.classList.remove('open');
+  };
+}
+
+// ---------- listino ----------
+function fattApriListino(){
+  fattInit();
+  const m = document.getElementById('fattListinoModal');
+  const draw = ()=>{
+    document.getElementById('fattListinoBody').innerHTML = `
+      <div class="fat-lst-head"><span>Prestazione</span><span>Prezzo €</span><span>IVA %</span><span>Natura (se IVA 0)</span><span></span></div>
+      ${state.listino.map(l=>`<div class="fat-lst-row" data-l="${l.id}">
+        <input class="editable" data-k="descrizione" value="${escAttr(l.descrizione)}">
+        <input class="editable" data-k="prezzo" value="${escAttr(String(l.prezzo).replace('.',','))}">
+        <select class="editable" data-k="aliquota">${[0,4,5,10,22].map(a=>`<option ${+l.aliquota===a?'selected':''}>${a}</option>`).join('')}</select>
+        <select class="editable" data-k="natura">${FATT_NATURE.map(([v,t])=>`<option value="${v}" ${(l.natura||'N4')===v?'selected':''}>${v}</option>`).join('')}</select>
+        <button class="btn-small danger" data-dl="${l.id}">×</button></div>`).join('') || '<div class="val-empty">Nessuna prestazione in listino.</div>'}
+      <div style="margin-top:12px;"><button class="btn-small" id="lstAdd">+ Aggiungi prestazione</button></div>`;
+    m.querySelectorAll('.fat-lst-row').forEach(row=>{
+      const l = state.listino.find(x=>x.id===row.dataset.l);
+      row.querySelectorAll('[data-k]').forEach(inp=> inp.onchange = ()=>{
+        const k = inp.dataset.k; l[k] = k==='prezzo' ? (parseFloat(String(inp.value).replace(',','.'))||0) : (k==='aliquota' ? +inp.value : inp.value);
+        db.saveListino(l);
+      });
+    });
+    m.querySelectorAll('[data-dl]').forEach(b=> b.onclick = ()=>{ state.listino = state.listino.filter(x=>x.id!==b.dataset.dl); db.deleteListino(b.dataset.dl); draw(); });
+    document.getElementById('lstAdd').onclick = ()=>{ const l = {id:fattNuovoId('lst'), descrizione:'Nuova prestazione', prezzo:0, aliquota:0, natura:'N4'}; state.listino.push(l); db.saveListino(l); draw(); };
+  };
+  draw(); m.classList.add('open');
+}
+
+// ---------- editor fattura ----------
+function fattDatiFiscaliCliente(cid){
+  const c = state.clienti.find(x=>x.id===cid);
+  const saved = state.datiFiscali[cid];
+  if(saved) return JSON.parse(JSON.stringify(saved));
+  const parts = ((c&&c.nome)||'').trim().split(/\s+/);
+  return {tipo:'privato', nome:parts[0]||'', cognome:parts.slice(1).join(' '), cf:'', indirizzo:'', cap:'', comune:'', provincia:'', denominazione:'', piva:'', codiceDestinatario:'', pec:''};
+}
+function fattApriEditor(id, clienteId){
+  fattInit();
+  let f;
+  if(id){ f = JSON.parse(JSON.stringify(state.fatture.find(x=>x.id===id))); }
+  else {
+    f = {id:fattNuovoId('fat'), anno:new Date().getFullYear(), numero:null, data:fmtDateISO(new Date()), clienteId:clienteId||'', stato:'bozza',
+      dati:{righe:[], bollo:'auto', bolloAddebitato:true, pagamenti:[], sdi:{stato:'pronto'}, cessionario:clienteId?fattDatiFiscaliCliente(clienteId):null}};
+  }
+  state.fattEd = f; state.fattEdNuova = !id;
+  fattRenderEditor();
+  document.getElementById('fattModal').classList.add('open');
+}
+function fattRenderEditor(){
+  const f = state.fattEd, d = f.dati, ro = f.stato==='emessa';
+  const ces = d.cessionario;
+  const dis = ro ? 'disabled' : '';
+  const c = fattCalc(d);
+  document.getElementById('fattTitle').textContent = ro ? `Fattura n. ${f.numero}/${f.anno}` : (state.fattEdNuova ? 'Nuova fattura' : 'Bozza di fattura');
+  const cesF = (k,l,ph)=>`<div class="ev-field"><label>${l}</label><input class="editable" data-ces="${k}" value="${escAttr(ces[k]||'')}" ${dis} ${ph?`placeholder="${ph}"`:''}></div>`;
+  document.getElementById('fattBody').innerHTML = `
+    <div class="ev-row">
+      <div class="ev-field"><label>Cliente</label>${ro ? `<input class="editable" disabled value="${escAttr(fattNomeCliente(f))}">` : pazLookupHtml('fattCli', f.clienteId, '— seleziona un cliente —')}</div>
+      <div class="ev-field"><label>Data fattura</label><input type="date" class="editable" id="fattData" value="${escAttr(f.data)}" ${dis}></div>
+    </div>
+    ${ces ? `<div class="fat-box"><div class="fat-box-t">Dati fiscali del cliente (si ricordano per le prossime fatture)</div>
+      <div class="ev-field"><label>Tipo</label><select class="editable" data-ces="tipo" ${dis}><option value="privato" ${ces.tipo!=='azienda'?'selected':''}>Persona fisica</option><option value="azienda" ${ces.tipo==='azienda'?'selected':''}>Azienda / P.IVA</option></select></div>
+      ${ces.tipo==='azienda'
+        ? `${cesF('denominazione','Denominazione')}<div class="ev-row">${cesF('piva','Partita IVA')}${cesF('cf','Codice fiscale (facoltativo)')}</div><div class="ev-row">${cesF('codiceDestinatario','Codice destinatario SDI (7 caratteri)')}${cesF('pec','PEC (se manca il codice)')}</div>`
+        : `<div class="ev-row">${cesF('nome','Nome')}${cesF('cognome','Cognome')}</div>${cesF('cf','Codice fiscale')}`}
+      ${cesF('indirizzo','Indirizzo')}
+      <div class="ev-row">${cesF('cap','CAP')}${cesF('comune','Comune')}</div>${cesF('provincia','Provincia (sigla)')}</div>` : ''}
+    <div class="fat-box"><div class="fat-box-t">Prestazioni</div>
+      <div class="fat-rg-head"><span>Descrizione</span><span>Qtà</span><span>Prezzo €</span><span>IVA %</span><span>Natura</span><span>Totale</span><span></span></div>
+      ${d.righe.map((r,i)=>`<div class="fat-rg" data-i="${i}">
+        <input class="editable" data-r="descr" value="${escAttr(r.descr)}" ${dis}>
+        <input class="editable" data-r="qta" value="${escAttr(String(r.qta).replace('.',','))}" ${dis}>
+        <input class="editable" data-r="prezzo" value="${escAttr(String(r.prezzo).replace('.',','))}" ${dis}>
+        <select class="editable" data-r="aliquota" ${dis}>${[0,4,5,10,22].map(a=>`<option ${+r.aliquota===a?'selected':''}>${a}</option>`).join('')}</select>
+        <select class="editable" data-r="natura" ${dis} ${+r.aliquota>0?'disabled':''}>${FATT_NATURE.map(([v])=>`<option ${(r.natura||'N4')===v?'selected':''}>${v}</option>`).join('')}</select>
+        <span class="fat-rg-tot" data-rt="${i}">${fattEur(fattRigaTot(r))}</span>
+        ${ro?'':`<button class="btn-small danger" data-delr="${i}">×</button>`}</div>`).join('') || '<div class="val-empty">Nessuna riga.</div>'}
+      ${ro?'':`<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+        <select class="editable" id="fattListSel" style="max-width:320px;"><option value="">+ Aggiungi dal listino…</option>${state.listino.map(l=>`<option value="${l.id}">${escHtml(l.descrizione)} — € ${fattEur(l.prezzo)}</option>`).join('')}</select>
+        <button class="btn-small" id="fattAddRiga">+ Riga libera</button></div>`}
+    </div>
+    <div class="fat-box"><div class="fat-box-t">Bollo e totali</div>
+      <div class="ev-row">
+        <div class="ev-field"><label>Bollo virtuale</label><select class="editable" id="fattBollo" ${dis}>${[['auto','Automatico (esente > € 77,47)'],['si','Applica sempre'],['no','Non applicare']].map(([v,l])=>`<option value="${v}" ${(d.bollo||'auto')===v?'selected':''}>${l}</option>`).join('')}</select></div>
+        <div class="ev-field"><label>Addebito del bollo</label><select class="editable" id="fattBolloAdd" ${dis}><option value="1" ${d.bolloAddebitato!==false?'selected':''}>Addebitato al cliente</option><option value="0" ${d.bolloAddebitato===false?'selected':''}>A carico dello studio</option></select></div>
+      </div>
+      <div id="fattTot" class="fat-tot"></div></div>
+    ${ro ? fattPagamentiHtml(f) : ''}
+    <div class="ev-actions" style="flex-wrap:wrap;gap:8px;">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">${ro ? `<button class="btn-small" id="fattXmlBtn">Scarica XML</button><button class="btn-small" id="fattPrintBtn">Copia di cortesia (PDF)</button>` : (state.fattEdNuova ? '' : `<button class="btn-small danger" id="fattDelBtn">Elimina bozza</button>`)}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">${ro ? '' : `<button class="btn-small" id="fattSaveBozza">Salva bozza</button><button class="btn-gold" id="fattEmetti">Emetti fattura</button>`}</div>
+    </div>`;
+  fattAggiornaTot();
+  fattBindEditor();
+}
+function fattAggiornaTot(){
+  const f = state.fattEd, c = fattCalc(f.dati), el = document.getElementById('fattTot'); if(!el) return;
+  el.innerHTML = `<div><span>Imponibile</span><b>€ ${fattEur(c.imponibile)}</b></div><div><span>IVA</span><b>€ ${fattEur(c.iva)}</b></div><div><span>Bollo ${f.dati.bolloAddebitato===false?'(a carico studio)':''}</span><b>€ ${fattEur(c.bollo)}</b></div><div class="grand"><span>Totale documento</span><b>€ ${fattEur(c.totale)}</b></div>`;
+  f.dati.righe.forEach((r,i)=>{ const s = document.querySelector(`[data-rt="${i}"]`); if(s) s.textContent = fattEur(fattRigaTot(r)); });
+}
+function fattPagamentiHtml(f){
+  const c = fattCalc(f.dati), pag = fattPagato(f), res = r2(c.totale - pag), sdi = (f.dati.sdi||{});
+  const pags = f.dati.pagamenti || [];
+  return `<div class="fat-box"><div class="fat-box-t">Pagamenti</div>
+    ${pags.map((p,i)=>`<div class="fat-pg"><span>${fattData(p.data)}</span><span>${escHtml((FATT_MODALITA.find(m=>m[0]===p.metodo)||[])[1]||p.metodo)}</span><b>€ ${fattEur(p.importo)}</b><button class="btn-small danger" data-delpg="${i}">×</button></div>`).join('') || '<div class="val-empty" style="padding:6px 0;">Nessun pagamento registrato.</div>'}
+    <div class="fat-sum" style="margin:10px 0;"><div><span>Totale</span><b>€ ${fattEur(c.totale)}</b></div><div><span>Pagato</span><b>€ ${fattEur(pag)}</b></div><div><span>Residuo</span><b>€ ${fattEur(res)}</b></div></div>
+    <div class="ev-row" style="grid-template-columns:1fr 1fr 1fr auto;align-items:end;">
+      <div class="ev-field"><label>Importo €</label><input class="editable" id="pgImp" value="${res>0?String(res).replace('.',','):''}"></div>
+      <div class="ev-field"><label>Data</label><input type="date" class="editable" id="pgData" value="${fmtDateISO(new Date())}"></div>
+      <div class="ev-field"><label>Metodo</label><select class="editable" id="pgMet">${FATT_MODALITA.map(([v,l])=>`<option value="${v}">${l}</option>`).join('')}</select></div>
+      <button class="btn-gold" id="pgAdd" style="margin-bottom:14px;">Registra</button></div></div>
+    <div class="fat-box"><div class="fat-box-t">Invio a SDI</div>
+      <div class="ev-row"><div class="ev-field"><label>Stato</label><select class="editable" id="sdiStato">${FATT_SDI.map(([v,l])=>`<option value="${v}" ${(sdi.stato||'pronto')===v?'selected':''}>${l}</option>`).join('')}</select></div>
+      <div class="ev-field"><label>Data invio</label><input type="date" class="editable" id="sdiData" value="${escAttr(sdi.dataInvio||'')}"></div></div>
+      <div class="val-legacy-note">L'app genera il file XML (FatturaPA 1.2.2) ma non lo trasmette: caricalo sul portale Fatture e Corrispettivi dell'Agenzia delle Entrate o sul tuo gestionale/intermediario, poi aggiorna qui lo stato.</div></div>`;
+}
+function fattBindEditor(){
+  const f = state.fattEd, d = f.dati, body = document.getElementById('fattBody');
+  const ro = f.stato==='emessa';
+  if(!ro){
+    bindPazLookup('fattCli','— seleziona un cliente —', v=>{
+      f.clienteId = v;
+      d.cessionario = v ? fattDatiFiscaliCliente(v) : null;
+      fattRenderEditor();
+    });
+    document.getElementById('fattData').onchange = e=>{ f.data = e.target.value; f.anno = +(e.target.value||'').slice(0,4) || f.anno; };
+    body.querySelectorAll('[data-ces]').forEach(inp=> inp.onchange = ()=>{
+      d.cessionario[inp.dataset.ces] = inp.value.trim();
+      if(inp.dataset.ces==='tipo') fattRenderEditor();
+    });
+    body.querySelectorAll('.fat-rg').forEach(row=>{
+      const r = d.righe[+row.dataset.i];
+      row.querySelectorAll('[data-r]').forEach(inp=>{
+        const k = inp.dataset.r;
+        inp.oninput = ()=>{ if(k==='descr') r.descr = inp.value; else if(k==='qta'||k==='prezzo') r[k] = parseFloat(String(inp.value).replace(',','.'))||0; fattAggiornaTot(); };
+        inp.onchange = ()=>{ if(k==='aliquota'){ r.aliquota = +inp.value; fattRenderEditor(); } else if(k==='natura'){ r.natura = inp.value; fattAggiornaTot(); } };
+      });
+    });
+    body.querySelectorAll('[data-delr]').forEach(b=> b.onclick = ()=>{ d.righe.splice(+b.dataset.delr,1); fattRenderEditor(); });
+    document.getElementById('fattAddRiga').onclick = ()=>{ d.righe.push({descr:'',qta:1,prezzo:0,aliquota:0,natura:'N4'}); fattRenderEditor(); };
+    document.getElementById('fattListSel').onchange = e=>{
+      const l = state.listino.find(x=>x.id===e.target.value); if(!l) return;
+      d.righe.push({descr:l.descrizione, qta:1, prezzo:+l.prezzo||0, aliquota:+l.aliquota||0, natura:l.natura||'N4'}); fattRenderEditor();
+    };
+    document.getElementById('fattBollo').onchange = e=>{ d.bollo = e.target.value; fattAggiornaTot(); };
+    document.getElementById('fattBolloAdd').onchange = e=>{ d.bolloAddebitato = e.target.value==='1'; fattAggiornaTot(); };
+    document.getElementById('fattSaveBozza').onclick = ()=> fattSalva(false);
+    document.getElementById('fattEmetti').onclick = ()=> fattSalva(true);
+    const del = document.getElementById('fattDelBtn');
+    if(del) del.onclick = async ()=>{ if(!confirm('Eliminare questa bozza?')) return; state.fatture = state.fatture.filter(x=>x.id!==f.id); await db.deleteFattura(f.id); document.getElementById('fattModal').classList.remove('open'); renderFatturazione(); };
+  } else {
+    document.getElementById('fattXmlBtn').onclick = ()=>{
+      const r = fattGeneraXml(f); if(r.errori.length){ alert('Impossibile generare l\'XML:\n\n- '+r.errori.join('\n- ')); return; }
+      fattScarica(r.nomeFile, r.xml, 'application/xml;charset=utf-8');
+    };
+    document.getElementById('fattPrintBtn').onclick = ()=> fattStampa(f);
+    body.querySelectorAll('[data-delpg]').forEach(b=> b.onclick = async ()=>{
+      if(!confirm('Eliminare questo pagamento?')) return;
+      d.pagamenti.splice(+b.dataset.delpg,1); await fattPersisti(f); fattRenderEditor();
+    });
+    document.getElementById('pgAdd').onclick = async ()=>{
+      const imp = parseFloat(String(document.getElementById('pgImp').value).replace(',','.'));
+      if(!(imp>0)){ alert('Inserisci un importo valido.'); return; }
+      (d.pagamenti = d.pagamenti||[]).push({id:fattNuovoId('pg'), importo:r2(imp), data:document.getElementById('pgData').value, metodo:document.getElementById('pgMet').value});
+      await fattPersisti(f); fattRenderEditor();
+    };
+    const sdiS = document.getElementById('sdiStato'), sdiD = document.getElementById('sdiData');
+    const saveSdi = async ()=>{ d.sdi = {stato:sdiS.value, dataInvio:sdiD.value}; if(sdiS.value==='inviata' && !sdiD.value){ d.sdi.dataInvio = fmtDateISO(new Date()); sdiD.value = d.sdi.dataInvio; } await fattPersisti(f); };
+    sdiS.onchange = saveSdi; sdiD.onchange = saveSdi;
+  }
+}
+async function fattPersisti(f){
+  const idx = state.fatture.findIndex(x=>x.id===f.id);
+  const copia = JSON.parse(JSON.stringify(f));
+  if(idx>=0) state.fatture[idx] = copia; else state.fatture.push(copia);
+  const r = await db.saveFattura(copia);
+  if(!r.ok) alert('Salvataggio non riuscito: controlla di aver eseguito il blocco SQL della Fatturazione.');
+  renderFatturazione();
+  return r;
+}
+function fattValida(f){
+  const err = [], imp = state.fattImp || {}, ces = f.dati.cessionario;
+  if(!imp.denominazione || !imp.piva || !imp.indirizzo || !imp.cap || !imp.comune) err.push('Completa i "Dati emittente" (denominazione, P.IVA, indirizzo, CAP, comune).');
+  if(!f.clienteId || !ces) err.push('Seleziona un cliente.');
+  else {
+    if(ces.tipo==='azienda'){ if(!ces.denominazione) err.push('Denominazione del cliente mancante.'); if(!ces.piva) err.push('Partita IVA del cliente mancante.'); }
+    else { if(!ces.nome || !ces.cognome) err.push('Nome e cognome del cliente mancanti.'); if(!/^[A-Za-z0-9]{16}$/.test(ces.cf||'')) err.push('Codice fiscale del cliente mancante o non valido (16 caratteri).'); }
+    if(!ces.indirizzo || !ces.cap || !ces.comune) err.push('Indirizzo, CAP e comune del cliente sono obbligatori nell\'XML.');
+    if(ces.tipo==='azienda' && ces.codiceDestinatario && ces.codiceDestinatario.length!==7) err.push('Il codice destinatario deve avere 7 caratteri.');
+  }
+  if(!f.dati.righe.length) err.push('Aggiungi almeno una prestazione.');
+  f.dati.righe.forEach((r,i)=>{ if(!String(r.descr||'').trim()) err.push(`Riga ${i+1}: descrizione mancante.`); if(!(+r.qta>0)) err.push(`Riga ${i+1}: quantità non valida.`); });
+  if(fattCalc(f.dati).totale<=0) err.push('Il totale deve essere maggiore di zero.');
+  return err;
+}
+async function fattSalva(emetti){
+  const f = state.fattEd;
+  f.anno = +(f.data||'').slice(0,4) || new Date().getFullYear();
+  if(f.clienteId && f.dati.cessionario){
+    state.datiFiscali[f.clienteId] = JSON.parse(JSON.stringify(f.dati.cessionario));
+    db.saveDatiFiscali(f.clienteId, f.dati.cessionario);
+  }
+  if(!emetti){
+    f.stato = 'bozza';
+    await fattPersisti(f);
+    document.getElementById('fattModal').classList.remove('open');
+    return;
+  }
+  const err = fattValida(f);
+  if(err.length){ alert('Non posso emettere la fattura:\n\n- '+err.join('\n- ')); return; }
+  const c = fattCalc(f.dati);
+  if(!confirm(`Emettere la fattura per ${fattNomeClienteEd(f)} di € ${fattEur(c.totale)}?\n\nDopo l'emissione non sarà più modificabile.`)) return;
+  for(let tentativo=0; tentativo<3; tentativo++){
+    const maxDb = Math.max(0, ...state.fatture.filter(x=>x.stato==='emessa' && x.anno===f.anno && x.id!==f.id).map(x=>x.numero||0));
+    const base = (state.fattImp.ultimoNumero && f.anno===new Date().getFullYear()) ? state.fattImp.ultimoNumero : 0;
+    f.numero = Math.max(maxDb, base) + 1 + tentativo;
+    f.stato = 'emessa';
+    f.dati.sdi = {stato:'pronto'};
+    const copia = JSON.parse(JSON.stringify(f));
+    const r = await db.saveFattura(copia);
+    if(r.ok){
+      const idx = state.fatture.findIndex(x=>x.id===f.id);
+      if(idx>=0) state.fatture[idx] = copia; else state.fatture.push(copia);
+      state.fattEdNuova = false;
+      renderFatturazione(); fattRenderEditor();
+      return;
+    }
+    if(!(r.error && (r.error.code==='23505'))) { f.stato = 'bozza'; f.numero = null; alert('Salvataggio non riuscito: controlla di aver eseguito il blocco SQL della Fatturazione.'); return; }
+  }
+  f.stato = 'bozza'; f.numero = null; alert('Impossibile assegnare un numero libero. Riprova.');
+}
+function fattNomeClienteEd(f){ return fattNomeCliente(f); }
+
+// ---------- XML FatturaPA ----------
+function fattGeneraXml(f){
+  const imp = state.fattImp || {}, d = f.dati, ces = d.cessionario || {}, c = fattCalc(d), err = fattValida(f).filter(x=>!/Seleziona un cliente|almeno una/.test(x) || true);
+  const x = fattXmlEsc, n2 = v=>Number(v).toFixed(2);
+  const progressivo = String(f.anno).slice(2) + String(f.numero||0).padStart(6,'0');
+  const idTrasm = (imp.cf || imp.piva || '').trim();
+  const nomeFile = `IT${idTrasm}_${progressivo}.xml`;
+  const modPag = ((d.pagamenti||[])[0] && (FATT_MODALITA.find(m=>m[0]===d.pagamenti[0].metodo)||[])[2]) || 'MP05';
+  const rif = {'N4':'Operazione esente art. 10 DPR 633/72','N2.2':'Operazione non soggetta a IVA - regime forfettario L. 190/2014','N1':'Operazione esclusa art. 15 DPR 633/72','N2.1':'Operazione non soggetta artt. da 7 a 7-septies DPR 633/72'};
+  const privato = ces.tipo!=='azienda';
+  const cod = privato ? '0000000' : ((ces.codiceDestinatario||'').trim() || '0000000');
+  const pec = (!privato && cod==='0000000' && ces.pec) ? `<PECDestinatario>${x(ces.pec)}</PECDestinatario>` : '';
+  const sede = (o)=>`<Sede><Indirizzo>${x(o.indirizzo)}</Indirizzo><CAP>${x(o.cap)}</CAP><Comune>${x(o.comune)}</Comune>${o.provincia?`<Provincia>${x(String(o.provincia).toUpperCase())}</Provincia>`:''}<Nazione>IT</Nazione></Sede>`;
+  const righe = d.righe.map((r,i)=>{
+    const al = +r.aliquota||0;
+    return `<DettaglioLinee><NumeroLinea>${i+1}</NumeroLinea><Descrizione>${x(r.descr)}</Descrizione><Quantita>${n2(r.qta)}</Quantita><PrezzoUnitario>${(+r.prezzo||0).toFixed(2)}</PrezzoUnitario><PrezzoTotale>${n2(fattRigaTot(r))}</PrezzoTotale><AliquotaIVA>${n2(al)}</AliquotaIVA>${al===0?`<Natura>${x(r.natura||'N4')}</Natura>`:''}</DettaglioLinee>`;
+  }).join('');
+  const riep = c.riepilogo.map(g=>`<DatiRiepilogo><AliquotaIVA>${n2(g.aliquota)}</AliquotaIVA>${g.aliquota===0?`<Natura>${x(g.natura)}</Natura>`:''}<ImponibileImporto>${n2(g.imponibile)}</ImponibileImporto><Imposta>${n2(g.imposta)}</Imposta>${g.aliquota>0?'<EsigibilitaIVA>I</EsigibilitaIVA>':`<RiferimentoNormativo>${x(rif[g.natura]||'')}</RiferimentoNormativo>`}</DatiRiepilogo>`).join('');
+  const bollo = c.bollo>0 ? `<DatiBollo><BolloVirtuale>SI</BolloVirtuale><ImportoBollo>${n2(c.bollo)}</ImportoBollo></DatiBollo>` : '';
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<p:FatturaElettronica versione="FPR12" xmlns:ds="http://www.w3.org/2000/09/xmldsig#" xmlns:p="http://ivaservizi.agenziaentrate.gov.it/docs/xsd/fatture/v1.2" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://ivaservizi.agenziaentrate.gov.it/docs/xsd/fatture/v1.2 http://www.fatturapa.gov.it/export/fatturazione/sdi/fatturapa/v1.2/Schema_del_file_xml_FatturaPA_versione_1.2.xsd">
+<FatturaElettronicaHeader>
+<DatiTrasmissione><IdTrasmittente><IdPaese>IT</IdPaese><IdCodice>${x(idTrasm)}</IdCodice></IdTrasmittente><ProgressivoInvio>${x(progressivo)}</ProgressivoInvio><FormatoTrasmissione>FPR12</FormatoTrasmissione><CodiceDestinatario>${x(cod)}</CodiceDestinatario>${pec}</DatiTrasmissione>
+<CedentePrestatore><DatiAnagrafici><IdFiscaleIVA><IdPaese>IT</IdPaese><IdCodice>${x(imp.piva)}</IdCodice></IdFiscaleIVA>${imp.cf?`<CodiceFiscale>${x(imp.cf)}</CodiceFiscale>`:''}<Anagrafica><Denominazione>${x(imp.denominazione)}</Denominazione></Anagrafica><RegimeFiscale>${x(imp.regime||'RF01')}</RegimeFiscale></DatiAnagrafici>${sede(imp)}</CedentePrestatore>
+<CessionarioCommittente><DatiAnagrafici>${privato ? `<CodiceFiscale>${x((ces.cf||'').toUpperCase())}</CodiceFiscale><Anagrafica><Nome>${x(ces.nome)}</Nome><Cognome>${x(ces.cognome)}</Cognome></Anagrafica>` : `<IdFiscaleIVA><IdPaese>IT</IdPaese><IdCodice>${x(ces.piva)}</IdCodice></IdFiscaleIVA>${ces.cf?`<CodiceFiscale>${x(ces.cf)}</CodiceFiscale>`:''}<Anagrafica><Denominazione>${x(ces.denominazione)}</Denominazione></Anagrafica>`}</DatiAnagrafici>${sede(ces)}</CessionarioCommittente>
+</FatturaElettronicaHeader>
+<FatturaElettronicaBody>
+<DatiGenerali><DatiGeneraliDocumento><TipoDocumento>TD01</TipoDocumento><Divisa>EUR</Divisa><Data>${x(f.data)}</Data><Numero>${f.numero}</Numero>${bollo}<ImportoTotaleDocumento>${n2(c.totale)}</ImportoTotaleDocumento></DatiGeneraliDocumento></DatiGenerali>
+<DatiBeniServizi>${righe}${riep}</DatiBeniServizi>
+<DatiPagamento><CondizioniPagamento>TP02</CondizioniPagamento><DettaglioPagamento><ModalitaPagamento>${modPag}</ModalitaPagamento><ImportoPagamento>${n2(c.totale)}</ImportoPagamento>${modPag==='MP05' && imp.iban ? `<IBAN>${x(imp.iban)}</IBAN>` : ''}</DettaglioPagamento></DatiPagamento>
+</FatturaElettronicaBody>
+</p:FatturaElettronica>`;
+  return {xml, nomeFile, errori: f.stato==='emessa' ? fattValida(f) : err};
+}
+
+// ---------- copia di cortesia ----------
+function fattStampa(f){
+  const imp = state.fattImp||{}, c = fattCalc(f.dati), ces = f.dati.cessionario||{};
+  const win = window.open('', '_blank'); if(!win){ alert('Consenti i popup per stampare.'); return; }
+  const e = escHtml;
+  win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Fattura ${f.numero}-${f.anno}</title><style>
+  body{font-family:Arial,sans-serif;color:#111;margin:40px;font-size:13px}h1{font-size:20px;margin:0 0 4px}table{width:100%;border-collapse:collapse;margin-top:18px}th,td{border-bottom:1px solid #ccc;padding:6px 4px;text-align:left}th.n,td.n{text-align:right}.t{margin-top:16px;text-align:right}.t div{margin:3px 0}.g{font-size:16px;font-weight:bold}.cols{display:flex;justify-content:space-between;gap:30px;margin-top:20px}.note{margin-top:30px;font-size:11px;color:#666}</style></head><body>
+  <h1>Fattura n. ${f.numero}/${f.anno}</h1><div>Data: ${fattData(f.data)}</div>
+  <div class="cols"><div><b>${e(imp.denominazione)}</b><br>${e(imp.indirizzo)}<br>${e(imp.cap)} ${e(imp.comune)} ${e(imp.provincia||'')}<br>P.IVA ${e(imp.piva)}${imp.cf?'<br>C.F. '+e(imp.cf):''}</div>
+  <div><b>Spett.le</b><br>${e(fattNomeCliente(f))}<br>${e(ces.indirizzo||'')}<br>${e(ces.cap||'')} ${e(ces.comune||'')} ${e(ces.provincia||'')}<br>${ces.tipo==='azienda'?'P.IVA '+e(ces.piva||''):'C.F. '+e(ces.cf||'')}</div></div>
+  <table><thead><tr><th>Descrizione</th><th class="n">Qtà</th><th class="n">Prezzo</th><th class="n">IVA</th><th class="n">Totale</th></tr></thead><tbody>
+  ${f.dati.righe.map(r=>`<tr><td>${e(r.descr)}</td><td class="n">${r.qta}</td><td class="n">${fattEur(r.prezzo)}</td><td class="n">${+r.aliquota>0?r.aliquota+'%':e(r.natura||'N4')}</td><td class="n">${fattEur(fattRigaTot(r))}</td></tr>`).join('')}</tbody></table>
+  <div class="t"><div>Imponibile € ${fattEur(c.imponibile)}</div><div>IVA € ${fattEur(c.iva)}</div>${c.bollo>0?`<div>Bollo € ${fattEur(c.bollo)} ${f.dati.bolloAddebitato===false?'(a carico dello studio)':''}</div>`:''}<div class="g">Totale € ${fattEur(c.totale)}</div></div>
+  <div class="note">Copia di cortesia priva di valore fiscale. Il documento valido ai fini fiscali è la fattura elettronica trasmessa tramite SDI.${c.esente>0?' Operazione esente IVA ai sensi dell\'art. 10 DPR 633/72.':''}</div>
+  <script>window.onload=()=>setTimeout(()=>window.print(),300)<\/script></body></html>`);
+  win.document.close();
+}
+
+// ---------- wiring ----------
+['fattModal','fattImpModal','fattListinoModal'].forEach(id=>{
+  const m = document.getElementById(id);
+  m.onclick = e=>{ if(e.target===m) m.classList.remove('open'); };
+});
+document.getElementById('fattClose').onclick = ()=> document.getElementById('fattModal').classList.remove('open');
+document.getElementById('fattImpClose').onclick = ()=> document.getElementById('fattImpModal').classList.remove('open');
+document.getElementById('fattListinoClose').onclick = ()=> { document.getElementById('fattListinoModal').classList.remove('open'); };
+document.getElementById('btnFatturazione').onclick = ()=>{ showView('fatturazione'); renderFatturazione(); };
+
 document.getElementById('btnSegreteria').onclick = ()=> segNavigate('calendario');
 document.getElementById('btnBackToPathway').onclick = ()=>{
   if(activeClient()){
