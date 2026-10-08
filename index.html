@@ -10474,6 +10474,35 @@ function multiColKey(kind, id){ return kind + ':' + id; }
 // giorno; per default sono tutte visibili, ma il singolo viewer può
 // nasconderne alcune per la sessione corrente (es. chi non lavora oggi) —
 // scelta non persistita, solo sua
+// appuntamenti sovrapposti nello stesso orario: invece di coprirsi si
+// affiancano dividendo la larghezza (fino a 4 colonne). Ritorna {id: stile}
+function calLaneStyles(events){
+  const out = {};
+  const evs = events.map(e=>({e, s:timeToMinutes(e.start), f:timeToMinutes(e.end)})).sort((a,b)=>a.s-b.s || a.f-b.f);
+  let cluster = [], clusterEnd = -1;
+  const flush = ()=>{
+    if(!cluster.length) return;
+    const laneEnds = [];
+    cluster.forEach(x=>{
+      let i = laneEnds.findIndex(en=> en <= x.s);
+      if(i<0){ i = laneEnds.length; laneEnds.push(0); }
+      laneEnds[i] = x.f; x.lane = i;
+    });
+    const n = Math.min(laneEnds.length, 4);
+    cluster.forEach(x=>{
+      if(n<=1) return;
+      const i = Math.min(x.lane, n-1);
+      out[x.e.id] = `left:calc(3px + (100% - 6px) * ${i} / ${n});right:auto;width:calc((100% - 6px) / ${n} - 2px);`;
+    });
+    cluster = [];
+  };
+  evs.forEach(x=>{
+    if(cluster.length && x.s >= clusterEnd) flush();
+    cluster.push(x); clusterEnd = cluster.length===1 ? x.f : Math.max(clusterEnd, x.f);
+  });
+  flush();
+  return out;
+}
 function renderCalendarMulti(){
   if(!state.calMultiDay) state.calMultiDay = fmtDateISO(new Date());
   const cs = state.calSettings;
@@ -10542,13 +10571,14 @@ function renderCalendarMulti(){
       const c = state.clienti.find(x=>x.id===a.clienteId);
       return c && clienteHasProf(c, col.id);
     });
+    const colLanes = calLaneStyles(colEvents);
     colEvents.forEach(ev=>{
       const s = timeToMinutes(ev.start), e = timeToMinutes(ev.end);
       const top = (s - cs.startHour*60)*PX;
       const height = Math.max((e-s)*PX, 16);
       const evClient = ev.clienteId ? state.clienti.find(c=>c.id===ev.clienteId) : null;
       const colorStyle = ev.colore ? `border-color:${ev.colore};background:${ev.colore}22;` : '';
-      html += `<div class="cal-block tipo-${ev.tipo}" data-event-id="${ev.id}" style="top:${top}px;height:${height}px;${colorStyle}">
+      html += `<div class="cal-block tipo-${ev.tipo}" data-event-id="${ev.id}" style="top:${top}px;height:${height}px;${colorStyle}${colLanes[ev.id]||''}">
         <div${ev.colore ? ` style="color:${ev.colore};"` : ''}>${escHtml(ev.titolo || tipoLabel(ev.tipo))}</div>
         ${evClient ? `<div class="cb-time">${escHtml(evClient.nome)}</div>` : ''}
         <div class="cb-time">${ev.start}–${ev.end}</div>
@@ -10691,7 +10721,9 @@ function renderCalendarWeek(){
         html += `<div class="cal-off-hours" style="top:${top}px;height:${height}px;"></div>`;
       });
     }
-    state.appuntamenti.filter(a=>a.day===dateStr && apptMatchesCalFilter(a)).forEach(ev=>{
+    const dayEvs = state.appuntamenti.filter(a=>a.day===dateStr && apptMatchesCalFilter(a));
+    const dayLanes = calLaneStyles(dayEvs);
+    dayEvs.forEach(ev=>{
       const s = timeToMinutes(ev.start), e = timeToMinutes(ev.end);
       const top = (s - cs.startHour*60)*PX;
       const height = Math.max((e-s)*PX, 16);
@@ -10699,7 +10731,7 @@ function renderCalendarWeek(){
       const evProfId = ev.professionistaId || (evClient ? clienteProfIds(evClient)[0] : null);
       const evProf = (canManageAll() && !state.calFilterProfId && evProfId) ? state.professionisti.find(p=>p.id===evProfId) : null;
       const colorStyle = ev.colore ? `border-color:${ev.colore};background:${ev.colore}22;` : '';
-      html += `<div class="cal-block tipo-${ev.tipo}" draggable="true" data-event-id="${ev.id}" style="top:${top}px;height:${height}px;${colorStyle}">
+      html += `<div class="cal-block tipo-${ev.tipo}" draggable="true" data-event-id="${ev.id}" style="top:${top}px;height:${height}px;${colorStyle}${dayLanes[ev.id]||''}">
         <div${ev.colore ? ` style="color:${ev.colore};"` : ''}>${ev.titolo || tipoLabel(ev.tipo)}</div>
         ${evClient ? `<div class="cb-time">${evClient.nome}${evProf?' · '+evProf.nome:''}</div>` : ''}
         <div class="cb-time">${ev.start}–${ev.end}</div>
