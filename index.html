@@ -2368,6 +2368,7 @@ function clienteToRow(c){
     professionista_id: ids[0] || null,
     professionista_ids: ids,
     email: c.email || null,
+    telefono: c.telefono || null,
     auth_user_id: c.authUserId || null,
     block_operativo_id: c.blockOperativoId || null,
     valutazioni: c.valutazioni || [],
@@ -2399,6 +2400,7 @@ function rowToCliente(r){
     notes: r.notes || {}, schede: r.schede || {},
     professionistiIds: ids,
     email: r.email || '',
+    telefono: r.telefono || '',
     authUserId: r.auth_user_id || null,
     blockOperativoId: r.block_operativo_id || null,
     valutazioni: r.valutazioni || [],
@@ -3791,6 +3793,7 @@ function renderCliAnagraficaModal(c, edit){
     box.innerHTML = `
       ${c.dataNascita ? `<div class="ev-field"><label>Data di nascita</label><div>${c.dataNascita.split('-').reverse().join('/')}${clienteEtaAnni(c)!==null ? ' · ' + clienteEtaAnni(c) + ' anni' : ''}</div></div>` : ''}
       ${c.email ? `<div class="ev-field"><label>Email</label><div>${escHtml(c.email)}</div></div>` : ''}
+      ${c.telefono ? `<div class="ev-field"><label>Telefono</label><div>${escHtml(c.telefono)}</div></div>` : ''}
       ${c.note ? `<div class="ev-field"><label>Note</label><div style="white-space:pre-wrap;">${escHtml(c.note)}</div></div>` : ''}
       <div class="ev-field"><label>Professionisti assegnati</label><div>${profs.length ? profs.map(p=>escHtml(p.nome)+(p.area?' ('+escHtml(p.area)+')':'')).join(', ') : '— Nessuno —'}</div></div>
       <div style="font-size:11.5px;color:var(--ink-mute);margin-top:14px;">La Segreteria vede e gestisce i calendari di tutti, ma non le schede cliniche dei clienti. Per modificare i dati anagrafici usa la matita ✎ sulla scheda del cliente.</div>
@@ -3803,6 +3806,7 @@ function renderCliAnagraficaModal(c, edit){
       <div class="ev-field"><label>Data di nascita${clienteEtaAnni(c)!==null ? ' · '+clienteEtaAnni(c)+' anni' : ''}</label><input class="editable" type="date" id="anNascita" value="${escAttr(c.dataNascita||'')}"></div>
       <div class="ev-field"><label>Email</label><input class="editable" type="email" id="anEmail" value="${escAttr(c.email||'')}"></div>
     </div>
+    <div class="ev-field"><label>Telefono</label><input class="editable" type="tel" id="anTel" value="${escAttr(c.telefono||'')}"></div>
     <div class="ev-field"><label>Note</label><textarea class="editable" id="anNote" rows="3">${escHtml(c.note||'')}</textarea></div>
     <div class="ev-field"><label>Professionisti assegnati</label><div>${profs.length ? profs.map(p=>escHtml(p.nome)+(p.area?' ('+escHtml(p.area)+')':'')).join(', ') : '— Nessuno —'}</div></div>
     <div style="display:flex;gap:10px;align-items:center;margin-top:14px;"><button class="btn-gold" id="anSalva">Salva anagrafica</button><span id="anMsg" style="font-size:13px;color:#4CAF50;"></span></div>
@@ -3814,6 +3818,7 @@ function renderCliAnagraficaModal(c, edit){
     c.nome = nome;
     c.dataNascita = document.getElementById('anNascita').value;
     c.email = document.getElementById('anEmail').value.trim();
+    c.telefono = document.getElementById('anTel').value.trim();
     c.note = document.getElementById('anNote').value;
     db.saveCliente(c);
     document.getElementById('cliAnagraficaTitle').textContent = c.nome;
@@ -9100,6 +9105,7 @@ function createCliente(data){
     dataNascita: data.dataNascita || '',
     note: data.note || '',
     email: data.email || '',
+    telefono: data.telefono || '',
     profilo: null,
     pathway: null,
     selectedKPIs: new Set(),
@@ -10940,6 +10946,7 @@ function openEventInfo(ev){
 }
 function closeEventInfo(){ document.getElementById('eventInfoModal').classList.remove('open'); state.eventInfoId = null; }
 function closeEventModal(){
+  state.evNewPaz = false;
   document.getElementById('eventModal').classList.remove('open');
   state.eventEditor = null;
 }
@@ -10963,6 +10970,15 @@ function renderEventModal(){
         <option value="">— Nessuno / impegno personale —</option>
         ${state.clienti.filter(c=>!c.eliminato || c.id===ed.clienteId).map(c=>`<option value="${c.id}" ${ed.clienteId===c.id?'selected':''}>${c.nome}${c.eliminato?' (eliminato)':''}</option>`).join('')}
       </select>
+    </div>
+    <div style="margin:-6px 0 12px;">
+      <button type="button" class="btn-small" id="evNuovoPazBtn">${state.evNewPaz ? '× Annulla nuovo paziente' : '+ Nuovo paziente'}</button>
+      ${state.evNewPaz ? `<div class="ghi-draft-box" style="margin-top:8px;">
+        <div class="ev-row"><div class="ev-field"><label>Nome</label><input class="editable" id="evPazNome"></div>
+        <div class="ev-field"><label>Cognome</label><input class="editable" id="evPazCognome"></div></div>
+        <div class="ev-field"><label>Telefono</label><input class="editable" type="tel" id="evPazTel" placeholder="es. 333 1234567"></div>
+        <button type="button" class="btn-gold" id="evPazCrea">Crea paziente e selezionalo</button>
+      </div>` : ''}
     </div>
     ${(()=>{
       // admin/segreteria possono assegnare l'appuntamento a QUALSIASI
@@ -11068,6 +11084,21 @@ function renderEventModal(){
   document.getElementById('evDay').oninput = (e)=>{ ed.day = e.target.value; };
   document.getElementById('evStart').oninput = (e)=>{ ed.start = e.target.value; };
   document.getElementById('evEnd').oninput = (e)=>{ ed.end = e.target.value; };
+  document.getElementById('evNuovoPazBtn').onclick = ()=>{ state.evNewPaz = !state.evNewPaz; renderEventModal(); };
+  const evPazCrea = document.getElementById('evPazCrea');
+  if(evPazCrea) evPazCrea.onclick = ()=>{
+    const nome = document.getElementById('evPazNome').value.trim();
+    const cognome = document.getElementById('evPazCognome').value.trim();
+    const tel = document.getElementById('evPazTel').value.trim();
+    if(!nome || !cognome){ alert('Inserisci nome e cognome del paziente.'); return; }
+    const c = createCliente({ nome: nome + ' ' + cognome, telefono: tel });
+    const pEv = ed.professionistaId ? state.professionisti.find(p=>p.id===ed.professionistaId) : null;
+    c.professionistiIds = (pEv && pEv.area!=='Segreteria') ? [pEv.id] : [];
+    db.saveCliente(c);
+    ed.clienteId = c.id;
+    state.evNewPaz = false;
+    renderEventModal();
+  };
   document.getElementById('evCliente').onchange = (e)=>{
     ed.clienteId = e.target.value;
     const newClient = ed.clienteId ? state.clienti.find(c=>c.id===ed.clienteId) : null;
@@ -11286,7 +11317,7 @@ function renderSegClienti(box){
     <div style="display:flex;flex-direction:column;gap:8px;">${list.map(c=>{
       const profs = clienteProfIds(c).map(segNomeProf).join(', ');
       return `<div class="val-card" style="cursor:pointer;" data-seg-cli="${c.id}"><div class="val-card-top"><div class="val-card-date" style="font-size:15px;">${escHtml(c.nome||'—')}</div><button class="cli-edit" style="position:static;" title="Modifica anagrafica">✎</button></div>
-        <div class="val-card-autore">${escHtml(c.email||'—')}${profs ? ' · Seguito da: '+escHtml(profs) : ''}</div></div>`;
+        <div class="val-card-autore">${escHtml(c.telefono||c.email||'—')}${profs ? ' · Seguito da: '+escHtml(profs) : ''}</div></div>`;
     }).join('') || '<div class="val-empty">Nessun cliente.</div>'}</div>`;
   const inp = document.getElementById('segSearch');
   inp.oninput = e=>{ state.segSearch = e.target.value; const pos = e.target.selectionStart; renderSegClienti(box); const n = document.getElementById('segSearch'); n.focus(); n.setSelectionRange(pos,pos); };
