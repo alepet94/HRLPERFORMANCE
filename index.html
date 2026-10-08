@@ -65,6 +65,10 @@ body.client-auth-mode #btnTemplate,
 body.client-auth-mode #btnEsercizi,
 body.client-auth-mode #btnBlocchiOperativi,
 body.client-auth-mode #btnHelp{display:none;}
+body.seg-only-mode #btnCalendario,
+body.seg-only-mode #btnTemplate,
+body.seg-only-mode #btnEsercizi,
+body.seg-only-mode #btnBlocchiOperativi{display:none;}
 .auth-overlay{
   position:fixed;inset:0;z-index:200;
   background:var(--navy-950);
@@ -3458,8 +3462,10 @@ async function bootApp(){
     try{ Notification.requestPermission(); }catch(ex){}
   }
   renderRichBadge();
-  showView('clienti');
+  document.body.classList.toggle('seg-only-mode', isSegreteriaOnly());
   renderClientiList('');
+  if(isSegreteriaOnly()) segNavigate('calendario');
+  else showView('clienti');
 }
 
 async function bootClientApp(cliente){
