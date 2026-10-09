@@ -1856,6 +1856,7 @@ body[data-theme="light"] .paz-lk-list{background:#fff;border-color:#ccc;}
       <button class="btn-ghost" id="btnSpazi" style="display:none;">Spazi comuni</button>
       <button class="btn-ghost" id="btnNuovoProfessionista" style="display:none;">+ Nuovo professionista</button>
       <button class="btn-ghost" id="btnCestino" style="display:none;" title="Clienti eliminati, recuperabili">🗑 Cestino</button>
+      <button class="btn-ghost" id="btnImportCli" style="display:none;">Importa CSV</button>
       <button class="btn-gold" id="btnNuovoCliente">+ Nuovo cliente</button>
     </div>
   </div>
@@ -1883,6 +1884,8 @@ body[data-theme="light"] .paz-lk-list{background:#fff;border-color:#ccc;}
     <div class="ev-actions"><div></div><button class="btn-gold" id="btnCreaCliente">Crea e continua</button></div>
   </div>
 </div>
+
+<div class="modal-bg" id="impCliModal"><div class="modal modal-wide" style="max-height:90vh;"><button class="modal-close" id="impCliClose">×</button><h3>Importa pazienti da CSV</h3><div id="impCliBody"></div></div></div>
 
 <div class="modal-bg" id="cliAnagraficaModal">
   <div class="modal">
@@ -2096,6 +2099,8 @@ body[data-theme="light"] .paz-lk-list{background:#fff;border-color:#ccc;}
 </div>
 <div class="modal-bg" id="fattModal"><div class="modal modal-wide" style="max-height:90vh;"><button class="modal-close" id="fattClose">×</button><h3 id="fattTitle">Fattura</h3><div id="fattBody"></div></div></div>
 <div class="modal-bg" id="fattImpModal"><div class="modal"><button class="modal-close" id="fattImpClose">×</button><h3>Dati emittente</h3><div id="fattImpBody"></div></div></div>
+<div class="modal-bg" id="csModal"><div class="modal modal-wide" style="max-height:90vh;"><button class="modal-close" id="csClose">×</button><h3>Consensi privacy</h3><div id="csBody"></div></div></div>
+<div class="modal-bg" id="fattRepModal"><div class="modal modal-wide" style="max-height:90vh;"><button class="modal-close" id="fattRepClose">×</button><h3>Rendiconto</h3><div id="fattRepBody"></div></div></div>
 <div class="modal-bg" id="fattListinoModal"><div class="modal modal-wide"><button class="modal-close" id="fattListinoClose">×</button><h3>Listino prestazioni</h3><div id="fattListinoBody"></div></div></div>
 
 <div class="cal-wrap" id="calendarArea" style="display:none;">
@@ -3231,14 +3236,16 @@ const db = {
         sb.from('fatture').select('*'),
         sb.from('listino_prestazioni').select('*'),
         sb.from('dati_fiscali_clienti').select('*'),
-        sb.from('fatturazione_impostazioni').select('*').eq('id',1).maybeSingle()
+        sb.from('fatturazione_impostazioni').select('*').eq('id',1).maybeSingle(),
+        sb.from('pacchetti').select('*'),
+        sb.from('consensi').select('id,cliente_id,tipo,data,revocato')
       ]);
     } catch(ex){
       console.error('Supabase load exception', ex);
       db.lastError = (ex && ex.message) ? ex.message : String(ex);
       return false;
     }
-    const [c,a,r,f,cs,t,ex,dr,nc,bop,seg,spz,fat,lst,dfi,fimp] = results;
+    const [c,a,r,f,cs,t,ex,dr,nc,bop,seg,spz,fat,lst,dfi,fimp,pkq,csq] = results;
     // "segnalazioni" e "spazi" sono tabelle nuove: se Ale non ha ancora
     // eseguito le relative migrazioni su Supabase, la select fallisce
     // (tabella inesistente) — non deve bloccare il caricamento di tutto il
@@ -3266,6 +3273,8 @@ const db = {
     // fatturazione: tabelle nuove, errore tollerato (migrazione mancante o ruolo senza accesso)
     state.fatture = fat.error ? [] : (fat.data || []).map(fattRowToFattura);
     state.listino = lst.error ? [] : (lst.data || []).map(l=>({id:l.id, descrizione:l.descrizione, prezzo:+l.prezzo||0, aliquota:+l.aliquota||0, natura:l.natura||'N4'})).sort((a,b)=>String(a.id).localeCompare(String(b.id)));
+    state.pacchetti = pkq.error ? [] : (pkq.data || []).map(pkRowFrom);
+    state.consensi = csq.error ? [] : (csq.data || []).map(x=>({id:x.id, clienteId:x.cliente_id, tipo:x.tipo, data:x.data, revocato:!!x.revocato, firma:null}));
     state.datiFiscali = {}; if(!dfi.error) (dfi.data || []).forEach(x=>{ state.datiFiscali[x.cliente_id] = x.dati || {}; });
     state.fattImp = (fimp && !fimp.error && fimp.data && fimp.data.dati) ? fimp.data.dati : {};
     if(bop.data && bop.data.length){
@@ -3882,7 +3891,7 @@ function openClientForRole(id){
   renderContextBar();
   activateClientTab(state.clientTab);
 }
-function renderCliAnagraficaModal(c, edit){
+function renderCliAnagraficaModalBase(c, edit){
   const box = document.getElementById('cliAnagraficaContent');
   if(!box) return;
   const profs = clienteProfIds(c).map(id=>state.professionisti.find(p=>p.id===id)).filter(Boolean);
@@ -8503,6 +8512,30 @@ document.getElementById('execModal').onclick = (e)=>{ if(e.target.id==='execModa
 document.getElementById('lessonModal').onclick = (e)=>{ if(e.target.id==='lessonModal') document.getElementById('lessonModal').classList.remove('open'); };
 
 // ---------------- notifiche in-app (toast) per nuove richieste ----------------
+// ===== errori di salvataggio: banner rosso ben visibile =====
+(function(){
+  const orig = console.error;
+  let nascondi = null;
+  console.error = function(...a){
+    orig.apply(console, a);
+    try{
+      if(typeof a[0]==='string' && /^Supabase (save|delete|seed)/.test(a[0])){
+        const err = a[1] || {};
+        const msg = (err.message || err.details || err.hint || err.code || '').toString();
+        const mancante = /column|does not exist|relation|schema cache|PGRST/i.test(msg);
+        let b = document.getElementById('saveErrBanner');
+        if(!b){
+          b = document.createElement('div'); b.id = 'saveErrBanner';
+          b.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:300;background:#B3261E;color:#fff;padding:12px 44px 12px 18px;font-size:14px;line-height:1.4;box-shadow:0 4px 18px rgba(0,0,0,.5);';
+          document.body.appendChild(b);
+        }
+        b.innerHTML = `<b>⚠ Salvataggio non riuscito</b> — l'ultima modifica NON è stata salvata (${escHtml(a[0].replace('Supabase ',''))}).${mancante ? ' Probabile blocco SQL non ancora eseguito su Supabase.' : ' Controlla la connessione e riprova.'}${msg ? `<div style="opacity:.85;font-size:12px;margin-top:2px;">${escHtml(msg)}</div>` : ''}<button onclick="this.parentNode.remove()" style="position:absolute;right:12px;top:8px;background:none;border:none;color:#fff;font-size:22px;cursor:pointer;">×</button>`;
+        clearTimeout(nascondi); nascondi = setTimeout(()=>{ const x = document.getElementById('saveErrBanner'); if(x) x.remove(); }, 30000);
+      }
+    }catch(ex){}
+  };
+  window.addEventListener('offline', ()=>{ try{ showToast('Connessione assente', 'Sei offline: le modifiche non verranno salvate finché non torni online.'); }catch(e){} });
+})();
 function showToast(title, body){
   const box = document.getElementById('toastContainer');
   if(!box) return;
@@ -8618,7 +8651,7 @@ function getReadinessAlerts(){
   return state.appuntamenti.filter(a=> a.esecuzione && a.esecuzione.readinessLow && !a.esecuzione.readinessDismissed);
 }
 function renderAvvisiBadge(){
-  const n = getReadinessAlerts().length + clientiDaProgrammare().length;
+  const n = getReadinessAlerts().length + clientiDaProgrammare().length + pkAvvisi().length;
   const badge = document.getElementById('avvisiBadge');
   if(!badge) return;
   badge.textContent = n;
@@ -8629,12 +8662,14 @@ function renderAvvisiList(){
   const alerts = getReadinessAlerts().sort((a,b)=> (b.day+b.start).localeCompare(a.day+a.start));
   const daProg = clientiDaProgrammare().sort((a,b)=>(a.nome||'').localeCompare(b.nome||''));
   const progHtml = daProg.length ? `<div class="fat-box-t" style="margin:4px 0 8px;">Clienti senza appuntamenti futuri (${daProg.length})</div>` + daProg.map(c=>`<div class="rich-item" data-avv-cli="${c.id}" style="cursor:pointer;"><div class="ri-top"><div class="ri-cliente">${escHtml(c.nome)}</div></div><div class="ri-detail">${escHtml(catLabel(c.categoria) || 'Categoria da assegnare')} · ${c.pathway ? escHtml(c.pathway) : 'nessun piano (pathway)'}</div></div>`).join('') : '';
-  if(alerts.length===0 && !daProg.length){
+  const pkA = pkAvvisi();
+  const pkHtml = pkA.length ? `<div class="fat-box-t" style="margin:14px 0 8px;">Pacchetti in scadenza o esauriti (${pkA.length})</div>` + pkA.map(p=>{ const c = state.clienti.find(x=>x.id===p.clienteId); return `<div class="rich-item" data-avv-cli="${c.id}" style="cursor:pointer;"><div class="ri-top"><div class="ri-cliente">${escHtml(c.nome)}</div></div><div class="ri-detail">${escHtml(p.nome)} — ${escHtml(pkDescr(p))} · <b>${PK_STATO_LBL[pkStato(p)]}</b></div></div>`; }).join('') : '';
+  if(alerts.length===0 && !daProg.length && !pkA.length){
     box.innerHTML = `<div class="timeline-empty">Nessun avviso al momento.</div>`;
     return;
   }
   const bindProg = ()=> box.querySelectorAll('[data-avv-cli]').forEach(el=> el.onclick = ()=>{ document.getElementById('avvisiModal').classList.remove('open'); openClientForRole(el.dataset.avvCli); });
-  if(alerts.length===0){ box.innerHTML = progHtml; bindProg(); return; }
+  if(alerts.length===0){ box.innerHTML = progHtml + pkHtml; bindProg(); return; }
   box.innerHTML = (alerts.length ? `<div class="fat-box-t" style="margin:4px 0 8px;">Readiness bassa</div>` : '') + alerts.map(a=>{
     const c = state.clienti.find(x=>x.id===a.clienteId);
     const avg = a.esecuzione.readinessAvg;
@@ -8654,7 +8689,7 @@ function renderAvvisiList(){
       renderAvvisiList(); renderAvvisiBadge();
     };
   });
-  box.insertAdjacentHTML('beforeend', progHtml); bindProg();
+  box.insertAdjacentHTML('beforeend', progHtml + pkHtml); bindProg();
 }
 document.getElementById('btnAvvisi').onclick = ()=>{
   renderAvvisiList();
@@ -9251,7 +9286,7 @@ function anApplica(c, d){
   c.dataNascita = d.dataNascita; c.telefono = d.telefono; c.email = d.email; c.note = d.note;
   applicaCategoria(c, d.categoria);
 }
-function createCliente(data){
+function createCliente(data, opts){
   const c = {
     id: 'cl_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
     nome: data.nome,
@@ -9288,7 +9323,7 @@ function createCliente(data){
   };
   if(data.categoria) applicaCategoria(c, data.categoria);
   state.clienti.push(c);
-  db.saveCliente(c);
+  if(!(opts && opts.nosave)) db.saveCliente(c);
   return c;
 }
 
@@ -9515,13 +9550,15 @@ function cliAgenda(){
   });
   return m;
 }
-const AVV_FILTRI = [['senzaApp','Senza appuntamenti futuri'],['senzaRetest','Senza retest in programma'],['senzaPiano','Senza piano (pathway)']];
+const AVV_FILTRI = [['senzaApp','Senza appuntamenti futuri'],['senzaRetest','Senza retest in programma'],['senzaPiano','Senza piano (pathway)'],['pacchetto','Pacchetto in scadenza/esaurito'],['consensi','Consensi mancanti']];
 function avvMatch(c, ag, f){
   if(!f) return true;
   const o = ag[c.id] || {};
   if(f==='senzaApp') return !o.prossimo;
   if(f==='senzaRetest') return !o.retest;
   if(f==='senzaPiano') return !c.pathway;
+  if(f==='pacchetto') return pkDiCliente(c.id,true).some(p=>pkStato(p)!=='attivo');
+  if(f==='consensi') return csMancanti(c).length>0;
   return true;
 }
 function avvConteggi(list, ag){ const o = {}; AVV_FILTRI.forEach(([k])=> o[k] = list.filter(c=>avvMatch(c,ag,k)).length); return o; }
@@ -9532,11 +9569,13 @@ function avvChipsHtml(attivo, cont){
 function avvAgendaHtml(c, ag){
   const o = ag[c.id] || {}, f = d=>d ? d.split('-').reverse().slice(0,2).join('/') : null;
   const bad = t=>`<span style="color:#E0776A;">${t}</span>`;
-  return `<div style="font-size:12px;color:var(--ink-mute);margin-top:6px;">Prossimo: ${f(o.prossimo) || bad('nessuno')} · Retest: ${f(o.retest) || bad('nessuno')}${o.ultimo?' · Ultimo: '+f(o.ultimo):''}</div>`;
+  const pk = pkDiCliente(c.id,true)[0];
+  return `<div style="font-size:12px;color:var(--ink-mute);margin-top:6px;">Prossimo: ${f(o.prossimo) || bad('nessuno')} · Retest: ${f(o.retest) || bad('nessuno')}${o.ultimo?' · Ultimo: '+f(o.ultimo):''}</div>${pk ? `<div style="font-size:12px;margin-top:3px;color:${pkStato(pk)==='attivo'?'var(--ink-mute)':'#E0776A'};">${escHtml(pk.nome)}: ${escHtml(pkDescr(pk))}${pkStato(pk)!=='attivo'?' ('+PK_STATO_LBL[pkStato(pk)].toLowerCase()+')':''}</div>` : ''}${csMancanti(c).length ? `<div style="font-size:12px;margin-top:3px;color:#E0776A;">Consensi privacy mancanti</div>` : ''}`;
 }
 function renderClientiList(filter){
   renderCliFilterProf();
   try{ renderAvvisiBadge(); }catch(ex){}
+  const bImp = document.getElementById('btnImportCli'); if(bImp) bImp.style.display = canManageAll() ? 'inline-flex' : 'none';
   const box = document.getElementById('cliGrid');
   const f = (filter||'').trim().toLowerCase();
   const isAdminForCestino = !!(state.professionista && state.professionista.ruolo==='admin');
@@ -9662,6 +9701,147 @@ document.getElementById('btnClienti').onclick = ()=>{
   renderClientiList(document.getElementById('cliSearchInput').value);
 };
 document.getElementById('cliSearchInput').oninput = (e)=> renderClientiList(e.target.value);
+
+// ===== Import pazienti da CSV + controllo duplicati =====
+function normTel(t){ return String(t||'').replace(/\D+/g,'').slice(-9); }
+function normNomeKey(n, c){ return normStr(((n||'')+' '+(c||'')).split(/\s+/).filter(Boolean).sort().join(' ')); }
+// cerca pazienti già presenti che sembrano lo stesso: stesso codice fiscale, stesso nome e cognome (in qualsiasi ordine) o stesso telefono
+function pazDuplicati(d, ignoraId){
+  const cf = (d.cf||'').toUpperCase().trim(), tel = normTel(d.telefono), nk = normNomeKey(d.nome, d.cognome);
+  const out = [];
+  state.clienti.forEach(c=>{
+    if(c.eliminato || c.id===ignoraId) return;
+    const a = c.anagrafica || {}, n = anSplitNome(c);
+    let motivo = '';
+    if(cf && a.cf && a.cf.toUpperCase()===cf) motivo = 'stesso codice fiscale';
+    else if(nk.trim() && normNomeKey(n.nome, n.cognome)===nk) motivo = 'stesso nome e cognome';
+    else if(tel.length>=8 && normTel(c.telefono)===tel) motivo = 'stesso telefono';
+    if(motivo) out.push({c, motivo});
+  });
+  return out;
+}
+function pazConfermaDuplicati(d){
+  const dup = pazDuplicati(d);
+  if(!dup.length) return true;
+  return confirm('Esiste già un paziente simile:\n\n' + dup.slice(0,4).map(x=>`- ${x.c.nome} (${x.motivo})`).join('\n') + '\n\nCreare comunque un nuovo paziente?');
+}
+function csvParse(text){
+  text = String(text||'').replace(/^﻿/,'');
+  const first = text.split(/\r?\n/)[0] || '';
+  const delim = (first.split(';').length >= first.split(',').length && first.includes(';')) ? ';' : (first.includes('\t') ? '\t' : ',');
+  const rows = []; let row = [], cur = '', q = false;
+  for(let i=0;i<text.length;i++){
+    const ch = text[i];
+    if(q){ if(ch==='"'){ if(text[i+1]==='"'){ cur+='"'; i++; } else q=false; } else cur+=ch; }
+    else if(ch==='"') q = true;
+    else if(ch===delim){ row.push(cur); cur=''; }
+    else if(ch==='\n' || ch==='\r'){ if(ch==='\r' && text[i+1]==='\n') i++; row.push(cur); cur=''; if(row.some(x=>x.trim()!=='')) rows.push(row); row=[]; }
+    else cur+=ch;
+  }
+  row.push(cur); if(row.some(x=>x.trim()!=='')) rows.push(row);
+  return rows;
+}
+const IMP_CAMPI = [
+  ['cognome','Cognome',/cognome|rag\.?\s*soc/i],['nome','Nome',/^\s*nome\s*$/i],['nominativo','Nominativo completo (se non ci sono Cognome e Nome separati)',/nominativo|nome e cognome|paziente|cliente/i],
+  ['cf','Codice fiscale',/codice\s*fiscale|^\s*c\.?f\.?\s*$/i],['nascita','Data di nascita',/data.*nascita|nato il|^\s*nascita/i],['luogoNascita','Luogo di nascita',/luogo.*nascita/i],
+  ['sesso','Sesso',/sesso/i],['telefono','Cellulare / telefono',/cell|telefono|tel\.?\s*$|mobile/i],['email','Email',/e-?mail|posta/i],['pec','PEC',/\bpec\b/i],
+  ['indirizzo','Indirizzo',/indirizzo|^\s*via\b/i],['cap','CAP',/^\s*cap\s*$/i],['comune','Comune',/comune|citt[aà]|residen/i],['provincia','Provincia',/^\s*prov/i],
+  ['professione','Professione',/professione|lavoro/i],['piva','Partita IVA',/p\.?\s*iva|partita/i]
+];
+function impNormData(v){
+  v = String(v||'').trim(); if(!v) return '';
+  let m = v.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})/);
+  if(m){ let y = m[3]; if(y.length===2) y = (+y > 30 ? '19' : '20') + y; return `${y}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`; }
+  m = v.match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? m[0] : '';
+}
+function impRigaToDati(r, map, nomCognomeFirst){
+  const g = k=> map[k]!=null && map[k]>=0 ? String(r[map[k]]||'').trim() : '';
+  let nome = g('nome'), cognome = g('cognome');
+  if(!nome && !cognome && g('nominativo')){
+    const p = g('nominativo').split(/\s+/);
+    if(nomCognomeFirst){ cognome = p[0]||''; nome = p.slice(1).join(' '); } else { nome = p[0]||''; cognome = p.slice(1).join(' '); }
+  }
+  const cap = s=>s.toLowerCase().replace(/(^|[\s'’-])([a-zà-ú])/g,(m,a,b)=>a+b.toUpperCase());
+  const sx = g('sesso').toUpperCase().slice(0,1);
+  return {nome:cap(nome), cognome:cap(cognome), cf:g('cf').toUpperCase(), nascita:impNormData(g('nascita')), luogoNascita:g('luogoNascita'),
+    sesso:(sx==='M'||sx==='F') ? sx : '', telefono:g('telefono'), email:g('email'), pec:g('pec'), indirizzo:g('indirizzo'), cap:g('cap'),
+    comune:g('comune'), provincia:g('provincia').toUpperCase().slice(0,2), professione:g('professione'), piva:g('piva')};
+}
+function apriImportCsv(){
+  const m = document.getElementById('impCliModal'), box = document.getElementById('impCliBody');
+  state.imp = {rows:null};
+  box.innerHTML = `<p style="font-size:13.5px;color:var(--ink-dim);margin-top:0;">Esporta l'elenco pazienti dal gestionale (o da Excel: <i>Salva come CSV</i>) e caricalo qui. Vedrai un'anteprima prima di importare e i duplicati verranno segnalati.</p>
+    <input type="file" id="impFile" accept=".csv,.txt,text/csv"><div id="impStep2" style="margin-top:16px;"></div>`;
+  m.classList.add('open');
+  document.getElementById('impFile').onchange = e=>{
+    const f = e.target.files[0]; if(!f) return;
+    const rd = new FileReader();
+    rd.onload = ()=>{ const rows = csvParse(rd.result); if(rows.length<2){ alert('Il file sembra vuoto o non leggibile.'); return; } state.imp = {head:rows[0].map(x=>x.trim()), rows:rows.slice(1), map:{}, cognomeFirst:true, categoria:'', dup:'salta'};
+      state.imp.head.forEach((h,i)=> IMP_CAMPI.forEach(([k,,re])=>{ if(state.imp.map[k]==null && re.test(h)) state.imp.map[k] = i; }));
+      if(state.imp.map.cognome!=null && state.imp.map.nome!=null) delete state.imp.map.nominativo;
+      impRender(); };
+    rd.readAsText(f, 'utf-8');
+  };
+}
+function impRender(){
+  const I = state.imp, box = document.getElementById('impStep2');
+  const dati = I.rows.map(r=>impRigaToDati(r, I.map, I.cognomeFirst));
+  const stats = {nuovi:0, dup:0, vuoti:0};
+  I.valutati = dati.map(d=>{
+    if(!d.nome && !d.cognome) { stats.vuoti++; return {d, tipo:'vuoto'}; }
+    const dup = pazDuplicati({nome:d.nome, cognome:d.cognome, cf:d.cf, telefono:d.telefono});
+    if(dup.length){ stats.dup++; return {d, tipo:'dup', dup}; }
+    stats.nuovi++; return {d, tipo:'nuovo'};
+  });
+  // duplicati anche dentro lo stesso file
+  const viste = new Set();
+  I.valutati.forEach(v=>{ if(v.tipo!=='nuovo') return; const k = (v.d.cf || normNomeKey(v.d.nome, v.d.cognome)); if(viste.has(k)){ v.tipo='dup'; v.interno=true; stats.nuovi--; stats.dup++; } else viste.add(k); });
+  const sel = k=>`<select class="editable" data-impmap="${k}"><option value="-1">— non importare —</option>${I.head.map((h,i)=>`<option value="${i}" ${I.map[k]===i?'selected':''}>${escHtml(h)}</option>`).join('')}</select>`;
+  box.innerHTML = `
+    <div class="fat-box"><div class="fat-box-t">Colonne del file (${I.rows.length} righe)</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 14px;">${IMP_CAMPI.map(([k,l])=>`<div class="ev-field" style="margin:0;"><label>${l}</label>${sel(k)}</div>`).join('')}</div>
+      <label style="display:flex;gap:8px;align-items:center;margin-top:10px;font-size:13px;"><input type="checkbox" id="impCF" ${I.cognomeFirst?'checked':''}> Nel nominativo completo il cognome viene prima del nome (es. "ROSSI MARIO")</label></div>
+    <div class="ev-row"><div class="ev-field"><label>Categoria per tutti gli importati</label><select class="editable" id="impCat">${catOptionsHtml(I.categoria,'— da assegnare dopo —')}</select></div>
+      <div class="ev-field"><label>Se il paziente esiste già</label><select class="editable" id="impDup"><option value="salta" ${I.dup==='salta'?'selected':''}>Salta (non toccare quello esistente)</option><option value="completa" ${I.dup==='completa'?'selected':''}>Completa solo i campi vuoti dell'esistente</option></select></div></div>
+    <div class="fat-sum"><div><span>Nuovi</span><b>${stats.nuovi}</b></div><div><span>Già presenti / doppi</span><b>${stats.dup}</b></div><div><span>Senza nome (saltati)</span><b>${stats.vuoti}</b></div></div>
+    <div class="fat-table-wrap" style="max-height:240px;"><table class="fat-table"><thead><tr><th>Cognome Nome</th><th>CF</th><th>Nascita</th><th>Telefono</th><th>Esito</th></tr></thead><tbody>
+    ${I.valutati.slice(0,40).map(v=>`<tr><td>${escHtml((v.d.cognome+' '+v.d.nome).trim())}</td><td>${escHtml(v.d.cf)}</td><td>${fattData(v.d.nascita)}</td><td>${escHtml(v.d.telefono)}</td><td>${v.tipo==='nuovo'?'Nuovo':v.tipo==='vuoto'?'Senza nome':(v.interno?'Doppio nel file':'Esiste già: '+escHtml(v.dup[0].c.nome)+' ('+v.dup[0].motivo+')')}</td></tr>`).join('')}</tbody></table></div>
+    ${I.valutati.length>40?`<div style="font-size:12px;color:var(--ink-mute);margin-top:4px;">Anteprima dei primi 40 su ${I.valutati.length}.</div>`:''}
+    <div class="ev-actions"><div></div><button class="btn-gold" id="impGo" ${stats.nuovi||(I.dup==='completa'&&stats.dup)?'':'disabled'}>Importa</button></div>`;
+  box.querySelectorAll('[data-impmap]').forEach(se=> se.onchange = ()=>{ const v = +se.value; if(v<0) delete I.map[se.dataset.impmap]; else I.map[se.dataset.impmap] = v; impRender(); });
+  document.getElementById('impCF').onchange = e=>{ I.cognomeFirst = e.target.checked; impRender(); };
+  document.getElementById('impCat').onchange = e=>{ I.categoria = e.target.value; };
+  document.getElementById('impDup').onchange = e=>{ I.dup = e.target.value; impRender(); };
+  document.getElementById('impGo').onclick = impEsegui;
+}
+async function impEsegui(){
+  const I = state.imp; let creati = 0, completati = 0; const daSalvare = [];
+  I.valutati.forEach(v=>{
+    const d = v.d;
+    const anag = {nome:d.nome, cognome:d.cognome, sesso:d.sesso, luogoNascita:d.luogoNascita, cf:d.cf, professione:d.professione, indirizzo:d.indirizzo, cap:d.cap, comune:d.comune, provincia:d.provincia, pec:d.pec, piva:d.piva};
+    if(v.tipo==='nuovo'){
+      const c = createCliente({nome:(d.nome+' '+d.cognome).trim(), dataNascita:d.nascita, email:d.email, telefono:d.telefono, anagrafica:anag, categoria:I.categoria}, {nosave:true});
+      daSalvare.push(c); creati++;
+    } else if(v.tipo==='dup' && !v.interno && I.dup==='completa'){
+      const c = v.dup[0].c, a = c.anagrafica = c.anagrafica || {};
+      Object.keys(anag).forEach(k=>{ if(!a[k] && anag[k]) a[k] = anag[k]; });
+      if(!c.dataNascita && d.nascita) c.dataNascita = d.nascita; if(!c.email && d.email) c.email = d.email; if(!c.telefono && d.telefono) c.telefono = d.telefono;
+      daSalvare.push(c); completati++;
+    }
+  });
+  const btn = document.getElementById('impGo'); btn.disabled = true; btn.textContent = 'Importo…';
+  if(dbEnabled && sb){
+    for(let i=0;i<daSalvare.length;i+=100){
+      const {error} = await sb.from('clienti').upsert(daSalvare.slice(i,i+100).map(clienteToRow));
+      if(error){ console.error('Supabase saveClienti (import)', error); alert('Importazione interrotta: alcuni pazienti NON sono stati salvati. Controlla di aver eseguito i blocchi SQL e riprova (quelli già salvati verranno riconosciuti come duplicati).'); break; }
+    }
+  }
+  document.getElementById('impCliModal').classList.remove('open');
+  renderClientiList(document.getElementById('cliSearchInput').value);
+  alert(`Importazione terminata: ${creati} nuovi pazienti${completati?`, ${completati} completati`:''}.`);
+}
+document.getElementById('btnImportCli').onclick = apriImportCsv;
+document.getElementById('impCliClose').onclick = ()=> document.getElementById('impCliModal').classList.remove('open');
 document.getElementById('btnNuovoCliente').onclick = ()=>{
   document.getElementById('cliFormBox').innerHTML = anFormHtml({}, 'cli');
   document.getElementById('cliModal').classList.add('open');
@@ -9674,6 +9854,7 @@ document.getElementById('btnCreaCliente').onclick = ()=>{
   const d = anRead('cli');
   if(!d.an.nome || !d.an.cognome){ alert('Inserisci nome e cognome del cliente.'); return; }
   if(!d.categoria){ alert('Scegli la categoria del cliente: serve per indirizzare il percorso.'); return; }
+  if(!pazConfermaDuplicati({nome:d.an.nome, cognome:d.an.cognome, cf:d.an.cf, telefono:d.telefono})) return;
   const c = createCliente({ nome: (d.an.nome+' '+d.an.cognome).trim() });
   anApplica(c, d);
   db.saveCliente(c);
@@ -10923,7 +11104,7 @@ function renderCalendarMulti(){
       const height = Math.max((e-s)*PX, 16);
       const evClient = ev.clienteId ? state.clienti.find(c=>c.id===ev.clienteId) : null;
       const colorStyle = ev.colore ? `border-color:${ev.colore};background:${ev.colore}22;` : '';
-      html += `<div class="cal-block tipo-${ev.tipo}" data-event-id="${ev.id}" style="top:${top}px;height:${height}px;${colorStyle}${colLanes[ev.id]||''}">
+      html += `<div class="cal-block movable tipo-${ev.tipo}" data-event-id="${ev.id}" style="top:${top}px;height:${height}px;${colorStyle}${colLanes[ev.id]||''}">
         <div${ev.colore ? ` style="color:${ev.colore};"` : ''}>${escHtml(ev.titolo || tipoLabel(ev.tipo))}</div>
         ${evClient ? `<div class="cb-time">${escHtml(evClient.nome)}</div>` : ''}
         <div class="cb-time">${ev.start}–${ev.end}</div>
@@ -10934,6 +11115,7 @@ function renderCalendarMulti(){
 
   grid.innerHTML = html;
   grid.onclick = (e)=>{
+    if(window.__calDragSuppressClick){ window.__calDragSuppressClick = false; return; }
     const evEl = e.target.closest('[data-event-id]');
     if(evEl){
       const ev = state.appuntamenti.find(a=>a.id===evEl.dataset.eventId);
@@ -11201,6 +11383,24 @@ function openEventInfo(ev){
     row('Spazio', sp ? escHtml(sp.nome) : '') +
     row('Note', ev.noteSessione ? escHtml(ev.noteSessione) : '');
   state.eventInfoId = ev.id;
+  if(canManageAll() && ev.clienteId){ try{ fattInit();
+    const gia = state.fatture.find(f=>f.dati && f.dati.appuntamentoId===ev.id && f.dati.tipoDoc!=='TD04');
+    const ct = document.getElementById('eventInfoContent');
+    ct.insertAdjacentHTML('beforeend', gia
+      ? `<div class="ev-field"><label>Fattura</label><div><button class="btn-small" id="evInfoFattVedi">${gia.stato==='emessa' ? 'Fatturato: n. '+gia.numero+'/'+gia.anno : 'Bozza di fattura'} →</button></div></div>`
+      : `<div class="ev-field"><label>Fattura</label><div style="display:flex;gap:8px;flex-wrap:wrap;"><select class="editable" id="evInfoListino" style="max-width:320px;"><option value="">Scegli la prestazione…</option>${state.listino.map(l=>`<option value="${l.id}">${escHtml(l.descrizione)} — € ${fattEur(fattLordo(l.prezzo,l.aliquota))}</option>`).join('')}</select><button class="btn-small" id="evInfoFattGo">Crea fattura</button></div></div>`);
+    const v = document.getElementById('evInfoFattVedi');
+    if(v) v.onclick = ()=>{ closeEventInfo(); showView('fatturazione'); renderFatturazione(); fattApriEditor(gia.id); };
+    const g = document.getElementById('evInfoFattGo');
+    if(g) g.onclick = ()=>{
+      const lid = document.getElementById('evInfoListino').value; const l = state.listino.find(x=>x.id===lid);
+      if(!l){ alert('Scegli prima la prestazione dal listino.'); return; }
+      const pid = ev.professionistaId || '';
+      closeEventInfo(); showView('fatturazione'); renderFatturazione();
+      fattApriEditor(null, ev.clienteId, {data: ev.day, dati:{appuntamentoId: ev.id, ...(pid?{profId:pid}:{}), righe:[{descr:l.descrizione, qta:1, prezzo:+l.prezzo||0, aliquota:+l.aliquota||0, natura:l.natura||'N4'}]}});
+    };
+  }catch(ex){ console.error('evInfo fattura', ex); } }
+  try{ pkSedutaDaAppuntamento(ev, document.getElementById('eventInfoContent')); }catch(ex){ console.error('evInfo pacchetto', ex); }
   document.getElementById('eventInfoModal').classList.add('open');
 }
 function closeEventInfo(){ document.getElementById('eventInfoModal').classList.remove('open'); state.eventInfoId = null; }
@@ -11348,6 +11548,7 @@ function renderEventModal(){
     const cognome = document.getElementById('evPazCognome').value.trim();
     const tel = document.getElementById('evPazTel').value.trim();
     if(!nome || !cognome){ alert('Inserisci nome e cognome del paziente.'); return; }
+    if(!pazConfermaDuplicati({nome, cognome, telefono:tel})) return;
     const c = createCliente({ nome: nome + ' ' + cognome, telefono: tel, anagrafica:{nome, cognome}, categoria: document.getElementById('evPazCat').value });
     const pEv = ed.professionistaId ? state.professionisti.find(p=>p.id===ed.professionistaId) : null;
     c.professionistiIds = (pEv && pEv.area!=='Segreteria') ? [pEv.id] : [];
@@ -11563,6 +11764,7 @@ function renderSegreteria(){
   const box = document.getElementById('segContent');
   if(state.segTab==='appuntamento') renderSegAppuntamento(box);
   else if(state.segTab==='richieste') renderSegRichieste(box);
+  else if(state.segTab==='promemoria') renderSegPromemoria(box);
   else renderSegClienti(box);
 }
 function renderSegClienti(box){
@@ -11715,7 +11917,7 @@ function renderSegRichieste(box){
 function renderSegBar(id, active){
   const el = document.getElementById(id); if(!el) return;
   const nRich = state.richieste.filter(r=>r.stato==='in attesa').length;
-  const items = [['richieste','Richieste di spostamento'],['calendario','Calendario'],['giorno','Giornaliero professionista'],['multi','Multicalendario giornaliero'],['clienti','Clienti'],['appuntamento','Nuovo appuntamento multi-professionista']];
+  const items = [['richieste','Richieste di spostamento'],['calendario','Calendario'],['giorno','Giornaliero professionista'],['multi','Multicalendario giornaliero'],['clienti','Clienti'],['appuntamento','Nuovo appuntamento multi-professionista'],['promemoria','Promemoria']];
   el.innerHTML = `<div class="cal-mode-toggle">${items.map(([k,l])=>`<div class="cal-mode-opt ${k===active?'active':''}" data-segnav="${k}">${l}${k==='richieste' && nRich ? ` <span class="rich-badge" style="display:inline-block;">${nRich}</span>` : ''}</div>`).join('')}</div>`;
   el.querySelectorAll('[data-segnav]').forEach(b=> b.onclick = ()=> segNavigate(b.dataset.segnav));
 }
@@ -11780,23 +11982,30 @@ function fattCalc(d){
   const totale = r2(imponibile + iva + (d.bolloAddebitato!==false ? bollo : 0));
   return {riepilogo, imponibile, iva, esente, bollo, totale};
 }
+function fattSegno(f){ return (f.dati && f.dati.tipoDoc==='TD04') ? -1 : 1; }
 function fattPagato(f){ return r2(((f.dati&&f.dati.pagamenti)||[]).reduce((s,p)=>s+(+p.importo||0),0)); }
 function fattStatoPag(f){
   if(f.stato==='bozza') return 'bozza';
+  if(fattSegno(f)<0) return 'nc';
+  if((f.dati.nc||[]).length) return 'stornata';
   const tot = fattCalc(f.dati||{}).totale, pag = fattPagato(f);
   if(pag >= tot - 0.005) return 'pagata';
   return pag > 0 ? 'parziale' : 'da_incassare';
 }
-const FATT_STATO_PAG_LBL = {bozza:'—', pagata:'Pagata', parziale:'Parziale', da_incassare:'Da incassare'};
+const FATT_STATO_PAG_LBL = {bozza:'—', nc:'Nota di credito', stornata:'Stornata', pagata:'Pagata', parziale:'Parziale', da_incassare:'Da incassare'};
 function fattNomeCliente(f){
   const c = state.clienti.find(x=>x.id===f.clienteId);
   const ces = (f.dati && f.dati.cessionario) || {};
   return (ces.tipo==='azienda' ? ces.denominazione : ((ces.nome||'')+' '+(ces.cognome||'')).trim()) || (c ? c.nome : '—');
 }
+function fattLog(f, azione){
+  const l = (f.dati.log = f.dati.log || []);
+  l.push({t:new Date().toISOString(), u:(state.professionista && state.professionista.nome) || '', a:azione});
+}
 function fattRowToFattura(r){ return {id:r.id, anno:r.anno, numero:r.numero, data:r.data, clienteId:r.cliente_id, stato:r.stato, dati:r.dati||{}}; }
 function fattToRow(f){ return {id:f.id, anno:f.anno, numero:f.numero==null?null:f.numero, data:f.data, cliente_id:f.clienteId||null, stato:f.stato, dati:f.dati||{}}; }
 Object.assign(db, {
-  async saveFattura(f){ if(!dbEnabled || !sb) return {ok:true}; const {error} = await sb.from('fatture').upsert(fattToRow(f)); if(error){ console.error('Supabase saveFattura', error); return {ok:false, error}; } return {ok:true}; },
+  async saveFattura(f){ if(!dbEnabled || !sb) return {ok:true}; const {error} = await sb.from('fatture').upsert(fattToRow(f)); if(error){ if(error.code!=='23505') console.error('Supabase saveFattura', error); return {ok:false, error}; } return {ok:true}; },
   async deleteFattura(id){ if(!dbEnabled || !sb) return true; const {error} = await sb.from('fatture').delete().eq('id',id); if(error){ console.error('Supabase deleteFattura', error); return false; } return true; },
   async saveListino(l){ if(!dbEnabled || !sb) return; const {error} = await sb.from('listino_prestazioni').upsert({id:l.id, descrizione:l.descrizione, prezzo:l.prezzo, aliquota:l.aliquota, natura:l.natura||null, attivo:true}); if(error) console.error('Supabase saveListino', error); },
   async deleteListino(id){ if(!dbEnabled || !sb) return; const {error} = await sb.from('listino_prestazioni').delete().eq('id',id); if(error) console.error('Supabase deleteListino', error); },
@@ -11815,20 +12024,22 @@ function renderFatturazione(){
     if(fl.q && !pazMatch({nome:fattNomeCliente(f)}, fl.q)) return false;
     const sp = fattStatoPag(f);
     if(fl.stato==='bozza') return f.stato==='bozza';
-    if(fl.stato==='da_incassare') return f.stato==='emessa' && sp!=='pagata';
+    if(fl.stato==='da_incassare') return f.stato==='emessa' && sp!=='pagata' && sp!=='nc' && sp!=='stornata';
     if(fl.stato==='pagata') return sp==='pagata';
     if(fl.stato==='sdi') return f.stato==='emessa' && ((f.dati.sdi||{}).stato||'pronto')==='pronto';
     return true;
   }).sort((a,b)=> (b.data||'').localeCompare(a.data||'') || (b.numero||0)-(a.numero||0));
   const emesse = list.filter(f=>f.stato==='emessa');
-  const tot = r2(emesse.reduce((s,f)=>s+fattCalc(f.dati).totale,0));
-  const inc = r2(emesse.reduce((s,f)=>s+fattPagato(f),0));
+  const tot = r2(emesse.reduce((s,f)=>s+fattSegno(f)*fattCalc(f.dati).totale,0));
+  const inc = r2(emesse.filter(f=>fattSegno(f)>0).reduce((s,f)=>s+fattPagato(f),0));
+  const daInc = r2(emesse.filter(f=>fattSegno(f)>0 && !(f.dati.nc||[]).length).reduce((s,f)=>s+Math.max(0,fattCalc(f.dati).totale-fattPagato(f)),0));
   const nSdi = state.fatture.filter(f=>f.stato==='emessa' && ((f.dati.sdi||{}).stato||'pronto')==='pronto').length;
   box.innerHTML = `
     <div class="fat-toolbar">
       <button class="btn-gold" id="fattNew">+ Nuova fattura</button>
       <button class="btn-ghost" id="fattListinoBtn">Listino prestazioni</button>
       <button class="btn-ghost" id="fattImpBtn">Dati emittente</button>
+      <button class="btn-ghost" id="fattRepBtn">Rendiconto</button>
       <button class="btn-ghost" id="fattCsvBtn">Esporta CSV</button>
     </div>
     <div class="fat-filters">
@@ -11840,11 +12051,11 @@ function renderFatturazione(){
       </select></div>
     </div>
     ${nSdi ? `<div class="val-legacy-note" style="margin-bottom:12px;">${nSdi} fatture emesse sono pronte per l'invio a SDI (scarica l'XML dal dettaglio).</div>` : ''}
-    <div class="fat-sum"><div><span>Fatturato</span><b>€ ${fattEur(tot)}</b></div><div><span>Incassato</span><b>€ ${fattEur(inc)}</b></div><div><span>Da incassare</span><b>€ ${fattEur(tot-inc)}</b></div><div><span>Documenti</span><b>${list.length}</b></div></div>
+    <div class="fat-sum"><div><span>Fatturato</span><b>€ ${fattEur(tot)}</b></div><div><span>Incassato</span><b>€ ${fattEur(inc)}</b></div><div><span>Da incassare</span><b>€ ${fattEur(daInc)}</b></div><div><span>Documenti</span><b>${list.length}</b></div></div>
     <div class="fat-table-wrap"><table class="fat-table"><thead><tr><th>Data</th><th>Numero</th><th>Nominativo del cliente</th><th class="n">Importo</th><th class="n">Pagato</th><th>Pagamento</th><th>Stato SDI</th></tr></thead><tbody>
     ${list.map(f=>{
       const c = fattCalc(f.dati), sp = fattStatoPag(f), sdi = (f.dati.sdi||{}).stato||'pronto';
-      return `<tr data-fatt="${f.id}"><td>${fattData(f.data)}</td><td>${f.numero!=null ? f.numero : '<i>bozza</i>'}</td><td>${escHtml(fattNomeCliente(f))}</td><td class="n">${fattEur(c.totale)}</td><td class="n">${f.stato==='bozza'?'':fattEur(fattPagato(f))}</td><td><span class="fat-pill ${sp}">${FATT_STATO_PAG_LBL[sp]}</span></td><td>${f.stato==='bozza' ? '' : escHtml((FATT_SDI.find(x=>x[0]===sdi)||[])[1]||'')}</td></tr>`;
+      return `<tr data-fatt="${f.id}"><td>${fattData(f.data)}</td><td>${f.numero!=null ? f.numero : '<i>bozza</i>'}${fattSegno(f)<0?' <span class="fat-pill">NC</span>':''}</td><td>${escHtml(fattNomeCliente(f))}</td><td class="n">${fattSegno(f)<0?'-':''}${fattEur(c.totale)}</td><td class="n">${(f.stato==='bozza'||fattSegno(f)<0)?'':fattEur(fattPagato(f))}</td><td><span class="fat-pill ${sp}">${FATT_STATO_PAG_LBL[sp]}</span></td><td>${f.stato==='bozza' ? '' : escHtml((FATT_SDI.find(x=>x[0]===sdi)||[])[1]||'')}</td></tr>`;
     }).join('') || '<tr><td colspan="7" class="val-empty">Nessun documento nel periodo.</td></tr>'}
     </tbody></table></div>`;
   const rerender = ()=> renderFatturazione();
@@ -11852,6 +12063,7 @@ function renderFatturazione(){
   document.getElementById('fattListinoBtn').onclick = fattApriListino;
   document.getElementById('fattImpBtn').onclick = fattApriImp;
   document.getElementById('fattCsvBtn').onclick = ()=> fattCsv(list);
+  document.getElementById('fattRepBtn').onclick = ()=> fattApriRendiconto();
   document.getElementById('fattDal').onchange = e=>{ fl.dal = e.target.value; rerender(); };
   document.getElementById('fattAl').onchange = e=>{ fl.al = e.target.value; rerender(); };
   document.getElementById('fattStato').onchange = e=>{ fl.stato = e.target.value; rerender(); };
@@ -11944,13 +12156,15 @@ function fattDatiFiscaliCliente(cid){
   if(a.ragSociale && a.piva && !saved.tipo){ out.tipo = 'azienda'; out.denominazione = a.ragSociale; out.piva = a.piva; }
   return out;
 }
-function fattApriEditor(id, clienteId){
+function fattApriEditor(id, clienteId, preset){
   fattInit();
   let f;
   if(id){ f = JSON.parse(JSON.stringify(state.fatture.find(x=>x.id===id))); }
   else {
     f = {id:fattNuovoId('fat'), anno:new Date().getFullYear(), numero:null, data:fmtDateISO(new Date()), clienteId:clienteId||'', stato:'bozza',
       dati:{righe:[], bollo:'auto', bolloAddebitato:true, pagamenti:[], sdi:{stato:'pronto'}, cessionario:clienteId?fattDatiFiscaliCliente(clienteId):null}};
+    if(clienteId){ const cl = state.clienti.find(x=>x.id===clienteId); f.dati.profId = cl ? (clienteProfIds(cl).find(pid=>{ const p = state.professionisti.find(x=>x.id===pid); return p && p.area!=='Segreteria'; }) || '') : ''; }
+    if(preset){ if(preset.data){ f.data = preset.data; f.anno = +preset.data.slice(0,4) || f.anno; } Object.assign(f.dati, preset.dati||{}); }
   }
   state.fattEd = f; state.fattEdNuova = !id;
   fattRenderEditor();
@@ -11961,13 +12175,16 @@ function fattRenderEditor(){
   const ces = d.cessionario;
   const dis = ro ? 'disabled' : '';
   const c = fattCalc(d);
-  document.getElementById('fattTitle').textContent = ro ? `Fattura n. ${f.numero}/${f.anno}` : (state.fattEdNuova ? 'Nuova fattura' : 'Bozza di fattura');
+  const nc = d.tipoDoc==='TD04';
+  document.getElementById('fattTitle').textContent = ro ? `${nc?'Nota di credito':'Fattura'} n. ${f.numero}/${f.anno}` : (nc ? 'Nota di credito (bozza)' : (state.fattEdNuova ? 'Nuova fattura' : 'Bozza di fattura'));
   const cesF = (k,l,ph)=>`<div class="ev-field"><label>${l}</label><input class="editable" data-ces="${k}" value="${escAttr(ces[k]||'')}" ${dis} ${ph?`placeholder="${ph}"`:''}></div>`;
   document.getElementById('fattBody').innerHTML = `
     <div class="ev-row">
       <div class="ev-field"><label>Cliente</label>${ro ? `<input class="editable" disabled value="${escAttr(fattNomeCliente(f))}">` : pazLookupHtml('fattCli', f.clienteId, '— seleziona un cliente —')}</div>
-      <div class="ev-field"><label>Data fattura</label><input type="date" class="editable" id="fattData" value="${escAttr(f.data)}" ${dis}></div>
+      <div class="ev-field"><label>Data</label><input type="date" class="editable" id="fattData" value="${escAttr(f.data)}" ${dis}></div>
     </div>
+    ${nc && d.rif ? `<div class="val-legacy-note" style="margin-bottom:10px;">Storna la fattura n. ${escHtml(String(d.rif.numero))} del ${fattData(d.rif.data)}.</div>` : ''}
+    <div class="ev-field"><label>Professionista di riferimento (per il rendiconto)</label><select class="editable" id="fattProf" ${dis}><option value="">— nessuno —</option>${state.professionisti.filter(p=>p.area!=='Segreteria').map(p=>`<option value="${p.id}" ${d.profId===p.id?'selected':''}>${escHtml(p.nome)}</option>`).join('')}</select></div>
     ${ces ? `<div class="fat-box"><div class="fat-box-t">Dati fiscali del cliente (si ricordano per le prossime fatture)</div>
       <div class="ev-field"><label>Tipo</label><select class="editable" data-ces="tipo" ${dis}><option value="privato" ${ces.tipo!=='azienda'?'selected':''}>Persona fisica</option><option value="azienda" ${ces.tipo==='azienda'?'selected':''}>Azienda / P.IVA</option></select></div>
       ${ces.tipo==='azienda'
@@ -11997,7 +12214,7 @@ function fattRenderEditor(){
       <div id="fattTot" class="fat-tot"></div></div>
     ${ro ? fattPagamentiHtml(f) : ''}
     <div class="ev-actions" style="flex-wrap:wrap;gap:8px;">
-      <div style="display:flex;gap:8px;flex-wrap:wrap;">${ro ? `<button class="btn-small" id="fattXmlBtn">Scarica XML</button><button class="btn-small" id="fattPrintBtn">Copia di cortesia (PDF)</button>` : (state.fattEdNuova ? '' : `<button class="btn-small danger" id="fattDelBtn">Elimina bozza</button>`)}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">${ro ? `<button class="btn-small" id="fattXmlBtn">Scarica XML</button><button class="btn-small" id="fattPrintBtn">Copia di cortesia (PDF)</button>${(!nc && !(d.nc||[]).length) ? `<button class="btn-small danger" id="fattNcBtn">Emetti nota di credito</button>` : ''}` : (state.fattEdNuova ? '' : `<button class="btn-small danger" id="fattDelBtn">Elimina bozza</button>`)}</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">${ro ? '' : `<button class="btn-small" id="fattSaveBozza">Salva bozza</button><button class="btn-gold" id="fattEmetti">Emetti fattura</button>`}</div>
     </div>`;
   fattAggiornaTot();
@@ -12019,6 +12236,7 @@ function fattPagamentiHtml(f){
       <div class="ev-field"><label>Data</label><input type="date" class="editable" id="pgData" value="${fmtDateISO(new Date())}"></div>
       <div class="ev-field"><label>Metodo</label><select class="editable" id="pgMet">${FATT_MODALITA.map(([v,l])=>`<option value="${v}">${l}</option>`).join('')}</select></div>
       <button class="btn-gold" id="pgAdd" style="margin-bottom:14px;">Registra</button></div></div>
+    <details class="fat-box"><summary class="fat-box-t" style="cursor:pointer;margin:0;">Registro modifiche (${(f.dati.log||[]).length})</summary>${(f.dati.log||[]).slice().reverse().map(x=>`<div style="font-size:12.5px;color:var(--ink-dim);padding:3px 0;">${new Date(x.t).toLocaleString('it-IT')} — ${escHtml(x.u)}: ${escHtml(x.a)}</div>`).join('') || ''}</details>
     <div class="fat-box"><div class="fat-box-t">Invio a SDI</div>
       <div class="ev-row"><div class="ev-field"><label>Stato</label><select class="editable" id="sdiStato">${FATT_SDI.map(([v,l])=>`<option value="${v}" ${(sdi.stato||'pronto')===v?'selected':''}>${l}</option>`).join('')}</select></div>
       <div class="ev-field"><label>Data invio</label><input type="date" class="editable" id="sdiData" value="${escAttr(sdi.dataInvio||'')}"></div></div>
@@ -12033,6 +12251,7 @@ function fattBindEditor(){
       d.cessionario = v ? fattDatiFiscaliCliente(v) : null;
       fattRenderEditor();
     });
+    document.getElementById('fattProf').onchange = e=>{ d.profId = e.target.value; };
     document.getElementById('fattData').onchange = e=>{ f.data = e.target.value; f.anno = +(e.target.value||'').slice(0,4) || f.anno; };
     body.querySelectorAll('[data-ces]').forEach(inp=> inp.onchange = ()=>{
       d.cessionario[inp.dataset.ces] = inp.value.trim();
@@ -12064,18 +12283,26 @@ function fattBindEditor(){
       fattScarica(r.nomeFile, r.xml, 'application/xml;charset=utf-8');
     };
     document.getElementById('fattPrintBtn').onclick = ()=> fattStampa(f);
+    const ncb = document.getElementById('fattNcBtn');
+    if(ncb) ncb.onclick = ()=>{
+      if(!confirm(`Creare una nota di credito che storna per intero la fattura n. ${f.numero}/${f.anno}?\n\nVerrà creata una bozza da controllare ed emettere.`)) return;
+      const nc = {id:fattNuovoId('fat'), anno:new Date().getFullYear(), numero:null, data:fmtDateISO(new Date()), clienteId:f.clienteId, stato:'bozza',
+        dati:{tipoDoc:'TD04', righe:JSON.parse(JSON.stringify(d.righe)), bollo:d.bollo, bolloAddebitato:d.bolloAddebitato, pagamenti:[], sdi:{stato:'pronto'}, cessionario:JSON.parse(JSON.stringify(d.cessionario)), profId:d.profId||'', rif:{id:f.id, numero:f.numero, data:f.data}}};
+      state.fattEd = nc; state.fattEdNuova = true; fattRenderEditor();
+    };
     body.querySelectorAll('[data-delpg]').forEach(b=> b.onclick = async ()=>{
       if(!confirm('Eliminare questo pagamento?')) return;
-      d.pagamenti.splice(+b.dataset.delpg,1); await fattPersisti(f); fattRenderEditor();
+      const rem = d.pagamenti.splice(+b.dataset.delpg,1)[0]; fattLog(f, `Pagamento eliminato (€ ${fattEur(rem.importo)} del ${fattData(rem.data)})`); await fattPersisti(f); fattRenderEditor();
     });
     document.getElementById('pgAdd').onclick = async ()=>{
       const imp = parseFloat(String(document.getElementById('pgImp').value).replace(',','.'));
       if(!(imp>0)){ alert('Inserisci un importo valido.'); return; }
       (d.pagamenti = d.pagamenti||[]).push({id:fattNuovoId('pg'), importo:r2(imp), data:document.getElementById('pgData').value, metodo:document.getElementById('pgMet').value});
+      fattLog(f, `Pagamento registrato: € ${fattEur(imp)} (${(FATT_MODALITA.find(m=>m[0]===document.getElementById('pgMet').value)||[])[1]})`);
       await fattPersisti(f); fattRenderEditor();
     };
     const sdiS = document.getElementById('sdiStato'), sdiD = document.getElementById('sdiData');
-    const saveSdi = async ()=>{ d.sdi = {stato:sdiS.value, dataInvio:sdiD.value}; if(sdiS.value==='inviata' && !sdiD.value){ d.sdi.dataInvio = fmtDateISO(new Date()); sdiD.value = d.sdi.dataInvio; } await fattPersisti(f); };
+    const saveSdi = async ()=>{ d.sdi = {stato:sdiS.value, dataInvio:sdiD.value}; fattLog(f, 'Stato SDI: '+((FATT_SDI.find(x=>x[0]===sdiS.value)||[])[1])); if(sdiS.value==='inviata' && !sdiD.value){ d.sdi.dataInvio = fmtDateISO(new Date()); sdiD.value = d.sdi.dataInvio; } await fattPersisti(f); };
     sdiS.onchange = saveSdi; sdiD.onchange = saveSdi;
   }
 }
@@ -12119,18 +12346,23 @@ async function fattSalva(emetti){
   const err = fattValida(f);
   if(err.length){ alert('Non posso emettere la fattura:\n\n- '+err.join('\n- ')); return; }
   const c = fattCalc(f.dati);
-  if(!confirm(`Emettere la fattura per ${fattNomeClienteEd(f)} di € ${fattEur(c.totale)}?\n\nDopo l'emissione non sarà più modificabile.`)) return;
+  if(!confirm(`Emettere ${f.dati.tipoDoc==='TD04'?'la nota di credito':'la fattura'} per ${fattNomeClienteEd(f)} di € ${fattEur(c.totale)}?\n\nDopo l'emissione non sarà più modificabile.`)) return;
   for(let tentativo=0; tentativo<3; tentativo++){
     const maxDb = Math.max(0, ...state.fatture.filter(x=>x.stato==='emessa' && x.anno===f.anno && x.id!==f.id).map(x=>x.numero||0));
     const base = (state.fattImp.ultimoNumero && f.anno===new Date().getFullYear()) ? state.fattImp.ultimoNumero : 0;
     f.numero = Math.max(maxDb, base) + 1 + tentativo;
     f.stato = 'emessa';
     f.dati.sdi = {stato:'pronto'};
+    if(!(f.dati.log||[]).some(x=>/^Emessa/.test(x.a))) fattLog(f, `Emessa con il numero ${f.numero}/${f.anno}`);
     const copia = JSON.parse(JSON.stringify(f));
     const r = await db.saveFattura(copia);
     if(r.ok){
       const idx = state.fatture.findIndex(x=>x.id===f.id);
       if(idx>=0) state.fatture[idx] = copia; else state.fatture.push(copia);
+      if(f.dati.tipoDoc==='TD04' && f.dati.rif){
+        const orig = state.fatture.find(x=>x.id===f.dati.rif.id);
+        if(orig){ orig.dati.nc = (orig.dati.nc||[]).concat([{id:f.id, numero:f.numero}]); fattLog(orig, `Stornata dalla nota di credito n. ${f.numero}/${f.anno}`); db.saveFattura(orig); }
+      }
       state.fattEdNuova = false;
       renderFatturazione(); fattRenderEditor();
       return;
@@ -12168,9 +12400,9 @@ function fattGeneraXml(f){
 <CessionarioCommittente><DatiAnagrafici>${privato ? `<CodiceFiscale>${x((ces.cf||'').toUpperCase())}</CodiceFiscale><Anagrafica><Nome>${x(ces.nome)}</Nome><Cognome>${x(ces.cognome)}</Cognome></Anagrafica>` : `<IdFiscaleIVA><IdPaese>IT</IdPaese><IdCodice>${x(ces.piva)}</IdCodice></IdFiscaleIVA>${ces.cf?`<CodiceFiscale>${x(ces.cf)}</CodiceFiscale>`:''}<Anagrafica><Denominazione>${x(ces.denominazione)}</Denominazione></Anagrafica>`}</DatiAnagrafici>${sede(ces)}</CessionarioCommittente>
 </FatturaElettronicaHeader>
 <FatturaElettronicaBody>
-<DatiGenerali><DatiGeneraliDocumento><TipoDocumento>TD01</TipoDocumento><Divisa>EUR</Divisa><Data>${x(f.data)}</Data><Numero>${f.numero}</Numero>${bollo}<ImportoTotaleDocumento>${n2(c.totale)}</ImportoTotaleDocumento></DatiGeneraliDocumento></DatiGenerali>
+<DatiGenerali><DatiGeneraliDocumento><TipoDocumento>${d.tipoDoc==='TD04'?'TD04':'TD01'}</TipoDocumento><Divisa>EUR</Divisa><Data>${x(f.data)}</Data><Numero>${f.numero}</Numero>${bollo}<ImportoTotaleDocumento>${n2(c.totale)}</ImportoTotaleDocumento></DatiGeneraliDocumento>${d.tipoDoc==='TD04' && d.rif ? `<DatiFattureCollegate><IdDocumento>${x(String(d.rif.numero))}</IdDocumento><Data>${x(d.rif.data)}</Data></DatiFattureCollegate>` : ''}</DatiGenerali>
 <DatiBeniServizi>${righe}${riep}</DatiBeniServizi>
-<DatiPagamento><CondizioniPagamento>TP02</CondizioniPagamento><DettaglioPagamento><ModalitaPagamento>${modPag}</ModalitaPagamento><ImportoPagamento>${n2(c.totale)}</ImportoPagamento>${modPag==='MP05' && imp.iban ? `<IBAN>${x(imp.iban)}</IBAN>` : ''}</DettaglioPagamento></DatiPagamento>
+${d.tipoDoc==='TD04' ? '' : `<DatiPagamento><CondizioniPagamento>TP02</CondizioniPagamento><DettaglioPagamento><ModalitaPagamento>${modPag}</ModalitaPagamento><ImportoPagamento>${n2(c.totale)}</ImportoPagamento>${modPag==='MP05' && imp.iban ? `<IBAN>${x(imp.iban)}</IBAN>` : ''}</DettaglioPagamento></DatiPagamento>`}
 </FatturaElettronicaBody>
 </p:FatturaElettronica>`;
   return {xml, nomeFile, errori: f.stato==='emessa' ? fattValida(f) : err};
@@ -12181,9 +12413,9 @@ function fattStampa(f){
   const imp = state.fattImp||{}, c = fattCalc(f.dati), ces = f.dati.cessionario||{};
   const win = window.open('', '_blank'); if(!win){ alert('Consenti i popup per stampare.'); return; }
   const e = escHtml;
-  win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Fattura ${f.numero}-${f.anno}</title><style>
+  win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${f.dati.tipoDoc==='TD04'?'Nota di credito':'Fattura'} ${f.numero}-${f.anno}</title><style>
   body{font-family:Arial,sans-serif;color:#111;margin:40px;font-size:13px}h1{font-size:20px;margin:0 0 4px}table{width:100%;border-collapse:collapse;margin-top:18px}th,td{border-bottom:1px solid #ccc;padding:6px 4px;text-align:left}th.n,td.n{text-align:right}.t{margin-top:16px;text-align:right}.t div{margin:3px 0}.g{font-size:16px;font-weight:bold}.cols{display:flex;justify-content:space-between;gap:30px;margin-top:20px}.note{margin-top:30px;font-size:11px;color:#666}</style></head><body>
-  <h1>Fattura n. ${f.numero}/${f.anno}</h1><div>Data: ${fattData(f.data)}</div>
+  <h1>${f.dati.tipoDoc==='TD04'?'Nota di credito':'Fattura'} n. ${f.numero}/${f.anno}</h1>${f.dati.rif?`<div>Storna la fattura n. ${e(String(f.dati.rif.numero))} del ${fattData(f.dati.rif.data)}</div>`:''}<div>Data: ${fattData(f.data)}</div>
   <div class="cols"><div><b>${e(imp.denominazione)}</b><br>${e(imp.indirizzo)}<br>${e(imp.cap)} ${e(imp.comune)} ${e(imp.provincia||'')}<br>P.IVA ${e(imp.piva)}${imp.cf?'<br>C.F. '+e(imp.cf):''}</div>
   <div><b>Spett.le</b><br>${e(fattNomeCliente(f))}<br>${e(ces.indirizzo||'')}<br>${e(ces.cap||'')} ${e(ces.comune||'')} ${e(ces.provincia||'')}<br>${ces.tipo==='azienda'?'P.IVA '+e(ces.piva||''):'C.F. '+e(ces.cf||'')}</div></div>
   <table><thead><tr><th>Descrizione</th><th class="n">Qtà</th><th class="n">Prezzo</th><th class="n">IVA</th><th class="n">Totale</th></tr></thead><tbody>
@@ -12194,15 +12426,232 @@ function fattStampa(f){
   win.document.close();
 }
 
+
+function fattApriRendiconto(){
+  fattInit();
+  const fl = state.fattFiltro, m = document.getElementById('fattRepModal');
+  const em = state.fatture.filter(f=>f.stato==='emessa');
+  const nelPeriodo = em.filter(f=> (!fl.dal || f.data>=fl.dal) && (!fl.al || f.data<=fl.al));
+  const sum = (arr,fn)=> r2(arr.reduce((s,f)=>s+fn(f),0));
+  const imponibile = sum(nelPeriodo, f=>fattSegno(f)*fattCalc(f.dati).imponibile);
+  const iva = sum(nelPeriodo, f=>fattSegno(f)*fattCalc(f.dati).iva);
+  const bollo = sum(nelPeriodo, f=>fattSegno(f)*(f.dati.bolloAddebitato===false?0:fattCalc(f.dati).bollo));
+  const totale = sum(nelPeriodo, f=>fattSegno(f)*fattCalc(f.dati).totale);
+  // incassi: i pagamenti registrati nel periodo, anche di fatture emesse prima
+  const incMet = {}; let incTot = 0;
+  em.filter(f=>fattSegno(f)>0).forEach(f=>(f.dati.pagamenti||[]).forEach(p=>{
+    if((fl.dal && p.data<fl.dal) || (fl.al && p.data>fl.al)) return;
+    const k = (FATT_MODALITA.find(x=>x[0]===p.metodo)||[,p.metodo])[1]; incMet[k] = r2((incMet[k]||0)+(+p.importo||0)); incTot = r2(incTot+(+p.importo||0));
+  }));
+  const perProf = {}, perPrest = {};
+  nelPeriodo.forEach(f=>{
+    const sg = fattSegno(f), pn = (state.professionisti.find(p=>p.id===f.dati.profId)||{}).nome || 'Non assegnato';
+    perProf[pn] = r2((perProf[pn]||0) + sg*fattCalc(f.dati).totale);
+    f.dati.righe.forEach(r=>{ const k = r.descr; perPrest[k] = perPrest[k] || {n:0, tot:0}; perPrest[k].n += sg*(+r.qta||0); perPrest[k].tot = r2(perPrest[k].tot + sg*fattRigaTot(r)); });
+  });
+  const aperti = r2(em.filter(f=>fattSegno(f)>0 && !(f.dati.nc||[]).length).reduce((s,f)=>s+Math.max(0, fattCalc(f.dati).totale-fattPagato(f)),0));
+  const tab = (obj, fmt)=> Object.entries(obj).sort((a,b)=>(b[1].tot!=null?b[1].tot:b[1])-(a[1].tot!=null?a[1].tot:a[1])).map(([k,v])=>`<tr><td>${escHtml(k)}</td>${v.tot!=null?`<td class="n">${v.n}</td><td class="n">${fattEur(v.tot)}</td>`:`<td class="n">${fattEur(v)}</td>`}</tr>`).join('') || '<tr><td colspan="3" class="val-empty">—</td></tr>';
+  document.getElementById('fattRepBody').innerHTML = `
+    <div style="font-size:13px;color:var(--ink-mute);margin-bottom:12px;">Periodo: ${fattData(fl.dal)} – ${fattData(fl.al)} (lo cambi dai filtri dell'elenco). Le note di credito sono sottratte.</div>
+    <div class="fat-sum"><div><span>Fatturato (totale)</span><b>€ ${fattEur(totale)}</b></div><div><span>Imponibile</span><b>€ ${fattEur(imponibile)}</b></div><div><span>IVA</span><b>€ ${fattEur(iva)}</b></div><div><span>Bolli</span><b>€ ${fattEur(bollo)}</b></div><div><span>Incassato nel periodo</span><b>€ ${fattEur(incTot)}</b></div><div><span>Ancora da incassare (tutte)</span><b>€ ${fattEur(aperti)}</b></div></div>
+    <div class="ev-row"><div><div class="fat-box-t">Incassi per metodo</div><table class="fat-table"><tbody>${tab(incMet)}</tbody></table></div>
+    <div><div class="fat-box-t">Fatturato per professionista</div><table class="fat-table"><tbody>${tab(perProf)}</tbody></table></div></div>
+    <div class="fat-box-t" style="margin-top:14px;">Fatturato per prestazione</div><table class="fat-table"><thead><tr><th>Prestazione</th><th class="n">Qtà</th><th class="n">Totale €</th></tr></thead><tbody>${tab(perPrest)}</tbody></table>
+    <div class="ev-actions"><div></div><button class="btn-small" id="repCsv">Esporta CSV</button></div>`;
+  document.getElementById('repCsv').onclick = ()=>{
+    const rows = [['Sezione','Voce','Qtà','Importo']];
+    Object.entries(incMet).forEach(([k,v])=>rows.push(['Incassi per metodo',k,'',fattEur(v)]));
+    Object.entries(perProf).forEach(([k,v])=>rows.push(['Fatturato per professionista',k,'',fattEur(v)]));
+    Object.entries(perPrest).forEach(([k,v])=>rows.push(['Fatturato per prestazione',k,v.n,fattEur(v.tot)]));
+    fattScarica('rendiconto.csv','﻿'+rows.map(r=>r.map(x=>'"'+String(x).replace(/"/g,'""')+'"').join(';')).join('\r\n'),'text/csv;charset=utf-8');
+  };
+  m.classList.add('open');
+}
 // ---------- wiring ----------
-['fattModal','fattImpModal','fattListinoModal'].forEach(id=>{
+['fattModal','fattImpModal','fattListinoModal','fattRepModal'].forEach(id=>{
   const m = document.getElementById(id);
   m.onclick = e=>{ if(e.target===m) m.classList.remove('open'); };
 });
+document.getElementById('fattRepClose').onclick = ()=> document.getElementById('fattRepModal').classList.remove('open');
 document.getElementById('fattClose').onclick = ()=> document.getElementById('fattModal').classList.remove('open');
 document.getElementById('fattImpClose').onclick = ()=> document.getElementById('fattImpModal').classList.remove('open');
 document.getElementById('fattListinoClose').onclick = ()=> { document.getElementById('fattListinoModal').classList.remove('open'); };
 document.getElementById('btnFatturazione').onclick = ()=>{ showView('fatturazione'); renderFatturazione(); };
+
+// ================= PACCHETTI / CONSENSI / PROMEMORIA =================
+const CONSENSI_TIPI = [
+  {id:'privacy', nome:'Informativa privacy e trattamento dei dati personali', obbligatorio:true,
+   testo:"Il/La sottoscritto/a {nome} dichiara di aver ricevuto l'informativa sul trattamento dei dati personali ai sensi degli artt. 13 e 14 del Regolamento UE 2016/679 (GDPR) da parte di {titolare} (titolare del trattamento) e acconsente al trattamento dei propri dati personali per le finalità di gestione dell'anagrafica, degli appuntamenti, della fatturazione e degli adempimenti di legge."},
+  {id:'sanitari', nome:'Consenso al trattamento dei dati relativi alla salute', obbligatorio:true,
+   testo:"Il/La sottoscritto/a {nome} acconsente al trattamento dei dati relativi alla salute (art. 9 GDPR) da parte di {titolare}, necessari per la valutazione, la programmazione e l'erogazione delle prestazioni richieste, nonché alla loro condivisione con i professionisti del centro che lo/la seguono."},
+  {id:'informato', nome:'Consenso informato alle prestazioni', obbligatorio:false,
+   testo:"Il/La sottoscritto/a {nome} dichiara di essere stato/a informato/a in modo chiaro sulle prestazioni proposte (valutazioni, trattamenti, allenamento), sulle loro finalità e sui possibili rischi e limiti, e di acconsentire alla loro esecuzione. Può revocare il consenso in qualsiasi momento."},
+  {id:'immagini', nome:'Consenso a foto e video a scopo valutativo', obbligatorio:false,
+   testo:"Il/La sottoscritto/a {nome} acconsente a che {titolare} effettui foto o video a scopo valutativo e di monitoraggio del percorso, conservati nella sua scheda e non diffusi a terzi."},
+  {id:'marketing', nome:'Comunicazioni informative e promozionali', obbligatorio:false,
+   testo:"Il/La sottoscritto/a {nome} acconsente a ricevere da {titolare} comunicazioni informative e promozionali (email, SMS, messaggi) su servizi e iniziative. Il consenso è facoltativo e revocabile in qualsiasi momento."}
+];
+function pkInit(){ if(!state.pacchetti) state.pacchetti = []; if(!state.consensi) state.consensi = []; }
+function pkRowTo(p){ return {id:p.id, cliente_id:p.clienteId, nome:p.nome, tipo:p.tipo, sedute_totali:p.sedute||null, data_inizio:p.dataInizio||null, data_fine:p.dataFine||null, usi:p.usi||[], prezzo:p.prezzo==null?null:p.prezzo, fattura_id:p.fatturaId||null, note:p.note||null, attivo:p.attivo!==false}; }
+function pkRowFrom(r){ return {id:r.id, clienteId:r.cliente_id, nome:r.nome, tipo:r.tipo||'sedute', sedute:r.sedute_totali||0, dataInizio:r.data_inizio||'', dataFine:r.data_fine||'', usi:r.usi||[], prezzo:r.prezzo, fatturaId:r.fattura_id||'', note:r.note||'', attivo:r.attivo!==false}; }
+Object.assign(db, {
+  async savePacchetto(p){ if(!dbEnabled || !sb) return; const {error} = await sb.from('pacchetti').upsert(pkRowTo(p)); if(error) console.error('Supabase savePacchetto', error); },
+  async deletePacchetto(id){ if(!dbEnabled || !sb) return; const {error} = await sb.from('pacchetti').delete().eq('id',id); if(error) console.error('Supabase deletePacchetto', error); },
+  async saveConsenso(c){ if(!dbEnabled || !sb) return; const {error} = await sb.from('consensi').upsert({id:c.id, cliente_id:c.clienteId, tipo:c.tipo, data:c.data, firma:c.firma||null, testo:c.testo||null, revocato:!!c.revocato, creato_da:c.creatoDa||null}); if(error) console.error('Supabase saveConsenso', error); }
+});
+function pkResiduo(p){ return p.tipo==='sedute' ? (p.sedute||0) - (p.usi||[]).length : null; }
+function pkStato(p){
+  const today = fmtDateISO(new Date());
+  if(p.tipo==='sedute' && pkResiduo(p)<=0) return 'esaurito';
+  if(p.dataFine && p.dataFine < today) return 'scaduto';
+  const gg = p.dataFine ? Math.round((new Date(p.dataFine+'T00:00:00') - new Date(today+'T00:00:00'))/86400000) : null;
+  if((p.tipo==='sedute' && pkResiduo(p)===1) || (gg!==null && gg<=7)) return 'inscadenza';
+  return 'attivo';
+}
+const PK_STATO_LBL = {attivo:'Attivo', inscadenza:'In scadenza', scaduto:'Scaduto', esaurito:'Esaurito'};
+function pkDiCliente(cid, soloAperti){ pkInit(); return state.pacchetti.filter(p=>p.clienteId===cid && (!soloAperti || p.attivo!==false)); }
+function pkAvvisi(){ pkInit(); return state.pacchetti.filter(p=>p.attivo!==false && pkStato(p)!=='attivo' && state.clienti.some(c=>c.id===p.clienteId && !c.eliminato)); }
+function pkDescr(p){
+  const parts = [];
+  if(p.tipo==='sedute') parts.push(`${(p.usi||[]).length}/${p.sedute} sedute`);
+  if(p.dataFine) parts.push('scade '+fattData(p.dataFine));
+  return parts.join(' · ');
+}
+function csDiCliente(cid){ pkInit(); return state.consensi.filter(x=>x.clienteId===cid && !x.revocato); }
+function csMancanti(c){ const ok = new Set(csDiCliente(c.id).map(x=>x.tipo)); return CONSENSI_TIPI.filter(t=>t.obbligatorio && !ok.has(t.id)); }
+
+// ---- sezioni nella scheda anagrafica ----
+function renderCliExtra(c){
+  pkInit();
+  const box = document.getElementById('cliAnagraficaContent'); if(!box) return;
+  let ex = document.getElementById('cliExtraBox');
+  if(!ex){ ex = document.createElement('div'); ex.id = 'cliExtraBox'; box.appendChild(ex); }
+  const gest = canManageAll();
+  const pks = pkDiCliente(c.id).sort((a,b)=>(b.attivo!==false)-(a.attivo!==false) || (b.dataInizio||'').localeCompare(a.dataInizio||''));
+  const css = csDiCliente(c.id);
+  ex.innerHTML = `
+    <div class="fat-box" style="margin-top:18px;"><div class="fat-box-t">Pacchetti e abbonamenti</div>
+      ${pks.map(p=>{ const st = pkStato(p); return `<div class="fat-pg" style="grid-template-columns:1fr auto auto auto;${p.attivo===false?'opacity:.5;':''}"><span><b>${escHtml(p.nome)}</b><br><span style="font-size:12px;color:var(--ink-mute);">${escHtml(pkDescr(p))}</span></span>
+        <span class="fat-pill ${st==='attivo'?'pagata':st==='inscadenza'?'parziale':'da_incassare'}">${p.attivo===false?'Chiuso':PK_STATO_LBL[st]}</span>
+        ${p.tipo==='sedute' && p.attivo!==false && pkResiduo(p)>0 ? `<button class="btn-small" data-pk-uso="${p.id}">Usa seduta</button>` : '<span></span>'}
+        <span style="display:flex;gap:4px;">${p.attivo!==false ? `<button class="btn-small" data-pk-chiudi="${p.id}" title="Chiudi il pacchetto">✓</button>` : ''}${gest ? `<button class="btn-small danger" data-pk-del="${p.id}">×</button>` : ''}</span></div>`; }).join('') || '<div class="val-empty" style="padding:6px 0;">Nessun pacchetto.</div>'}
+      ${gest ? `<details style="margin-top:10px;"><summary style="cursor:pointer;font-size:13px;color:var(--gold-bright);">+ Nuovo pacchetto / abbonamento</summary>
+        <div class="ev-field" style="margin-top:8px;"><label>Dal listino (facoltativo)</label><select class="editable" id="pkList"><option value="">—</option>${(state.listino||[]).map(l=>`<option value="${l.id}">${escHtml(l.descrizione)}</option>`).join('')}</select></div>
+        <div class="ev-field"><label>Nome</label><input class="editable" id="pkNome" placeholder="es. Elettrostimolo 5 sedute"></div>
+        <div class="ev-row"><div class="ev-field"><label>Tipo</label><select class="editable" id="pkTipo"><option value="sedute">A sedute</option><option value="giorni">A durata (giorni)</option></select></div>
+        <div class="ev-field"><label>N. sedute</label><input class="editable" id="pkSed" value="5"></div></div>
+        <div class="ev-row"><div class="ev-field"><label>Validità (giorni, 0 = illimitata)</label><input class="editable" id="pkGg" value="30"></div><div class="ev-field"><label>Prezzo € (facoltativo)</label><input class="editable" id="pkPrezzo"></div></div>
+        <button class="btn-gold" id="pkAdd">Aggiungi pacchetto</button></details>` : ''}
+    </div>
+    <div class="fat-box"><div class="fat-box-t">Consensi privacy</div>
+      ${CONSENSI_TIPI.map(t=>{ const x = css.find(y=>y.tipo===t.id); return `<div class="fat-pg" style="grid-template-columns:1fr auto auto;"><span>${escHtml(t.nome)}${t.obbligatorio?' <span style="color:var(--ink-mute);font-size:11px;">(obbligatorio)</span>':''}</span>
+        <span class="fat-pill ${x?'pagata':(t.obbligatorio?'da_incassare':'')}">${x ? 'Firmato il '+fattData(x.data) : 'Mancante'}</span>
+        ${x ? `<span style="display:flex;gap:4px;"><button class="btn-small" data-cs-print="${x.id}">PDF</button><button class="btn-small danger" data-cs-revoca="${x.id}" title="Revoca">Revoca</button></span>` : '<span></span>'}</div>`; }).join('')}
+      <button class="btn-small" id="csRaccogli" style="margin-top:10px;">Raccogli firma…</button>
+    </div>`;
+  const rer = ()=> renderCliExtra(c);
+  const num = v=>parseInt(v)||0;
+  ex.querySelectorAll('[data-pk-uso]').forEach(b=> b.onclick = ()=>{ const p = state.pacchetti.find(x=>x.id===b.dataset.pkUso); (p.usi = p.usi||[]).push({data:fmtDateISO(new Date()), nota:''}); db.savePacchetto(p); rer(); try{ renderClientiList(document.getElementById('cliSearchInput').value); }catch(e){} });
+  ex.querySelectorAll('[data-pk-chiudi]').forEach(b=> b.onclick = ()=>{ const p = state.pacchetti.find(x=>x.id===b.dataset.pkChiudi); p.attivo = false; db.savePacchetto(p); rer(); });
+  ex.querySelectorAll('[data-pk-del]').forEach(b=> b.onclick = ()=>{ if(!confirm('Eliminare definitivamente questo pacchetto?')) return; state.pacchetti = state.pacchetti.filter(x=>x.id!==b.dataset.pkDel); db.deletePacchetto(b.dataset.pkDel); rer(); });
+  const lst = document.getElementById('pkList');
+  if(lst) lst.onchange = ()=>{ const l = (state.listino||[]).find(x=>x.id===lst.value); if(!l) return; document.getElementById('pkNome').value = l.descrizione.replace(/^[^–]*–\s*/,''); document.getElementById('pkPrezzo').value = String(fattLordo(l.prezzo,l.aliquota)).replace('.',','); const m = l.descrizione.match(/(\d+)\s*sedut/i); if(m){ document.getElementById('pkSed').value = m[1]; document.getElementById('pkTipo').value = 'sedute'; } else if(/giorni/i.test(l.descrizione)){ document.getElementById('pkTipo').value = 'giorni'; } };
+  const add = document.getElementById('pkAdd');
+  if(add) add.onclick = ()=>{
+    const nome = document.getElementById('pkNome').value.trim(); if(!nome){ alert('Dai un nome al pacchetto.'); return; }
+    const tipo = document.getElementById('pkTipo').value, gg = num(document.getElementById('pkGg').value), oggi = fmtDateISO(new Date());
+    const fine = gg>0 ? (()=>{ const d = new Date(); d.setDate(d.getDate()+gg); return fmtDateISO(d); })() : '';
+    const pr = parseFloat(String(document.getElementById('pkPrezzo').value).replace(',','.'));
+    const p = {id:fattNuovoId('pk'), clienteId:c.id, nome, tipo, sedute: tipo==='sedute' ? Math.max(1,num(document.getElementById('pkSed').value)) : 0, dataInizio:oggi, dataFine:fine, usi:[], prezzo: isNaN(pr)?null:pr, fatturaId:'', note:'', attivo:true};
+    state.pacchetti.push(p); db.savePacchetto(p); rer(); try{ renderClientiList(document.getElementById('cliSearchInput').value); }catch(e){}
+  };
+  ex.querySelectorAll('[data-cs-print]').forEach(b=> b.onclick = ()=> csStampa(b.dataset.csPrint, c));
+  ex.querySelectorAll('[data-cs-revoca]').forEach(b=> b.onclick = ()=>{ if(!confirm('Revocare questo consenso?')) return; const x = state.consensi.find(y=>y.id===b.dataset.csRevoca); x.revocato = true; db.saveConsenso(x); rer(); });
+  document.getElementById('csRaccogli').onclick = ()=> csApriFirma(c);
+}
+function renderCliAnagraficaModal(c, edit){ renderCliAnagraficaModalBase(c, edit); try{ renderCliExtra(c); }catch(ex){ console.error('cliExtra', ex); } }
+
+// ---- firma consensi ----
+function csTesto(t, c){ return t.testo.replace(/\{nome\}/g, c.nome).replace(/\{titolare\}/g, (state.fattImp && state.fattImp.denominazione) || 'HRL'); }
+function csApriFirma(c){
+  const m = document.getElementById('csModal'), body = document.getElementById('csBody');
+  const gia = new Set(csDiCliente(c.id).map(x=>x.tipo));
+  body.innerHTML = `<p style="margin-top:0;font-size:13px;color:var(--ink-mute);">Testi standard di esempio: fai validare le formule dal tuo consulente privacy. Spunta i consensi che il paziente accetta e fagli firmare nel riquadro.</p>
+    ${CONSENSI_TIPI.filter(t=>!gia.has(t.id)).map(t=>`<label style="display:block;border:1px solid var(--line-soft);border-radius:6px;padding:10px 12px;margin-bottom:8px;"><input type="checkbox" data-cs-t="${t.id}" ${t.obbligatorio?'checked':''}> <b>${escHtml(t.nome)}</b><div style="font-size:12.5px;color:var(--ink-dim);margin-top:4px;">${escHtml(csTesto(t,c))}</div></label>`).join('') || '<div class="val-empty">Tutti i consensi sono già stati raccolti.</div>'}
+    <div class="fat-box-t" style="margin:12px 0 6px;">Firma del paziente</div>
+    <canvas id="csCanvas" width="560" height="170" style="width:100%;max-width:560px;height:auto;background:#fff;border-radius:6px;touch-action:none;display:block;"></canvas>
+    <div class="ev-actions"><button class="btn-small" id="csClear">Cancella firma</button><button class="btn-gold" id="csSave">Salva consensi firmati</button></div>`;
+  m.classList.add('open');
+  const cv = document.getElementById('csCanvas'); if(!cv) return;
+  const cx = cv.getContext('2d'); cx.lineWidth = 2.2; cx.lineCap = 'round'; cx.strokeStyle = '#111';
+  let down = false, ink = false;
+  const pos = e=>{ const r = cv.getBoundingClientRect(); return [(e.clientX-r.left)*cv.width/r.width, (e.clientY-r.top)*cv.height/r.height]; };
+  cv.onpointerdown = e=>{ down = true; ink = true; const [x,y] = pos(e); cx.beginPath(); cx.moveTo(x,y); cx.lineTo(x+.1,y+.1); cx.stroke(); try{ cv.setPointerCapture(e.pointerId); }catch(ex){} };
+  cv.onpointermove = e=>{ if(!down) return; const [x,y] = pos(e); cx.lineTo(x,y); cx.stroke(); };
+  cv.onpointerup = cv.onpointercancel = ()=>{ down = false; };
+  document.getElementById('csClear').onclick = ()=>{ cx.clearRect(0,0,cv.width,cv.height); ink = false; };
+  document.getElementById('csSave').onclick = ()=>{
+    const sel = [...body.querySelectorAll('[data-cs-t]:checked')].map(x=>x.dataset.csT);
+    if(!sel.length){ alert('Spunta almeno un consenso.'); return; }
+    if(!ink){ alert('Manca la firma del paziente.'); return; }
+    const firma = cv.toDataURL('image/png'), oggi = fmtDateISO(new Date());
+    sel.forEach(tid=>{ const t = CONSENSI_TIPI.find(x=>x.id===tid); const x = {id:fattNuovoId('cs'), clienteId:c.id, tipo:tid, data:oggi, firma, testo:csTesto(t,c), revocato:false, creatoDa:(state.professionista&&state.professionista.nome)||''}; state.consensi.push(x); db.saveConsenso(x); });
+    m.classList.remove('open'); renderCliExtra(c); try{ renderClientiList(document.getElementById('cliSearchInput').value); }catch(e){}
+  };
+}
+async function csStampa(id, c){
+  let x = state.consensi.find(y=>y.id===id);
+  if(x && !x.firma && dbEnabled && sb){ const {data} = await sb.from('consensi').select('firma,testo').eq('id',id).maybeSingle(); if(data){ x.firma = data.firma; x.testo = data.testo || x.testo; } }
+  const t = CONSENSI_TIPI.find(y=>y.id===x.tipo) || {nome:x.tipo};
+  const win = window.open('', '_blank'); if(!win){ alert('Consenti i popup per stampare.'); return; }
+  win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${escHtml(t.nome)}</title><style>body{font-family:Arial,sans-serif;margin:50px;color:#111;font-size:14px;line-height:1.5}h1{font-size:18px}.f{margin-top:40px}img{max-width:300px;border-bottom:1px solid #333}</style></head><body><h1>${escHtml(t.nome)}</h1><p>${escHtml(x.testo||'')}</p><div class="f">Data: ${fattData(x.data)}<br>Paziente: ${escHtml(c.nome)}<br><br>Firma:<br>${x.firma?`<img src="${x.firma}">`:'(firma non disponibile)'}</div><script>window.onload=()=>setTimeout(()=>window.print(),300)<\/script></body></html>`);
+  win.document.close();
+}
+document.getElementById('csClose').onclick = ()=> document.getElementById('csModal').classList.remove('open');
+
+// ---- scalare la seduta dall'appuntamento ----
+function pkSedutaDaAppuntamento(ev, ct){
+  const cid = ev.clienteId; if(!cid) return;
+  const aperti = pkDiCliente(cid, true).filter(p=>p.tipo==='sedute' && pkResiduo(p)>0);
+  if(!aperti.length) return;
+  const gia = aperti.find(p=>(p.usi||[]).some(u=>u.apId===ev.id));
+  ct.insertAdjacentHTML('beforeend', gia ? `<div class="ev-field"><label>Pacchetto</label><div>Seduta già scalata da "${escHtml(gia.nome)}" (${pkDescr(gia)})</div></div>`
+    : `<div class="ev-field"><label>Pacchetto</label><div style="display:flex;gap:8px;flex-wrap:wrap;"><select class="editable" id="evInfoPk" style="max-width:320px;">${aperti.map(p=>`<option value="${p.id}">${escHtml(p.nome)} — ${pkResiduo(p)} rimaste</option>`).join('')}</select><button class="btn-small" id="evInfoPkGo">Scala seduta</button></div></div>`);
+  const g = document.getElementById('evInfoPkGo');
+  if(g) g.onclick = ()=>{ const p = state.pacchetti.find(x=>x.id===document.getElementById('evInfoPk').value); (p.usi = p.usi||[]).push({data:ev.day, apId:ev.id, nota:''}); db.savePacchetto(p); openEventInfo(ev); };
+}
+
+// ---- promemoria appuntamenti (WhatsApp / SMS / email) ----
+const PROM_MSG_DEFAULT = "Gentile {nome}, ti ricordiamo l'appuntamento di {giorno} {data} alle {ora}{prof}. Se non puoi venire, avvisaci appena possibile. A presto!";
+function promTel(t){ let d = String(t||'').replace(/\D+/g,''); if(d.startsWith('00')) d = d.slice(2); if(d.length===10 && d.startsWith('3')) d = '39'+d; return d; }
+function promMsg(ev, c){
+  let tpl = PROM_MSG_DEFAULT; try{ tpl = localStorage.getItem('hrl_prom_msg') || tpl; }catch(e){}
+  const pid = ev.professionistaId || (c ? clienteProfIds(c)[0] : null), pr = pid ? state.professionisti.find(p=>p.id===pid) : null;
+  const d = new Date(ev.day+'T00:00:00'), nome = (anSplitNome(c).nome || c.nome);
+  return tpl.replace(/\{nome\}/g, nome).replace(/\{giorno\}/g, WEEKDAY_NAMES[d.getDay()].toLowerCase()).replace(/\{data\}/g, fattData(ev.day).slice(0,5)).replace(/\{ora\}/g, ev.start).replace(/\{prof\}/g, pr ? ' con '+pr.nome : '');
+}
+function renderSegPromemoria(box){
+  if(!state.promDay){ const d = new Date(); d.setDate(d.getDate()+1); state.promDay = fmtDateISO(d); }
+  if(!state.promSent) state.promSent = new Set();
+  let tpl = PROM_MSG_DEFAULT; try{ tpl = localStorage.getItem('hrl_prom_msg') || tpl; }catch(e){}
+  const evs = state.appuntamenti.filter(a=>a.day===state.promDay && a.clienteId).sort((a,b)=>a.start.localeCompare(b.start));
+  const uniq = [...new Map(evs.map(e=>[e.id,e])).values()];
+  box.innerHTML = `<div class="fat-filters"><div class="ev-field"><label>Giorno</label><input type="date" class="editable" id="promDay" value="${state.promDay}"></div>
+      <button class="btn-small" id="promDom" style="margin-bottom:14px;">Domani</button></div>
+    <details style="margin-bottom:12px;"><summary style="cursor:pointer;font-size:13px;color:var(--ink-mute);">Testo del messaggio (usa {nome} {giorno} {data} {ora} {prof})</summary><textarea class="editable" id="promTpl" rows="3" style="width:100%;margin-top:6px;">${escHtml(tpl)}</textarea><div style="font-size:11.5px;color:var(--ink-mute);">Si salva su questo dispositivo.</div></details>
+    <div class="fat-sum"><div><span>Appuntamenti</span><b>${uniq.length}</b></div><div><span>Promemoria inviati</span><b>${uniq.filter(e=>state.promSent.has(e.id)).length}</b></div></div>
+    <div class="fat-table-wrap"><table class="fat-table"><thead><tr><th>Ora</th><th>Cliente</th><th>Professionista</th><th>Telefono</th><th>Invia</th></tr></thead><tbody>
+    ${uniq.map(e=>{ const c = state.clienti.find(x=>x.id===e.clienteId); if(!c) return ''; const pid = e.professionistaId || clienteProfIds(c)[0], pr = state.professionisti.find(p=>p.id===pid), tel = promTel(c.telefono), msg = promMsg(e,c), sent = state.promSent.has(e.id);
+      return `<tr style="cursor:default;${sent?'opacity:.55;':''}"><td>${e.start}</td><td>${escHtml(c.nome)}</td><td>${escHtml(pr?pr.nome:'')}</td><td>${escHtml(c.telefono||'—')}</td><td style="white-space:nowrap;">
+        ${tel ? `<a class="btn-small" target="_blank" rel="noopener" href="https://wa.me/${tel}?text=${encodeURIComponent(msg)}" data-prom="${e.id}">WhatsApp</a> <a class="btn-small" href="sms:${tel}?&body=${encodeURIComponent(msg)}" data-prom="${e.id}">SMS</a>` : ''}
+        ${c.email ? `<a class="btn-small" href="mailto:${escAttr(c.email)}?subject=${encodeURIComponent('Promemoria appuntamento')}&body=${encodeURIComponent(msg)}" data-prom="${e.id}">Email</a>` : ''}
+        ${sent ? ' ✓ inviato' : ''}</td></tr>`; }).join('') || '<tr><td colspan="5" class="val-empty">Nessun appuntamento con cliente in questa data.</td></tr>'}
+    </tbody></table></div>`;
+  document.getElementById('promDay').onchange = e=>{ state.promDay = e.target.value; renderSegPromemoria(box); };
+  document.getElementById('promDom').onclick = ()=>{ const d = new Date(); d.setDate(d.getDate()+1); state.promDay = fmtDateISO(d); renderSegPromemoria(box); };
+  document.getElementById('promTpl').onchange = e=>{ try{ localStorage.setItem('hrl_prom_msg', e.target.value); }catch(x){} renderSegPromemoria(box); };
+  box.querySelectorAll('[data-prom]').forEach(a=> a.addEventListener('click', ()=>{ state.promSent.add(a.dataset.prom); setTimeout(()=>renderSegPromemoria(box), 400); }));
+}
 
 document.getElementById('btnSegreteria').onclick = ()=> segNavigate('calendario');
 document.getElementById('btnBackToPathway').onclick = ()=>{
@@ -12451,29 +12900,6 @@ function showCalDragMenu(day, dow, startMin, endMin, x, y){
   });
 }
 
-// ---------------- calendario: drag & drop appuntamenti ----------------
-document.getElementById('calGrid').addEventListener('dragstart', (e)=>{
-  const evEl = e.target.closest('[data-event-id]');
-  if(!evEl){ e.preventDefault(); return; }
-  state.calDragAppId = evEl.dataset.eventId;
-  evEl.classList.add('dragging');
-  e.dataTransfer.effectAllowed = 'move';
-  try{ e.dataTransfer.setData('text/plain', evEl.dataset.eventId); }catch(err){}
-});
-document.getElementById('calGrid').addEventListener('dragend', (e)=>{
-  const evEl = e.target.closest('[data-event-id]');
-  if(evEl) evEl.classList.remove('dragging');
-  document.querySelectorAll('#calGrid .cal-day-col.drop-target').forEach(c=>c.classList.remove('drop-target'));
-  state.calDragAppId = null;
-});
-document.getElementById('calGrid').addEventListener('dragover', (e)=>{
-  if(!state.calDragAppId) return;
-  const col = e.target.closest('.cal-day-col');
-  if(!col || col.classList.contains('off')) return;
-  e.preventDefault();
-  document.querySelectorAll('#calGrid .cal-day-col.drop-target').forEach(c=>{ if(c!==col) c.classList.remove('drop-target'); });
-  col.classList.add('drop-target');
-});
 // Controlla se spostare/modificare l'appuntamento "ev" al giorno/orario indicato
 // crea un conflitto con la disponibilità del professionista che segue il cliente:
 // ritorna un messaggio di avviso se c'è un conflitto, altrimenti null. Gli impegni
@@ -12523,40 +12949,6 @@ function checkDispConflict(ev, day, startMin, endMin){
   if(overlapping >= covering.posti) return `Questo orario ha già ${overlapping}/${covering.posti} posti occupati.`;
   return null;
 }
-document.getElementById('calGrid').addEventListener('drop', (e)=>{
-  if(!state.calDragAppId) return;
-  const col = e.target.closest('.cal-day-col');
-  if(!col || col.classList.contains('off')) return;
-  e.preventDefault();
-  col.classList.remove('drop-target');
-  const ev = state.appuntamenti.find(a=>a.id===state.calDragAppId);
-  state.calDragAppId = null;
-  if(!ev) return;
-  const rect = col.getBoundingClientRect();
-  const PX = 1.2;
-  const cs = state.calSettings;
-  const durMin = timeToMinutes(ev.end) - timeToMinutes(ev.start);
-  const y = e.clientY - rect.top;
-  let newStart = calStartMin() + Math.round((y/PX)/15)*15;
-  newStart = Math.max(calStartMin(), Math.min(newStart, calEndMin() - durMin));
-  const newEnd = newStart + durMin;
-  const newDay = col.dataset.day;
-  const conflict = checkDispConflict(ev, newDay, newStart, newEnd);
-  if(conflict && !confirm(conflict + '\n\nSpostare comunque l\'appuntamento?')){
-    renderCalendar(); // ripristina la vista (l'elemento draggato potrebbe essere rimasto in stato "dragging")
-    return;
-  }
-  const newStartTxt = minutesToTime(newStart);
-  if(ev.clienteId && (ev.day!==newDay || ev.start!==newStartTxt)){
-    notifyClienteSpostamento(ev.clienteId, `Il tuo appuntamento "${ev.titolo || tipoLabel(ev.tipo)}" è stato spostato: ora è il ${newDay.split('-').reverse().join('/')} alle ${newStartTxt}.`);
-  }
-  ev.day = newDay;
-  ev.start = newStartTxt;
-  ev.end = minutesToTime(newEnd);
-  db.saveAppuntamento(ev);
-  renderCalendar();
-});
-
 // ---------------- calendario: spostamento appuntamenti a trascinamento (scatti da 5 minuti) ----------------
 let __mv = null;
 function calApplyMove(ev, newDay, newStart){
@@ -12583,6 +12975,18 @@ document.getElementById('calGrid').addEventListener('mousedown', (e)=>{
   __mv = { el, ev, grabY: e.clientY - r.top, x0: e.clientX, y0: e.clientY, moved:false,
     dur: timeToMinutes(ev.end)-timeToMinutes(ev.start), newDay: ev.day, newStart: timeToMinutes(ev.start), tip:null, col: el.parentNode };
 });
+document.getElementById('calMultiGrid').addEventListener('mousedown', (e)=>{
+  if(e.button!==0) return;
+  const el = e.target.closest('.cal-block[data-event-id]');
+  if(!el) return;
+  const ev = state.appuntamenti.find(a=>a.id===el.dataset.eventId);
+  if(!ev) return;
+  const r = el.getBoundingClientRect();
+  // nel multicalendario si sposta solo l'orario, restando nella colonna del
+  // professionista (o spazio) dove si trova: niente passaggio ad altre colonne
+  __mv = { el, ev, multi:true, grabY: e.clientY - r.top, x0: e.clientX, y0: e.clientY, moved:false,
+    dur: timeToMinutes(ev.end)-timeToMinutes(ev.start), newDay: ev.day, newStart: timeToMinutes(ev.start), tip:null, col: el.parentNode };
+});
 document.addEventListener('mousemove', (e)=>{
   if(!__mv) return;
   if(!__mv.moved){
@@ -12593,7 +12997,7 @@ document.addEventListener('mousemove', (e)=>{
   }
   const PX = 1.2;
   let col = __mv.col;
-  document.querySelectorAll('#calGrid .cal-day-col:not(.off)').forEach(c=>{
+  if(!__mv.multi) document.querySelectorAll('#calGrid .cal-day-col:not(.off)').forEach(c=>{
     const rc = c.getBoundingClientRect();
     if(e.clientX>=rc.left && e.clientX<rc.right) col = c;
   });
@@ -12604,10 +13008,10 @@ document.addEventListener('mousemove', (e)=>{
   const rc = col.getBoundingClientRect();
   let start = calStartMin() + Math.round(((e.clientY - rc.top - __mv.grabY)/PX)/5)*5;
   start = Math.max(calStartMin(), Math.min(start, Math.max(calStartMin(), calEndMin() - __mv.dur)));
-  __mv.newStart = start; __mv.newDay = col.dataset.day;
+  __mv.newStart = start; __mv.newDay = __mv.multi ? __mv.ev.day : col.dataset.day;
   __mv.el.style.top = ((start - calStartMin())*PX) + 'px';
   const d = new Date(__mv.newDay + 'T00:00:00');
-  __mv.tip.textContent = `${WEEKDAY_NAMES[d.getDay()]} ${d.getDate()}/${d.getMonth()+1} · ${minutesToTime(start)}–${minutesToTime(start+__mv.dur)}`;
+  __mv.tip.textContent = __mv.multi ? `${minutesToTime(start)}–${minutesToTime(start+__mv.dur)}` : `${WEEKDAY_NAMES[d.getDay()]} ${d.getDate()}/${d.getMonth()+1} · ${minutesToTime(start)}–${minutesToTime(start+__mv.dur)}`;
   __mv.tip.style.left = (e.clientX + 14) + 'px'; __mv.tip.style.top = (e.clientY + 14) + 'px';
 });
 document.addEventListener('mouseup', ()=>{
