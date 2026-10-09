@@ -67,7 +67,6 @@ body.client-auth-mode #btnEsercizi,
 body.client-auth-mode #btnBlocchiOperativi,
 body.client-auth-mode #btnHelp{display:none;}
 body.seg-only-mode #btnCalendario,
-body.seg-only-mode #btnAvvisi,
 body.seg-only-mode #btnSegnalazioni,
 body.seg-only-mode #btnTemplate,
 body.seg-only-mode #btnEsercizi,
@@ -1810,6 +1809,7 @@ body[data-theme="light"] .paz-lk-list{background:#fff;border-color:#ccc;}
 .fat-tot .grand b{font-size:20px;color:var(--gold-bright);}
 .fat-pg{display:grid;grid-template-columns:110px 1fr auto 34px;gap:8px;align-items:center;padding:4px 0;border-bottom:1px solid var(--line-soft);}
 @media(max-width:700px){.fat-rg-head{display:none}.fat-rg{grid-template-columns:1fr 1fr}}
+.avv-chip.warn:not(.active){color:#E0776A;border-color:rgba(224,119,106,.5);}
 </style>
 </head>
 <body>
@@ -1859,7 +1859,8 @@ body[data-theme="light"] .paz-lk-list{background:#fff;border-color:#ccc;}
       <button class="btn-gold" id="btnNuovoCliente">+ Nuovo cliente</button>
     </div>
   </div>
-  <div id="cliCatChips" class="cal-mode-toggle" style="margin:0 0 14px;flex-wrap:wrap;"></div>
+  <div id="cliCatChips" class="cal-mode-toggle" style="margin:0 0 10px;flex-wrap:wrap;"></div>
+  <div id="cliAvvChips" class="cal-mode-toggle" style="margin:0 0 14px;flex-wrap:wrap;"></div>
   <div class="cli-grid" id="cliGrid"></div>
 </div>
 
@@ -8608,11 +8609,16 @@ function renderRichBadge(){
   }catch(ex){}
 }
 
+function clientiDaProgrammare(){
+  const ag = cliAgenda();
+  return state.clienti.filter(c=>!c.eliminato && !(ag[c.id] && ag[c.id].prossimo));
+}
 function getReadinessAlerts(){
+  if(isSegreteriaOnly()) return [];
   return state.appuntamenti.filter(a=> a.esecuzione && a.esecuzione.readinessLow && !a.esecuzione.readinessDismissed);
 }
 function renderAvvisiBadge(){
-  const n = getReadinessAlerts().length;
+  const n = getReadinessAlerts().length + clientiDaProgrammare().length;
   const badge = document.getElementById('avvisiBadge');
   if(!badge) return;
   badge.textContent = n;
@@ -8621,11 +8627,15 @@ function renderAvvisiBadge(){
 function renderAvvisiList(){
   const box = document.getElementById('avvisiListContent');
   const alerts = getReadinessAlerts().sort((a,b)=> (b.day+b.start).localeCompare(a.day+a.start));
-  if(alerts.length===0){
+  const daProg = clientiDaProgrammare().sort((a,b)=>(a.nome||'').localeCompare(b.nome||''));
+  const progHtml = daProg.length ? `<div class="fat-box-t" style="margin:4px 0 8px;">Clienti senza appuntamenti futuri (${daProg.length})</div>` + daProg.map(c=>`<div class="rich-item" data-avv-cli="${c.id}" style="cursor:pointer;"><div class="ri-top"><div class="ri-cliente">${escHtml(c.nome)}</div></div><div class="ri-detail">${escHtml(catLabel(c.categoria) || 'Categoria da assegnare')} · ${c.pathway ? escHtml(c.pathway) : 'nessun piano (pathway)'}</div></div>`).join('') : '';
+  if(alerts.length===0 && !daProg.length){
     box.innerHTML = `<div class="timeline-empty">Nessun avviso al momento.</div>`;
     return;
   }
-  box.innerHTML = alerts.map(a=>{
+  const bindProg = ()=> box.querySelectorAll('[data-avv-cli]').forEach(el=> el.onclick = ()=>{ document.getElementById('avvisiModal').classList.remove('open'); openClientForRole(el.dataset.avvCli); });
+  if(alerts.length===0){ box.innerHTML = progHtml; bindProg(); return; }
+  box.innerHTML = (alerts.length ? `<div class="fat-box-t" style="margin:4px 0 8px;">Readiness bassa</div>` : '') + alerts.map(a=>{
     const c = state.clienti.find(x=>x.id===a.clienteId);
     const avg = a.esecuzione.readinessAvg;
     return `<div class="rich-item">
@@ -8644,6 +8654,7 @@ function renderAvvisiList(){
       renderAvvisiList(); renderAvvisiBadge();
     };
   });
+  box.insertAdjacentHTML('beforeend', progHtml); bindProg();
 }
 document.getElementById('btnAvvisi').onclick = ()=>{
   renderAvvisiList();
@@ -9489,8 +9500,43 @@ function bindPazLookup(id, nessuno, onChange, keepId){
   });
   if(x) x.onclick = ()=> pick('');
 }
+
+// ===== Programmazione: clienti senza appuntamenti / retest / piano =====
+function cliAgenda(){
+  const today = fmtDateISO(new Date()), m = {};
+  state.appuntamenti.forEach(a=>{
+    if(!a.clienteId) return;
+    const o = m[a.clienteId] || (m[a.clienteId] = {prossimo:null, ultimo:null, retest:null});
+    if(a.day >= today){
+      if(!o.prossimo || a.day < o.prossimo) o.prossimo = a.day;
+      const rd = a.tipo==='retest' ? a.day : ((a.retestData && a.retestData >= today) ? a.retestData : null);
+      if(rd && (!o.retest || rd < o.retest)) o.retest = rd;
+    } else if(!o.ultimo || a.day > o.ultimo) o.ultimo = a.day;
+  });
+  return m;
+}
+const AVV_FILTRI = [['senzaApp','Senza appuntamenti futuri'],['senzaRetest','Senza retest in programma'],['senzaPiano','Senza piano (pathway)']];
+function avvMatch(c, ag, f){
+  if(!f) return true;
+  const o = ag[c.id] || {};
+  if(f==='senzaApp') return !o.prossimo;
+  if(f==='senzaRetest') return !o.retest;
+  if(f==='senzaPiano') return !c.pathway;
+  return true;
+}
+function avvConteggi(list, ag){ const o = {}; AVV_FILTRI.forEach(([k])=> o[k] = list.filter(c=>avvMatch(c,ag,k)).length); return o; }
+function avvChipsHtml(attivo, cont){
+  const voci = AVV_FILTRI.filter(([k])=> !(k==='senzaPiano' && isSegreteriaOnly()));
+  return voci.map(([k,l])=>`<div class="cal-mode-opt avv-chip ${attivo===k?'active':''} ${cont[k]>0?'warn':''}" data-avv="${k}">${cont[k]>0?'⚠ ':''}${l} <span style="opacity:.7">${cont[k]}</span></div>`).join('');
+}
+function avvAgendaHtml(c, ag){
+  const o = ag[c.id] || {}, f = d=>d ? d.split('-').reverse().slice(0,2).join('/') : null;
+  const bad = t=>`<span style="color:#E0776A;">${t}</span>`;
+  return `<div style="font-size:12px;color:var(--ink-mute);margin-top:6px;">Prossimo: ${f(o.prossimo) || bad('nessuno')} · Retest: ${f(o.retest) || bad('nessuno')}${o.ultimo?' · Ultimo: '+f(o.ultimo):''}</div>`;
+}
 function renderClientiList(filter){
   renderCliFilterProf();
+  try{ renderAvvisiBadge(); }catch(ex){}
   const box = document.getElementById('cliGrid');
   const f = (filter||'').trim().toLowerCase();
   const isAdminForCestino = !!(state.professionista && state.professionista.ruolo==='admin');
@@ -9510,6 +9556,13 @@ function renderClientiList(filter){
     chipBox.querySelectorAll('[data-catchip]').forEach(ch=> ch.onclick = ()=>{ state.cliFilterCat = ch.dataset.catchip; renderClientiList(document.getElementById('cliSearchInput').value); });
   }
   list = list.filter(c=>catMatch(c, state.cliFilterCat||''));
+  const ag = cliAgenda();
+  const avvBox = document.getElementById('cliAvvChips');
+  if(avvBox){
+    avvBox.innerHTML = avvChipsHtml(state.cliFilterAvv||'', avvConteggi(list, ag));
+    avvBox.querySelectorAll('[data-avv]').forEach(ch=> ch.onclick = ()=>{ state.cliFilterAvv = (state.cliFilterAvv===ch.dataset.avv) ? '' : ch.dataset.avv; renderClientiList(document.getElementById('cliSearchInput').value); });
+  }
+  list = list.filter(c=>avvMatch(c, ag, state.cliFilterAvv||''));
   if(list.length===0){
     box.innerHTML = `<div class="cli-empty-state">${state.clienti.filter(c=>!c.eliminato).length===0
       ? 'Nessun cliente ancora. Usa "+ Nuovo cliente" per iniziare.'
@@ -9530,6 +9583,7 @@ function renderClientiList(filter){
 
       <div class="cli-status ${summary?'':'empty'}">${summary || 'Nessun pathway assegnato'}</div>
       <div class="cli-meta">${clienteEtaAnni(c) ? clienteEtaAnni(c) + ' anni · ' : ''}${schedeCount} sched${schedeCount===1?'a':'e'}${profNames ? ' · '+profNames : ''}</div>
+      ${avvAgendaHtml(c, ag)}
     </div>`;
   }).join('');
 
@@ -11514,9 +11568,11 @@ function renderSegreteria(){
 function renderSegClienti(box){
   const q = (state.segSearch||'').toLowerCase();
   const baseList = state.clienti.filter(c=>!c.eliminato && (!q || pazMatch(c,q)));
-  const list = baseList.filter(c=>catMatch(c, state.segCat||''))
+  const ag = cliAgenda();
+  const list = baseList.filter(c=>catMatch(c, state.segCat||'') && avvMatch(c, ag, state.cliFilterAvv||''))
     .sort((a,b)=>(a.nome||'').localeCompare(b.nome||''));
   box.innerHTML = `<input class="editable" id="segSearch" placeholder="Cerca cliente: nome, telefono o email…" value="${escAttr(state.segSearch||'')}" style="max-width:420px;margin-bottom:14px;">
+    <div class="cal-mode-toggle" id="segAvvChips" style="margin:0 0 12px;flex-wrap:wrap;">${avvChipsHtml(state.cliFilterAvv||'', avvConteggi(baseList, ag))}</div>
     <div class="cal-mode-toggle" id="segCatChips" style="margin:0 0 12px;flex-wrap:wrap;">${catChipsHtml(state.segCat||'', catConteggi(baseList))}</div>
     <div style="font-size:12.5px;color:var(--ink-mute);margin-bottom:10px;">${list.length} clienti</div>
     <div style="display:flex;flex-direction:column;gap:8px;">${list.map(c=>{
@@ -11524,6 +11580,7 @@ function renderSegClienti(box){
       return `<div class="val-card" style="cursor:pointer;" data-seg-cli="${c.id}"><div class="val-card-top"><div class="val-card-date" style="font-size:15px;">${escHtml(c.nome||'—')}</div><button class="cli-edit" style="position:static;" title="Modifica anagrafica">✎</button></div>
         <div class="val-card-autore">${escHtml(c.telefono||c.email||'—')}${c.categoria ? ' · '+escHtml(catLabel(c.categoria)) : ''}${profs ? ' · Seguito da: '+escHtml(profs) : ''}</div></div>`;
     }).join('') || '<div class="val-empty">Nessun cliente.</div>'}</div>`;
+  box.querySelectorAll('#segAvvChips [data-avv]').forEach(ch=> ch.onclick = ()=>{ state.cliFilterAvv = (state.cliFilterAvv===ch.dataset.avv) ? '' : ch.dataset.avv; renderSegClienti(box); });
   box.querySelectorAll('#segCatChips [data-catchip]').forEach(ch=> ch.onclick = ()=>{ state.segCat = ch.dataset.catchip; renderSegClienti(box); });
   const inp = document.getElementById('segSearch');
   inp.oninput = e=>{ state.segSearch = e.target.value; const pos = e.target.selectionStart; renderSegClienti(box); const n = document.getElementById('segSearch'); n.focus(); n.setSelectionRange(pos,pos); };
