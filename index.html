@@ -3733,7 +3733,8 @@ function renderSpaziModal(){
     return;
   }
   box.innerHTML = state.spazi.map(s=>`
-    <div class="team-row" data-spazio-row="${s.id}">
+    <div style="border-bottom:1px solid var(--line-soft);padding-bottom:8px;margin-bottom:8px;">
+    <div class="team-row" data-spazio-row="${s.id}" style="border-bottom:none;">
       <div style="flex:1;display:flex;gap:8px;align-items:center;">
         <input class="editable" data-spazio-nome="${s.id}" value="${escAttr(s.nome)}" placeholder="Nome spazio" style="max-width:160px;">
         <div class="color-swatches" style="margin:0;">
@@ -3742,11 +3743,11 @@ function renderSpaziModal(){
         </div>
       </div>
       <button class="team-del" data-del-spazio="${s.id}" title="Elimina spazio">Elimina</button>
-      <div style="flex-basis:100%;display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:12.5px;color:var(--ink-dim);padding:2px 0 6px;">
+    </div>
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:12.5px;color:var(--ink-dim);padding:2px 0 0;">
         <label style="display:flex;gap:6px;align-items:center;"><input type="checkbox" data-spazio-pren="${s.id}" ${s.prenotabile?'checked':''}> Prenotabile dai clienti (allenamento in autonomia)</label>
         ${s.prenotabile ? `<label>Posti/ora <input class="editable" type="number" min="1" style="width:64px;" data-spazio-posti="${s.id}" value="${s.postiOra||4}"></label>
-        <label>Dalle <input class="editable" type="time" style="width:100px;" data-spazio-ini="${s.id}" value="${s.apInizio||''}"></label>
-        <label>alle <input class="editable" type="time" style="width:100px;" data-spazio-fine="${s.id}" value="${s.apFine||''}"></label>
+        <span style="white-space:nowrap;">Dalle <input class="editable" type="time" style="width:100px;" data-spazio-ini="${s.id}" value="${s.apInizio||''}"> alle <input class="editable" type="time" style="width:100px;" data-spazio-fine="${s.id}" value="${s.apFine||''}"></span>
         <span style="font-size:11.5px;color:var(--ink-mute);">Orari vuoti = orari del calendario.</span>` : ''}
       </div>
     </div>`).join('');
