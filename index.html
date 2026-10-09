@@ -1878,13 +1878,7 @@ body[data-theme="light"] .paz-lk-list{background:#fff;border-color:#ccc;}
   <div class="modal">
     <button class="modal-close" id="closeCli">×</button>
     <h3>Nuovo cliente</h3>
-    <div class="ev-field"><label>Nome e cognome</label><input class="editable" id="cliNome" placeholder="es. Mario Rossi"></div>
-    <div class="ev-row">
-      <div class="ev-field"><label>Data di nascita (opzionale)</label><input class="editable" type="date" id="cliDataNascita"></div>
-      <div class="ev-field"><label>Email (opzionale)</label><input class="editable" type="email" id="cliEmail" placeholder="per farlo accedere al suo profilo"></div>
-    </div>
-    <div class="ev-field"><label>Categoria *</label><select class="editable" id="cliCategoria"><option value="">— scegli la categoria —</option><option value="normale">Persona normale</option><option value="amatore">Atleta dilettante</option><option value="pro">Atleta professionista</option><option value="manager">Manager</option></select></div>
-    <div class="ev-field"><label>Note (opzionale)</label><input class="editable" id="cliNote" placeholder="es. infortunio pregresso, obiettivo generale..."></div>
+    <div id="cliFormBox"></div>
     <div class="ev-actions"><div></div><button class="btn-gold" id="btnCreaCliente">Crea e continua</button></div>
   </div>
 </div>
@@ -2449,6 +2443,7 @@ function clienteToRow(c){
     id: c.id, nome: c.nome, eta: c.eta || null, data_nascita: c.dataNascita || null, note: c.note || null,
     profilo: c.profilo, pathway: c.pathway,
     categoria: c.categoria || null,
+    anagrafica: c.anagrafica || {},
     selected_kpis: Array.from(c.selectedKPIs || []),
     active_phase: c.activePhase || 0,
     notes: c.notes || {}, schede: c.schede || {},
@@ -2483,6 +2478,7 @@ function rowToCliente(r){
     id: r.id, nome: r.nome, eta: r.eta || '', dataNascita: r.data_nascita || '', note: r.note || '',
     profilo: r.profilo, pathway: r.pathway,
     categoria: r.categoria || r.profilo || null,
+    anagrafica: r.anagrafica || {},
     selectedKPIs: new Set(r.selected_kpis || []),
     activePhase: r.active_phase || 0,
     notes: r.notes || {}, schede: r.schede || {},
@@ -3890,11 +3886,15 @@ function renderCliAnagraficaModal(c, edit){
   if(!box) return;
   const profs = clienteProfIds(c).map(id=>state.professionisti.find(p=>p.id===id)).filter(Boolean);
   document.getElementById('cliAnagraficaTitle').textContent = c.nome;
+  const a = c.anagrafica || {};
+  const row = (l,v)=> v ? `<div class="ev-field"><label>${l}</label><div>${escHtml(v)}</div></div>` : '';
   if(!edit){
+    const res = [a.indirizzo, [a.cap, a.comune, a.provincia?'('+a.provincia+')':''].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+    const nasc = [a.luogoNascita ? a.luogoNascita+(a.provNascita?' ('+a.provNascita+')':'') : '', c.dataNascita ? c.dataNascita.split('-').reverse().join('/')+(clienteEtaAnni(c)!==null ? ' · '+clienteEtaAnni(c)+' anni' : '') : ''].filter(Boolean).join(' — ');
     box.innerHTML = `
-      ${c.dataNascita ? `<div class="ev-field"><label>Data di nascita</label><div>${c.dataNascita.split('-').reverse().join('/')}${clienteEtaAnni(c)!==null ? ' · ' + clienteEtaAnni(c) + ' anni' : ''}</div></div>` : ''}
-      ${c.email ? `<div class="ev-field"><label>Email</label><div>${escHtml(c.email)}</div></div>` : ''}
-      ${c.telefono ? `<div class="ev-field"><label>Telefono</label><div>${escHtml(c.telefono)}</div></div>` : ''}
+      ${row('Nato/a', nasc)}${row('Sesso', a.sesso==='F'?'Femmina':a.sesso==='M'?'Maschio':'')}${row('Codice fiscale', a.cf)}${row('Professione', a.professione)}
+      ${row('Residenza', res)}${row('Cellulare', c.telefono)}${row('Secondo cellulare / telefono', a.cell2)}${row('Email', c.email)}${row('PEC', a.pec)}
+      ${row('Azienda', [a.ragSociale, a.piva?'P.IVA '+a.piva:''].filter(Boolean).join(' · '))}
       <div class="ev-field"><label>Categoria</label><div>${escHtml(catLabel(c.categoria)) || '— Da assegnare —'}</div></div>
       ${c.note ? `<div class="ev-field"><label>Note</label><div style="white-space:pre-wrap;">${escHtml(c.note)}</div></div>` : ''}
       <div class="ev-field"><label>Professionisti assegnati</label><div>${profs.length ? profs.map(p=>escHtml(p.nome)+(p.area?' ('+escHtml(p.area)+')':'')).join(', ') : '— Nessuno —'}</div></div>
@@ -3902,28 +3902,15 @@ function renderCliAnagraficaModal(c, edit){
     `;
     return;
   }
-  box.innerHTML = `
-    <div class="ev-field"><label>Nome e cognome</label><input class="editable" id="anNome" value="${escAttr(c.nome||'')}"></div>
-    <div class="ev-row">
-      <div class="ev-field"><label>Data di nascita${clienteEtaAnni(c)!==null ? ' · '+clienteEtaAnni(c)+' anni' : ''}</label><input class="editable" type="date" id="anNascita" value="${escAttr(c.dataNascita||'')}"></div>
-      <div class="ev-field"><label>Email</label><input class="editable" type="email" id="anEmail" value="${escAttr(c.email||'')}"></div>
-    </div>
-    <div class="ev-field"><label>Telefono</label><input class="editable" type="tel" id="anTel" value="${escAttr(c.telefono||'')}"></div>
-    <div class="ev-field"><label>Categoria</label><select class="editable" id="anCat">${catOptionsHtml(c.categoria, '— da assegnare —')}</select></div>
-    <div class="ev-field"><label>Note</label><textarea class="editable" id="anNote" rows="3">${escHtml(c.note||'')}</textarea></div>
+  box.innerHTML = anFormHtml(c, 'an') + `
     <div class="ev-field"><label>Professionisti assegnati</label><div>${profs.length ? profs.map(p=>escHtml(p.nome)+(p.area?' ('+escHtml(p.area)+')':'')).join(', ') : '— Nessuno —'}</div></div>
     <div style="display:flex;gap:10px;align-items:center;margin-top:14px;"><button class="btn-gold" id="anSalva">Salva anagrafica</button><span id="anMsg" style="font-size:13px;color:#4CAF50;"></span></div>
-    <div style="font-size:11.5px;color:var(--ink-mute);margin-top:14px;">La Segreteria vede e gestisce i calendari di tutti, ma non le schede cliniche dei clienti.</div>
+    <div style="font-size:11.5px;color:var(--ink-mute);margin-top:14px;">Questi dati precompilano la prima valutazione e la fattura.</div>
   `;
   document.getElementById('anSalva').onclick = ()=>{
-    const nome = document.getElementById('anNome').value.trim();
-    if(!nome){ alert('Il nome non può essere vuoto.'); return; }
-    c.nome = nome;
-    c.dataNascita = document.getElementById('anNascita').value;
-    c.email = document.getElementById('anEmail').value.trim();
-    c.telefono = document.getElementById('anTel').value.trim();
-    c.note = document.getElementById('anNote').value;
-    applicaCategoria(c, document.getElementById('anCat').value);
+    const d = anRead('an');
+    if(!d.an.nome || !d.an.cognome){ alert('Nome e cognome non possono essere vuoti.'); return; }
+    anApplica(c, d);
     db.saveCliente(c);
     document.getElementById('cliAnagraficaTitle').textContent = c.nome;
     document.getElementById('anMsg').textContent = '✓ Salvato';
@@ -4180,6 +4167,8 @@ function normalizeValutazione(v){
 function emptyValutazione(){
   const campi = {};
   VAL_SEZIONI.forEach(s=> s.campi.forEach(c=> campi[c.key] = ''));
+  // la prima valutazione parte già precompilata con i dati dell'anagrafica
+  try{ const cl = activeClient(); if(cl){ campi.telefono = cl.telefono || ''; campi.professione = (cl.anagrafica && cl.anagrafica.professione) || ''; } }catch(ex){}
   const ruota = {};
   VAL_RUOTA_DOMINI.forEach(d=> ruota[d.key] = 5);
   const persona = {};
@@ -9206,6 +9195,51 @@ function renderDispRicorrenteModal(prefill){
   });
 }
 
+
+// ===== Anagrafica paziente (modello snellito della scheda del gestionale) =====
+function anSplitNome(c){
+  const a = c.anagrafica || {};
+  if(a.nome || a.cognome) return {nome:a.nome||'', cognome:a.cognome||''};
+  const parts = String(c.nome||'').trim().split(/\s+/);
+  return {nome:parts[0]||'', cognome:parts.slice(1).join(' ')};
+}
+function anFormHtml(c, p){
+  const a = c.anagrafica || {}, n = anSplitNome(c);
+  const f = (k,l,v,extra)=>`<div class="ev-field"><label>${l}</label><input class="editable" id="${p}${k}" value="${escAttr(v||'')}" ${extra||''}></div>`;
+  return `
+    <div class="ev-row">${f('Cognome','Cognome *',n.cognome)}${f('Nome','Nome *',n.nome)}</div>
+    <div class="ev-row">
+      <div class="ev-field"><label>Sesso</label><select class="editable" id="${p}Sesso"><option value="">—</option><option value="F" ${a.sesso==='F'?'selected':''}>Femmina</option><option value="M" ${a.sesso==='M'?'selected':''}>Maschio</option></select></div>
+      <div class="ev-field"><label>Data di nascita${c.dataNascita && clienteEtaAnni(c)!==null ? ' · '+clienteEtaAnni(c)+' anni' : ''}</label><input class="editable" type="date" id="${p}Nascita" value="${escAttr(c.dataNascita||'')}"></div>
+    </div>
+    <div class="ev-row">${f('LuogoNascita','Luogo di nascita',a.luogoNascita)}${f('ProvNascita','Prov.',a.provNascita,'maxlength="2" style="text-transform:uppercase"')}</div>
+    <div class="ev-row">${f('Cf','Codice fiscale',a.cf,'maxlength="16" style="text-transform:uppercase"')}${f('Professione','Professione',a.professione)}</div>
+    <div class="fat-box-t" style="margin:6px 0 8px;">Residenza</div>
+    ${f('Indirizzo','Indirizzo',a.indirizzo)}
+    <div class="ev-row" style="grid-template-columns:1fr 2fr 1fr;">${f('Cap','CAP',a.cap)}${f('Comune','Comune',a.comune)}${f('Provincia','Prov.',a.provincia,'maxlength="2" style="text-transform:uppercase"')}</div>
+    <div class="fat-box-t" style="margin:6px 0 8px;">Contatti</div>
+    <div class="ev-row">${f('Tel','Cellulare',c.telefono)}${f('Cell2','Secondo cellulare / telefono',a.cell2)}</div>
+    <div class="ev-row"><div class="ev-field"><label>Email</label><input class="editable" type="email" id="${p}Email" value="${escAttr(c.email||'')}" placeholder="serve per farlo accedere al suo profilo"></div>${f('Pec','PEC',a.pec)}</div>
+    <details style="margin:4px 0 12px;" ${a.ragSociale||a.piva?'open':''}><summary style="cursor:pointer;font-size:12.5px;color:var(--ink-mute);">Dati per fattura a azienda (facoltativo)</summary>
+      <div class="ev-row" style="margin-top:8px;">${f('RagSociale','Ragione sociale',a.ragSociale)}${f('Piva','Partita IVA',a.piva)}</div></details>
+    <div class="ev-field"><label>Categoria${p==='cli'?' *':''}</label><select class="editable" id="${p}Categoria">${catOptionsHtml(c.categoria, p==='cli' ? '— scegli la categoria —' : '— da assegnare —')}</select></div>
+    <div class="ev-field"><label>Note</label><textarea class="editable" id="${p}Note" rows="2">${escHtml(c.note||'')}</textarea></div>`;
+}
+function anRead(p){
+  const g = k=>{ const e = document.getElementById(p+k); return e ? e.value.trim() : ''; };
+  const up = v=>v.toUpperCase();
+  return {
+    categoria: g('Categoria'), dataNascita: g('Nascita'), telefono: g('Tel'), email: g('Email'), note: document.getElementById(p+'Note').value,
+    an: {nome:g('Nome'), cognome:g('Cognome'), sesso:g('Sesso'), luogoNascita:g('LuogoNascita'), provNascita:up(g('ProvNascita')), cf:up(g('Cf')), professione:g('Professione'),
+      indirizzo:g('Indirizzo'), cap:g('Cap'), comune:g('Comune'), provincia:up(g('Provincia')), cell2:g('Cell2'), pec:g('Pec'), ragSociale:g('RagSociale'), piva:g('Piva')}
+  };
+}
+function anApplica(c, d){
+  c.anagrafica = {...(c.anagrafica||{}), ...d.an};
+  c.nome = (d.an.nome+' '+d.an.cognome).trim();
+  c.dataNascita = d.dataNascita; c.telefono = d.telefono; c.email = d.email; c.note = d.note;
+  applicaCategoria(c, d.categoria);
+}
 function createCliente(data){
   const c = {
     id: 'cl_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
@@ -9215,6 +9249,7 @@ function createCliente(data){
     note: data.note || '',
     email: data.email || '',
     telefono: data.telefono || '',
+    anagrafica: data.anagrafica || {},
     profilo: null,
     categoria: null,
     pathway: null,
@@ -9574,11 +9609,7 @@ document.getElementById('btnClienti').onclick = ()=>{
 };
 document.getElementById('cliSearchInput').oninput = (e)=> renderClientiList(e.target.value);
 document.getElementById('btnNuovoCliente').onclick = ()=>{
-  document.getElementById('cliNome').value = '';
-  document.getElementById('cliDataNascita').value = '';
-  document.getElementById('cliNote').value = '';
-  document.getElementById('cliEmail').value = '';
-  document.getElementById('cliCategoria').value = '';
+  document.getElementById('cliFormBox').innerHTML = anFormHtml({}, 'cli');
   document.getElementById('cliModal').classList.add('open');
 };
 document.getElementById('closeCli').onclick = ()=> document.getElementById('cliModal').classList.remove('open');
@@ -9586,17 +9617,12 @@ document.getElementById('cliModal').onclick = (e)=>{ if(e.target.id==='cliModal'
 document.getElementById('closeCliAnagrafica').onclick = ()=> document.getElementById('cliAnagraficaModal').classList.remove('open');
 document.getElementById('cliAnagraficaModal').onclick = (e)=>{ if(e.target.id==='cliAnagraficaModal') document.getElementById('cliAnagraficaModal').classList.remove('open'); };
 document.getElementById('btnCreaCliente').onclick = ()=>{
-  const nome = document.getElementById('cliNome').value.trim();
-  if(!nome){ alert('Inserisci almeno il nome del cliente.'); return; }
-  const categoria = document.getElementById('cliCategoria').value;
-  if(!categoria){ alert('Scegli la categoria del cliente: serve per indirizzare il percorso.'); return; }
-  const c = createCliente({
-    categoria,
-    nome,
-    dataNascita: document.getElementById('cliDataNascita').value,
-    note: document.getElementById('cliNote').value,
-    email: document.getElementById('cliEmail').value.trim()
-  });
+  const d = anRead('cli');
+  if(!d.an.nome || !d.an.cognome){ alert('Inserisci nome e cognome del cliente.'); return; }
+  if(!d.categoria){ alert('Scegli la categoria del cliente: serve per indirizzare il percorso.'); return; }
+  const c = createCliente({ nome: (d.an.nome+' '+d.an.cognome).trim() });
+  anApplica(c, d);
+  db.saveCliente(c);
   document.getElementById('cliModal').classList.remove('open');
   if(isSegreteriaOnly()){
     renderCliAnagraficaModal(c);
@@ -11268,7 +11294,7 @@ function renderEventModal(){
     const cognome = document.getElementById('evPazCognome').value.trim();
     const tel = document.getElementById('evPazTel').value.trim();
     if(!nome || !cognome){ alert('Inserisci nome e cognome del paziente.'); return; }
-    const c = createCliente({ nome: nome + ' ' + cognome, telefono: tel, categoria: document.getElementById('evPazCat').value });
+    const c = createCliente({ nome: nome + ' ' + cognome, telefono: tel, anagrafica:{nome, cognome}, categoria: document.getElementById('evPazCat').value });
     const pEv = ed.professionistaId ? state.professionisti.find(p=>p.id===ed.professionistaId) : null;
     c.professionistiIds = (pEv && pEv.area!=='Segreteria') ? [pEv.id] : [];
     db.saveCliente(c);
@@ -11850,11 +11876,16 @@ function fattApriListino(){
 
 // ---------- editor fattura ----------
 function fattDatiFiscaliCliente(cid){
+  fattInit();
   const c = state.clienti.find(x=>x.id===cid);
-  const saved = state.datiFiscali[cid];
-  if(saved) return JSON.parse(JSON.stringify(saved));
-  const parts = ((c&&c.nome)||'').trim().split(/\s+/);
-  return {tipo:'privato', nome:parts[0]||'', cognome:parts.slice(1).join(' '), cf:'', indirizzo:'', cap:'', comune:'', provincia:'', denominazione:'', piva:'', codiceDestinatario:'', pec:''};
+  const a = (c && c.anagrafica) || {}, n = c ? anSplitNome(c) : {nome:'',cognome:''};
+  const base = {tipo:'privato', nome:n.nome, cognome:n.cognome, cf:'', indirizzo:'', cap:'', comune:'', provincia:'', denominazione:'', piva:'', codiceDestinatario:'', pec:''};
+  const saved = state.datiFiscali[cid] ? JSON.parse(JSON.stringify(state.datiFiscali[cid])) : {};
+  const out = {...base, ...saved};
+  // l'anagrafica del paziente ha la precedenza dove compilata
+  [['cf','cf'],['indirizzo','indirizzo'],['cap','cap'],['comune','comune'],['provincia','provincia'],['pec','pec']].forEach(([k,ak])=>{ if(a[ak]) out[k] = a[ak]; });
+  if(a.ragSociale && a.piva && !saved.tipo){ out.tipo = 'azienda'; out.denominazione = a.ragSociale; out.piva = a.piva; }
+  return out;
 }
 function fattApriEditor(id, clienteId){
   fattInit();
