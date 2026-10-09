@@ -1962,6 +1962,7 @@ body[data-theme="light"] .paz-lk-list{background:#fff;border-color:#ccc;}
         <button class="btn-ghost" id="btnClientCalNext">›</button>
       </div>
       <button class="btn-ghost" id="btnRichiediAppuntamento">+ Richiedi un appuntamento</button>
+      <button class="btn-ghost" id="btnPrenotaPalestra" style="display:none;">🏋 Prenota la palestra</button>
     </div>
     <div class="cal-legend">
       <span class="leg-item"><span class="leg-dot dot-impegno"></span>Impegno</span>
@@ -2285,6 +2286,13 @@ body[data-theme="light"] .paz-lk-list{background:#fff;border-color:#ccc;}
   </div>
 </div>
 
+<div class="modal-bg" id="palModal">
+  <div class="modal">
+    <button class="modal-close" id="closePal">×</button>
+    <h3>Allenamento in autonomia</h3>
+    <div id="palBody"></div>
+  </div>
+</div>
 <div class="modal-bg" id="spaziModal">
   <div class="modal">
     <button class="modal-close" id="closeSpazi">×</button>
@@ -2760,10 +2768,12 @@ function areaAccessForProfessionista(prof){
   return {tabs, ahSub, isAdmin:false, isSegreteria:false};
 }
 function spazioToRow(s){
-  return { id: s.id, nome: s.nome, colore: s.colore || null, note: s.note || null };
+  return { id: s.id, nome: s.nome, colore: s.colore || null, note: s.note || null,
+    prenotabile: !!s.prenotabile, posti_ora: s.postiOra||4, ap_inizio: s.apInizio||null, ap_fine: s.apFine||null };
 }
 function rowToSpazio(r){
-  return { id: r.id, nome: r.nome, colore: r.colore || '', note: r.note || '' };
+  return { id: r.id, nome: r.nome, colore: r.colore || '', note: r.note || '',
+    prenotabile: !!r.prenotabile, postiOra: r.posti_ora||4, apInizio: r.ap_inizio||'', apFine: r.ap_fine||'' };
 }
 function calSettingsToRow(cs){
   return { id: 1, start_hour: cs.startHour, end_hour: cs.endHour, min_allenamento: cs.minAllenamento, min_retest: cs.minRetest, active_days: cs.activeDays, readiness_threshold: cs.readinessThreshold };
@@ -3732,7 +3742,18 @@ function renderSpaziModal(){
         </div>
       </div>
       <button class="team-del" data-del-spazio="${s.id}" title="Elimina spazio">Elimina</button>
+      <div style="flex-basis:100%;display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:12.5px;color:var(--ink-dim);padding:2px 0 6px;">
+        <label style="display:flex;gap:6px;align-items:center;"><input type="checkbox" data-spazio-pren="${s.id}" ${s.prenotabile?'checked':''}> Prenotabile dai clienti (allenamento in autonomia)</label>
+        ${s.prenotabile ? `<label>Posti/ora <input class="editable" type="number" min="1" style="width:64px;" data-spazio-posti="${s.id}" value="${s.postiOra||4}"></label>
+        <label>Dalle <input class="editable" type="time" style="width:100px;" data-spazio-ini="${s.id}" value="${s.apInizio||''}"></label>
+        <label>alle <input class="editable" type="time" style="width:100px;" data-spazio-fine="${s.id}" value="${s.apFine||''}"></label>
+        <span style="font-size:11.5px;color:var(--ink-mute);">Orari vuoti = orari del calendario.</span>` : ''}
+      </div>
     </div>`).join('');
+  box.querySelectorAll('[data-spazio-pren]').forEach(cb=>{ cb.onchange = ()=>{ const sp = state.spazi.find(x=>x.id===cb.dataset.spazioPren); if(!sp) return; sp.prenotabile = cb.checked; if(cb.checked && !sp.postiOra) sp.postiOra = 4; db.saveSpazio(sp); renderSpaziModal(); }; });
+  box.querySelectorAll('[data-spazio-posti]').forEach(i=>{ i.onchange = ()=>{ const sp = state.spazi.find(x=>x.id===i.dataset.spazioPosti); if(!sp) return; sp.postiOra = Math.max(1, parseInt(i.value)||4); db.saveSpazio(sp); }; });
+  box.querySelectorAll('[data-spazio-ini]').forEach(i=>{ i.onchange = ()=>{ const sp = state.spazi.find(x=>x.id===i.dataset.spazioIni); if(!sp) return; sp.apInizio = i.value; db.saveSpazio(sp); }; });
+  box.querySelectorAll('[data-spazio-fine]').forEach(i=>{ i.onchange = ()=>{ const sp = state.spazi.find(x=>x.id===i.dataset.spazioFine); if(!sp) return; sp.apFine = i.value; db.saveSpazio(sp); }; });
   box.querySelectorAll('[data-spazio-nome]').forEach(inp=>{
     inp.onchange = ()=>{
       const s = state.spazi.find(x=>x.id===inp.dataset.spazioNome);
@@ -7687,6 +7708,7 @@ function renderClientCalendar(){
   }
   renderClientNotifBell(c);
   renderClientRichiesteInCorso(c);
+  try{ renderPalBtn(); }catch(ex){ console.error('palBtn', ex); }
   renderClientPathwayTimeline();
   renderClientCalGrid();
   renderSegUpcoming(c);
@@ -12668,6 +12690,112 @@ function renderSegPromemoria(box){
   box.querySelectorAll('[data-prom]').forEach(a=> a.addEventListener('click', ()=>{ state.promSent.add(a.dataset.prom); setTimeout(()=>renderSegPromemoria(box), 400); }));
 }
 
+
+// ---------------- palestra: prenotazione posti (allenamento in autonomia) ----------------
+function palSpazi(){ return (state.spazi||[]).filter(s=>s.prenotabile); }
+function palSlots(sp){
+  const ini = sp.apInizio ? timeToMinutes(sp.apInizio) : calStartMin();
+  const fine = sp.apFine ? timeToMinutes(sp.apFine) : calEndMin();
+  const out = []; for(let m=ini; m+60<=fine; m+=60) out.push(m);
+  return out;
+}
+function palKey(sp, day, start){ return sp+'|'+day+'|'+start; }
+function palN(spId, day, start){
+  const k = palKey(spId, day, start);
+  if(state.palCount && k in state.palCount) return state.palCount[k];
+  return (state.prenotazioni||[]).filter(p=>p.spazioId===spId && p.day===day && p.start===start).length;
+}
+async function palCarica(spId, from, to){
+  if(!state.prenotazioni) state.prenotazioni = [];
+  state.palCount = {};
+  if(!(dbEnabled && sb)) return;
+  const [cnt, rows] = await Promise.all([
+    sb.rpc('posti_spazio', {p_spazio: spId, p_from: from, p_to: to}),
+    sb.from('prenotazioni_spazio').select('*').eq('spazio_id', spId).gte('day', from).lte('day', to)
+  ]);
+  if(cnt.error){ console.error('Supabase posti_spazio', cnt.error); }
+  else (cnt.data||[]).forEach(r=>{ state.palCount[palKey(spId, r.day, r.start)] = +r.n || 0; });
+  if(rows.error){ console.error('Supabase prenotazioni_spazio', rows.error); return; }
+  state.prenotazioni = state.prenotazioni.filter(p=>!(p.spazioId===spId && p.day>=from && p.day<=to))
+    .concat((rows.data||[]).map(r=>({id:r.id, spazioId:r.spazio_id, clienteId:r.cliente_id, day:r.day, start:r.start, end:r.end})));
+}
+function palGiorni(){
+  const att = (state.calSettings && state.calSettings.activeDays) || [1,2,3,4,5,6];
+  const out = []; const d = new Date(); d.setHours(0,0,0,0);
+  for(let i=0; i<14; i++){ const x = new Date(d); x.setDate(d.getDate()+i); if(att.includes(x.getDay())) out.push(fmtDateISO(x)); }
+  return out;
+}
+async function apriPalestra(){
+  const sps = palSpazi();
+  if(!sps.length){ alert('Nessuno spazio è prenotabile. Abilitalo da "Spazi comuni".'); return; }
+  const giorni = palGiorni();
+  state.pal = state.pal || {};
+  if(!sps.find(x=>x.id===state.pal.spId)) state.pal.spId = sps[0].id;
+  if(!giorni.includes(state.pal.day)) state.pal.day = giorni[0];
+  document.getElementById('palModal').classList.add('open');
+  await palRender();
+}
+async function palRender(){
+  const body = document.getElementById('palBody');
+  const c = activeClient(); const sps = palSpazi(); const giorni = palGiorni();
+  const sp = sps.find(x=>x.id===state.pal.spId); if(!sp) return;
+  await palCarica(sp.id, giorni[0], giorni[giorni.length-1]);
+  const day = state.pal.day, now = new Date(), oggi = fmtDateISO(now), nowMin = now.getHours()*60+now.getMinutes();
+  const posti = sp.postiOra || 4, gest = canManageAll();
+  const WD = ['Dom','Lun','Mar','Mer','Gio','Ven','Sab'];
+  const mie = (state.prenotazioni||[]).filter(p=>c && p.clienteId===c.id && (p.day>oggi || (p.day===oggi && timeToMinutes(p.end)>nowMin))).sort((a,b)=>(a.day+a.start).localeCompare(b.day+b.start));
+  body.innerHTML = `
+    ${c ? `<p style="margin-top:0;font-size:13px;color:var(--ink-mute);">${gest?'Prenotazione per <b>'+escHtml(c.nome)+'</b>. ':''}Scegli un orario: ogni ora ci sono al massimo ${posti} posti.</p>` : ''}
+    ${sps.length>1 ? `<div class="ev-field"><label>Spazio</label><select class="editable" id="palSp">${sps.map(x=>`<option value="${x.id}" ${x.id===sp.id?'selected':''}>${escHtml(x.nome)}</option>`).join('')}</select></div>` : `<div style="font-size:14px;margin-bottom:8px;"><b>${escHtml(sp.nome)}</b></div>`}
+    <div class="cal-days-toggle" id="palDays" style="flex-wrap:wrap;margin-bottom:12px;">${giorni.map(g=>{ const d = new Date(g+'T00:00:00'); return `<div class="cal-day-chip ${g===day?'on':''}" data-pal-day="${g}" style="width:auto;padding:0 10px;height:auto;min-height:34px;flex-direction:column;line-height:1.15;"><span style="font-size:10px;">${WD[d.getDay()]}</span><span>${d.getDate()}/${d.getMonth()+1}</span></div>`; }).join('')}</div>
+    <div id="palSlots">${palSlots(sp).map(m=>{
+      const st = minutesToTime(m), en = minutesToTime(m+60);
+      const past = day<oggi || (day===oggi && m+60<=nowMin);
+      const n = palN(sp.id, day, st), lib = Math.max(0, posti-n);
+      const mia = c && (state.prenotazioni||[]).find(p=>p.clienteId===c.id && p.spazioId===sp.id && p.day===day && p.start===st);
+      const nomi = gest ? (state.prenotazioni||[]).filter(p=>p.spazioId===sp.id && p.day===day && p.start===st) : [];
+      const dots = [...Array(posti)].map((_,i)=>`<span style="display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:3px;background:${i<n?'var(--gold)':'transparent'};border:1.5px solid var(--gold);"></span>`).join('');
+      return `<div class="fat-pg" style="grid-template-columns:100px 1fr auto;${past?'opacity:.4;':''}"><b>${st}–${en}</b>
+        <span>${dots} <span style="font-size:12.5px;color:${lib?'var(--ink-dim)':'#E0776A'};">${lib ? lib+(lib===1?' posto libero':' posti liberi')+' su '+posti : 'Completo'}</span>
+          ${nomi.length ? `<div style="font-size:11.5px;color:var(--ink-mute);margin-top:3px;">${nomi.map(p=>{ const cc = state.clienti.find(z=>z.id===p.clienteId); return escHtml(cc?cc.nome:'?')+` <a href="#" data-pal-rm="${p.id}" style="color:#E0776A;text-decoration:none;" title="Rimuovi">×</a>`; }).join(' · ')}</div>` : ''}</span>
+        ${past ? '<span></span>' : mia ? `<button class="btn-small danger" data-pal-annulla="${mia.id}">Annulla (prenotato)</button>` : (lib && c ? `<button class="btn-gold" data-pal-prenota="${st}">Prenota</button>` : '<span></span>')}</div>`;
+    }).join('') || '<div class="val-empty">Nessun orario disponibile.</div>'}</div>
+    ${mie.length ? `<div class="fat-box-t" style="margin-top:16px;">Le prenotazioni${gest?' del paziente':' dell\'utente'}</div>${mie.map(p=>{ const x = (state.spazi||[]).find(z=>z.id===p.spazioId); return `<div class="fat-pg" style="grid-template-columns:1fr auto;"><span>${segFmtDay(p.day)} · ${p.start}–${p.end} · ${escHtml(x?x.nome:'')}</span><button class="btn-small danger" data-pal-annulla="${p.id}">Annulla</button></div>`; }).join('')}` : ''}`;
+  const sel = document.getElementById('palSp'); if(sel) sel.onchange = ()=>{ state.pal.spId = sel.value; palRender(); };
+  body.querySelectorAll('[data-pal-day]').forEach(el=> el.onclick = ()=>{ state.pal.day = el.dataset.palDay; palRender(); });
+  body.querySelectorAll('[data-pal-prenota]').forEach(b=> b.onclick = async ()=>{
+    b.disabled = true;
+    const st = b.dataset.palPrenota;
+    if(palN(sp.id, day, st) >= posti){ alert('Posti esauriti per questo orario.'); palRender(); return; }
+    const p = {id:fattNuovoId('pr'), spazioId:sp.id, clienteId:c.id, day, start:st, end:minutesToTime(timeToMinutes(st)+60)};
+    if(dbEnabled && sb){
+      const {error} = await sb.from('prenotazioni_spazio').insert({id:p.id, spazio_id:p.spazioId, cliente_id:p.clienteId, day:p.day, start:p.start, end:p.end});
+      if(error){
+        if(/POSTI_ESAURITI/.test(error.message||'')) alert('Spiacente, nel frattempo i posti si sono esauriti per questo orario.');
+        else if(error.code==='23505') alert('Hai già prenotato questo orario.');
+        else { console.error('Supabase save prenotazione', error); alert('Prenotazione non riuscita. Riprova.'); }
+        palRender(); return;
+      }
+    }
+    (state.prenotazioni = state.prenotazioni||[]).push(p);
+    palRender();
+  });
+  const annulla = async (id)=>{
+    if(!confirm('Annullare questa prenotazione?')) return;
+    if(dbEnabled && sb){ const {error} = await sb.from('prenotazioni_spazio').delete().eq('id', id); if(error){ console.error('Supabase delete prenotazione', error); alert('Annullamento non riuscito.'); return; } }
+    state.prenotazioni = (state.prenotazioni||[]).filter(p=>p.id!==id);
+    palRender();
+  };
+  body.querySelectorAll('[data-pal-annulla]').forEach(b=> b.onclick = ()=> annulla(b.dataset.palAnnulla));
+  body.querySelectorAll('[data-pal-rm]').forEach(a=> a.onclick = (e)=>{ e.preventDefault(); annulla(a.dataset.palRm); });
+}
+function renderPalBtn(){
+  const b = document.getElementById('btnPrenotaPalestra'); if(!b) return;
+  b.style.display = palSpazi().length ? 'inline-block' : 'none';
+  b.onclick = apriPalestra;
+}
+document.getElementById('closePal').onclick = ()=> document.getElementById('palModal').classList.remove('open');
+document.getElementById('palModal').onclick = (e)=>{ if(e.target.id==='palModal') document.getElementById('palModal').classList.remove('open'); };
 document.getElementById('btnSegreteria').onclick = ()=> segNavigate('calendario');
 document.getElementById('btnBackToPathway').onclick = ()=>{
   if(activeClient()){
