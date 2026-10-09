@@ -2128,7 +2128,6 @@ body[data-theme="light"] .paz-lk-list{background:#fff;border-color:#ccc;}
       <div class="prof-dropdown" id="calMultiVisDropdown" style="display:none;"></div>
     </div>
     <button class="btn-ghost" id="btnCalImpostazioni" style="display:none;">⚙ Impostazioni</button>
-    <button class="btn-ghost" id="btnDisponibilita">Disponibilità settimanale</button>
     <button class="btn-ghost" id="btnRichieste">Richieste <span class="rich-badge" id="richBadge" style="display:none;">0</span></button>
     <button class="btn-ghost" id="btnAvvisi">Avvisi <span class="rich-badge" id="avvisiBadge" style="display:none;">0</span></button>
     <button class="btn-ghost" id="btnSegnalazioni">Segnalazioni <span class="rich-badge" id="segnalazioniBadge" style="display:none;">0</span></button>
@@ -9028,10 +9027,12 @@ document.getElementById('btnRichieste').onclick = ()=>{
 document.getElementById('closeRichieste').onclick = ()=> document.getElementById('richiesteModal').classList.remove('open');
 document.getElementById('richiesteModal').onclick = (e)=>{ if(e.target.id==='richiesteModal') document.getElementById('richiesteModal').classList.remove('open'); };
 
-document.getElementById('btnDisponibilita').onclick = ()=>{
+function apriDispSettimanale(){
+  state.dispRicEditId = null;
+  state.dispProfId = (canManageAll() && state.calFilterProfId) ? state.calFilterProfId : (state.professionista ? state.professionista.id : null);
   renderDispRicorrenteModal();
   document.getElementById('dispRicorrenteModal').classList.add('open');
-};
+}
 document.getElementById('closeDispRicorrente').onclick = ()=> document.getElementById('dispRicorrenteModal').classList.remove('open');
 document.getElementById('dispRicorrenteModal').onclick = (e)=>{ if(e.target.id==='dispRicorrenteModal') document.getElementById('dispRicorrenteModal').classList.remove('open'); };
 
@@ -9044,7 +9045,7 @@ function renderDispRicorrenteModal(prefill){
   // resta il suo proprietario; altrimenti è il professionista scelto nel filtro
   // calendario (per admin/segreteria) o me stesso
   const targetProfId = editing ? editing.professionistaId
-    : (canManageAll() && state.calFilterProfId ? state.calFilterProfId : (state.professionista ? state.professionista.id : null));
+    : (canManageAll() && state.dispProfId ? state.dispProfId : (canManageAll() && state.calFilterProfId ? state.calFilterProfId : (state.professionista ? state.professionista.id : null)));
   const targetProf = state.professionisti.find(p=>p.id===targetProfId);
   const isOther = state.professionista && targetProfId && targetProfId !== state.professionista.id;
   const mine = state.disponibilitaRicorrenti.filter(d=>d.professionistaId===targetProfId);
@@ -9060,7 +9061,9 @@ function renderDispRicorrenteModal(prefill){
   const curMode = editing ? (editing.data ? 'data' : 'ricorrente') : (state.dispRicNewMode||'ricorrente');
 
   let html = '';
-  if(isOther && targetProf){
+  if(canManageAll()){
+    html += `<div class="ev-field"><label>Professionista</label><select class="editable" id="dispProfSel" ${editing?'disabled':''}>${state.professionisti.map(p=>`<option value="${p.id}" ${p.id===targetProfId?'selected':''}>${escHtml(p.nome)}${p.area?' · '+escHtml(p.area):''}</option>`).join('')}</select></div>`;
+  } else if(isOther && targetProf){
     html += `<div style="font-size:11.5px;color:var(--ink-mute);margin-bottom:8px;">Stai gestendo la disponibilità di <b>${targetProf.nome}</b>.</div>`;
   }
   html += `<div class="ev-field"><label>${editing ? 'Modifica blocco' : 'Aggiungi blocco'}</label>
@@ -9128,6 +9131,8 @@ function renderDispRicorrenteModal(prefill){
   }
 
   box.innerHTML = html;
+  const profSel = document.getElementById('dispProfSel');
+  if(profSel) profSel.onchange = ()=>{ state.dispProfId = profSel.value; state.dispRicEditId = null; renderDispRicorrenteModal(); };
 
   box.querySelectorAll('#dispRicMode .cal-day-chip').forEach(chip=>{
     chip.onclick = ()=>{
@@ -11210,6 +11215,7 @@ function renderCalendarWeek(){
     <div class="cs-field"><label>Min. allenamento (min)</label><input type="number" id="csMinAll" min="15" step="15" value="${cs.minAllenamento}"></div>
     <div class="cs-field"><label>Min. retest (min)</label><input type="number" id="csMinRetest" min="15" step="15" value="${cs.minRetest}"></div>
     <div class="cs-field"><label>Soglia readiness min.</label><input type="number" id="csReadiness" min="1" max="5" step="0.5" value="${cs.readinessThreshold!==undefined?cs.readinessThreshold:3}" title="Sotto questa media (1-5) ricevi un avviso"></div>
+    <div class="cs-field"><label>Disponibilità</label><button class="btn-ghost" id="btnDisponibilita" type="button" style="height:34px;">Disponibilità settimanale…</button></div>
     <div class="cs-field"><label>Giorni attivi</label><div class="cal-days-toggle" id="csDays">
       ${[1,2,3,4,5,6,0].map(d=>`<div class="cal-day-chip ${cs.activeDays.includes(d)?'on':''}" data-day="${d}" title="${['Lunedì','Martedì','Mercoledì','Giovedì','Venerdì','Sabato','Domenica'][[1,2,3,4,5,6,0].indexOf(d)]}">${['L','M','M','G','V','S','D'][[1,2,3,4,5,6,0].indexOf(d)]}</div>`).join('')}
     </div></div>
@@ -11339,6 +11345,7 @@ function bindCalSettingsEvents(){
   document.getElementById('csEnd').onchange = e=>{ state.calSettings.endHour = parseInt(e.target.value,10)||24; db.saveCalSettings(state.calSettings); renderCalendar(); };
   document.getElementById('csMinAll').onchange = e=>{ state.calSettings.minAllenamento = parseInt(e.target.value,10)||60; db.saveCalSettings(state.calSettings); renderCalendar(); };
   document.getElementById('csMinRetest').onchange = e=>{ state.calSettings.minRetest = parseInt(e.target.value,10)||45; db.saveCalSettings(state.calSettings); renderCalendar(); };
+  document.getElementById('btnDisponibilita').onclick = apriDispSettimanale;
   document.getElementById('csReadiness').onchange = e=>{ state.calSettings.readinessThreshold = parseFloat(e.target.value)||3; db.saveCalSettings(state.calSettings); };
   document.querySelectorAll('#csDays .cal-day-chip').forEach(chip=>{
     chip.onclick = ()=>{
@@ -12711,7 +12718,6 @@ document.querySelectorAll('#calendarArea [data-calmode]').forEach(opt=>{
     document.getElementById('calMonthWrap').style.display = state.calViewMode==='mese' ? 'block' : 'none';
     document.getElementById('calMultiWrap').style.display = state.calViewMode==='multi' ? 'block' : 'none';
     calSettingsVis();
-    document.getElementById('btnDisponibilita').style.display = state.calViewMode==='settimana' ? 'inline-block' : 'none';
     renderCalendar();
   };
 });
@@ -12741,7 +12747,6 @@ document.getElementById('calMonthGrid').addEventListener('click', (e)=>{
     document.getElementById('calWeekWrap').style.display = 'block';
     document.getElementById('calMonthWrap').style.display = 'none';
     calSettingsVis();
-    document.getElementById('btnDisponibilita').style.display = 'inline-block';
     renderCalendar();
     return;
   }
