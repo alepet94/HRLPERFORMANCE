@@ -1803,7 +1803,7 @@ body[data-theme="light"] .paz-lk-list{background:#fff;border-color:#ccc;}
 .fat-rg-head,.fat-rg{display:grid;grid-template-columns:3fr .6fr .9fr .7fr .8fr .9fr 34px;gap:8px;align-items:center;margin-bottom:6px;}
 .fat-rg-head{font-size:11.5px;color:var(--ink-mute);}
 .fat-rg-tot{text-align:right;font-variant-numeric:tabular-nums;}
-.fat-lst-head,.fat-lst-row{display:grid;grid-template-columns:3fr 1fr .8fr 1fr 34px;gap:8px;align-items:center;margin-bottom:6px;}
+.fat-lst-head,.fat-lst-row{display:grid;grid-template-columns:3.2fr .9fr .6fr 1fr .8fr 34px;gap:8px;align-items:center;margin-bottom:6px;}
 .fat-lst-head{font-size:11.5px;color:var(--ink-mute);}
 .fat-tot{display:flex;gap:18px;flex-wrap:wrap;justify-content:flex-end;}
 .fat-tot span{display:block;font-size:11.5px;color:var(--ink-mute);}
@@ -3235,7 +3235,7 @@ const db = {
     state.spazi = spz.error ? [] : (spz.data || []).map(rowToSpazio);
     // fatturazione: tabelle nuove, errore tollerato (migrazione mancante o ruolo senza accesso)
     state.fatture = fat.error ? [] : (fat.data || []).map(fattRowToFattura);
-    state.listino = lst.error ? [] : (lst.data || []).map(l=>({id:l.id, descrizione:l.descrizione, prezzo:+l.prezzo||0, aliquota:+l.aliquota||0, natura:l.natura||'N4'}));
+    state.listino = lst.error ? [] : (lst.data || []).map(l=>({id:l.id, descrizione:l.descrizione, prezzo:+l.prezzo||0, aliquota:+l.aliquota||0, natura:l.natura||'N4'})).sort((a,b)=>String(a.id).localeCompare(String(b.id)));
     state.datiFiscali = {}; if(!dfi.error) (dfi.data || []).forEach(x=>{ state.datiFiscali[x.cliente_id] = x.dati || {}; });
     state.fattImp = (fimp && !fimp.error && fimp.data && fimp.data.dati) ? fimp.data.dati : {};
     if(bop.data && bop.data.length){
@@ -11600,6 +11600,20 @@ function segNavigate(k){
 const FATT_NATURE = [['N4','N4 – Esente art. 10 (prestazioni sanitarie)'],['N2.2','N2.2 – Non soggetta (regime forfettario)'],['N1','N1 – Escluso art. 15'],['N2.1','N2.1 – Non soggetta artt. 7-7septies']];
 const FATT_MODALITA = [['contanti','Contanti','MP01'],['carta','Carta / POS','MP08'],['bonifico','Bonifico','MP05'],['assegno','Assegno','MP02'],['altro','Altro','MP01']];
 const FATT_SDI = [['pronto','Pronto per invio'],['inviata','Inviata – attesa esito'],['consegnata','Consegnata'],['scartata','Scartata']];
+const FATT_LISTINO_HRL = [{"id": "hrl_01", "descrizione": "Alessia – Prima visita + test sistema (mattia o crista) (75 min)", "prezzo": 120, "aliquota": 22, "natura": "N4"}, {"id": "hrl_02", "descrizione": "Alessia – Controllo (45 min)", "prezzo": 100, "aliquota": 22, "natura": "N4"}, {"id": "hrl_03", "descrizione": "Antonio – Prima visita (60 min)", "prezzo": 120, "aliquota": 22, "natura": "N4"}, {"id": "hrl_04", "descrizione": "Antonio – Controllo (45 min)", "prezzo": 80, "aliquota": 22, "natura": "N4"}, {"id": "hrl_05", "descrizione": "Antonio – Controllo rapido (30 min)", "prezzo": 50, "aliquota": 22, "natura": "N4"}, {"id": "hrl_06", "descrizione": "Antonio – Test Antonio + test biomeccanici (120 min)", "prezzo": 160, "aliquota": 22, "natura": "N4"}, {"id": "hrl_07", "descrizione": "Antonio – Test atleta fuori regione (150 min)", "prezzo": 327.05, "aliquota": 22, "natura": "N4"}, {"id": "hrl_08", "descrizione": "Barbara – Prima valutazione in presenza (60 min)", "prezzo": 98.36, "aliquota": 22, "natura": "N4"}, {"id": "hrl_09", "descrizione": "Barbara – Controllo in presenza (60 min)", "prezzo": 98.36, "aliquota": 22, "natura": "N4"}, {"id": "hrl_10", "descrizione": "Barbara – Valutazione online (60 min)", "prezzo": 65.57, "aliquota": 22, "natura": "N4"}, {"id": "hrl_11", "descrizione": "Carlo – Massoterapia (45 min)", "prezzo": 49.18, "aliquota": 22, "natura": "N4"}, {"id": "hrl_12", "descrizione": "Carlo – Consulenza recupero + respiro + sistema nervoso (60 min)", "prezzo": 65.57, "aliquota": 22, "natura": "N4"}, {"id": "hrl_13", "descrizione": "Jessica/Martina – Fisioterapia (45 min)", "prezzo": 45.0, "aliquota": 0, "natura": "N4"}, {"id": "hrl_14", "descrizione": "Jessica – 1a valutazione + test sistema (crista o mattia) (105 min)", "prezzo": 100, "aliquota": 22, "natura": "N4"}, {"id": "hrl_15", "descrizione": "Kevin – Consulenza sistema nervoso + biofeedback (45 min)", "prezzo": 45, "aliquota": 22, "natura": "N4"}, {"id": "hrl_16", "descrizione": "Marco Sebastianutto – Trattamento osteopatico (60 min)", "prezzo": 69.67, "aliquota": 22, "natura": "N4"}, {"id": "hrl_17", "descrizione": "Allenamento – Allenamento 2 persone (75 min)", "prezzo": 65, "aliquota": 22, "natura": "N4"}, {"id": "hrl_18", "descrizione": "Allenamento – Allenamento singola persona + modulazioni (45 min)", "prezzo": 60, "aliquota": 22, "natura": "N4"}, {"id": "hrl_19", "descrizione": "Allenamento – Solo test fisici (60 min)", "prezzo": 45, "aliquota": 22, "natura": "N4"}, {"id": "hrl_20", "descrizione": "Allenamento – Allenamento in campo (60 min)", "prezzo": 45, "aliquota": 22, "natura": "N4"}, {"id": "hrl_21", "descrizione": "Abbonamenti – Palestra (30 giorni)", "prezzo": 80, "aliquota": 22, "natura": "N4"}, {"id": "hrl_22", "descrizione": "Abbonamenti – Palestra + 1 modulazione/settimana (30 giorni)", "prezzo": 150, "aliquota": 22, "natura": "N4"}, {"id": "hrl_23", "descrizione": "Abbonamenti – Elettrostimolo 1 seduta", "prezzo": 17, "aliquota": 22, "natura": "N4"}, {"id": "hrl_24", "descrizione": "Abbonamenti – Elettrostimolo 5 sedute", "prezzo": 69.67, "aliquota": 22, "natura": "N4"}, {"id": "hrl_25", "descrizione": "Abbonamenti – Magnetoterapia – al giorno", "prezzo": 4.92, "aliquota": 22, "natura": "N4"}, {"id": "hrl_26", "descrizione": "Abbonamenti – ANS Control (3 online + controllo finale) (30 giorni)", "prezzo": 204.1, "aliquota": 22, "natura": "N4"}, {"id": "hrl_27", "descrizione": "Abbonamenti – Pacchetto 4 modulazioni in presenza con controllo finale (30 giorni)", "prezzo": 245.08, "aliquota": 22, "natura": "N4"}, {"id": "hrl_28", "descrizione": "Corsi – Corso Pilates (30 giorni)", "prezzo": 69.67, "aliquota": 22, "natura": "N4"}, {"id": "hrl_29", "descrizione": "Corsi – Corso Yoga online (30 giorni)", "prezzo": 80, "aliquota": 22, "natura": "N4"}, {"id": "hrl_30", "descrizione": "Corsi – Corso Training (30 giorni)", "prezzo": 69.67, "aliquota": 22, "natura": "N4"}, {"id": "hrl_31", "descrizione": "Corsi – Corso Funzionale (30 giorni)", "prezzo": 77.87, "aliquota": 22, "natura": "N4"}, {"id": "hrl_32", "descrizione": "Corsi – Corso HIIT 6:30 (30 giorni)", "prezzo": 85, "aliquota": 22, "natura": "N4"}, {"id": "hrl_33", "descrizione": "Corsi – Corso Benessere terza età (30 giorni)", "prezzo": 69.67, "aliquota": 22, "natura": "N4"}, {"id": "hrl_34", "descrizione": "Corsi – Corso Forza e Relax (30 giorni)", "prezzo": 69.67, "aliquota": 22, "natura": "N4"}];
+function fattNettoDaLordo(g, al){
+  g = Number(g)||0; al = Number(al)||0; if(!al) return r2(g);
+  const base = r2(g/(1+al/100));
+  for(const c of [base, r2(base+0.01), r2(base-0.01)]) if(r2(c + r2(c*al/100)) === r2(g)) return c;
+  return base;
+}
+function fattLordo(n, al){ n = Number(n)||0; return r2(n + r2(n*(Number(al)||0)/100)); }
+function fattImportaListinoHrl(){
+  const ids = new Set(state.listino.map(l=>l.id)); let n = 0;
+  FATT_LISTINO_HRL.forEach(l=>{ if(!ids.has(l.id)){ const c = {...l}; state.listino.push(c); db.saveListino(c); n++; } });
+  state.listino.sort((a,b)=>String(a.id).localeCompare(String(b.id)));
+  return n;
+}
 function fattInit(){
   if(!state.fatture) state.fatture = [];
   if(!state.listino) state.listino = [];
@@ -11739,7 +11753,7 @@ function fattApriImp(){
   m.classList.add('open');
   document.getElementById('fiSalva').onclick = async ()=>{
     const g = id=>document.getElementById(id).value.trim();
-    state.fattImp = {denominazione:g('fiDen'), piva:g('fiPiva'), cf:g('fiCf'), regime:g('fiReg'), indirizzo:g('fiInd'), cap:g('fiCap'), comune:g('fiCom'), provincia:g('fiProv').toUpperCase(), iban:g('fiIban').replace(/\s+/g,''), bollo:parseFloat(g('fiBollo').replace(',','.'))||2, ultimoNumero:parseInt(g('fiUlt'))||0};
+    state.fattImp = {denominazione:g('fiDen'), piva:g('fiPiva'), cf:g('fiCf'), regime:g('fiReg'), indirizzo:g('fiInd'), cap:g('fiCap'), comune:g('fiCom'), provincia:g('fiProv').toUpperCase(), iban:g('fiIban').replace(/\s+/g,''), bollo:parseFloat(g('fiBollo').replace(',','.'))||2, ultimoNumero:parseInt(g('fiUlt'))||0, listinoSeeded:!!state.fattImp.listinoSeeded};
     const ok = await db.saveFattImp(state.fattImp);
     if(!ok) alert('Salvataggio non riuscito: controlla di aver eseguito il blocco SQL della Fatturazione.');
     m.classList.remove('open');
@@ -11749,25 +11763,33 @@ function fattApriImp(){
 // ---------- listino ----------
 function fattApriListino(){
   fattInit();
+  if(!state.listino.length && !state.fattImp.listinoSeeded){ fattImportaListinoHrl(); state.fattImp.listinoSeeded = true; db.saveFattImp(state.fattImp); }
   const m = document.getElementById('fattListinoModal');
   const draw = ()=>{
     document.getElementById('fattListinoBody').innerHTML = `
-      <div class="fat-lst-head"><span>Prestazione</span><span>Prezzo €</span><span>IVA %</span><span>Natura (se IVA 0)</span><span></span></div>
+      <div class="fat-lst-head"><span>Prestazione</span><span>Netto €</span><span>IVA %</span><span>Totale IVA incl. €</span><span>Natura (se IVA 0)</span><span></span></div>
       ${state.listino.map(l=>`<div class="fat-lst-row" data-l="${l.id}">
         <input class="editable" data-k="descrizione" value="${escAttr(l.descrizione)}">
         <input class="editable" data-k="prezzo" value="${escAttr(String(l.prezzo).replace('.',','))}">
         <select class="editable" data-k="aliquota">${[0,4,5,10,22].map(a=>`<option ${+l.aliquota===a?'selected':''}>${a}</option>`).join('')}</select>
+        <input class="editable" data-k="lordo" value="${escAttr(String(fattLordo(l.prezzo,l.aliquota)).replace('.',','))}">
         <select class="editable" data-k="natura">${FATT_NATURE.map(([v,t])=>`<option value="${v}" ${(l.natura||'N4')===v?'selected':''}>${v}</option>`).join('')}</select>
         <button class="btn-small danger" data-dl="${l.id}">×</button></div>`).join('') || '<div class="val-empty">Nessuna prestazione in listino.</div>'}
-      <div style="margin-top:12px;"><button class="btn-small" id="lstAdd">+ Aggiungi prestazione</button></div>`;
+      <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;"><button class="btn-small" id="lstAdd">+ Aggiungi prestazione</button><button class="btn-small" id="lstImp">Ripristina voci del listino HRL mancanti</button></div>`;
     m.querySelectorAll('.fat-lst-row').forEach(row=>{
       const l = state.listino.find(x=>x.id===row.dataset.l);
       row.querySelectorAll('[data-k]').forEach(inp=> inp.onchange = ()=>{
-        const k = inp.dataset.k; l[k] = k==='prezzo' ? (parseFloat(String(inp.value).replace(',','.'))||0) : (k==='aliquota' ? +inp.value : inp.value);
+        const k = inp.dataset.k, num = v=>parseFloat(String(v).replace(',','.'))||0;
+        if(k==='prezzo') l.prezzo = num(inp.value);
+        else if(k==='lordo') l.prezzo = fattNettoDaLordo(num(inp.value), l.aliquota);
+        else if(k==='aliquota') l.aliquota = +inp.value;
+        else l[k] = inp.value;
         db.saveListino(l);
+        if(k==='prezzo'||k==='lordo'||k==='aliquota') draw();
       });
     });
     m.querySelectorAll('[data-dl]').forEach(b=> b.onclick = ()=>{ state.listino = state.listino.filter(x=>x.id!==b.dataset.dl); db.deleteListino(b.dataset.dl); draw(); });
+    document.getElementById('lstImp').onclick = ()=>{ const n = fattImportaListinoHrl(); draw(); alert(n ? n+' voci aggiunte.' : 'Nessuna voce mancante.'); };
     document.getElementById('lstAdd').onclick = ()=>{ const l = {id:fattNuovoId('lst'), descrizione:'Nuova prestazione', prezzo:0, aliquota:0, natura:'N4'}; state.listino.push(l); db.saveListino(l); draw(); };
   };
   draw(); m.classList.add('open');
