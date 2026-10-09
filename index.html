@@ -3248,7 +3248,7 @@ const db = {
         sb.from('dati_fiscali_clienti').select('*'),
         sb.from('fatturazione_impostazioni').select('*').eq('id',1).maybeSingle(),
         sb.from('pacchetti').select('*'),
-        sb.from('consensi').select('id,cliente_id,tipo,data,revocato')
+        sb.from('consensi').select('id,cliente_id,tipo,data,revocato,creato_da')
       ]);
     } catch(ex){
       console.error('Supabase load exception', ex);
@@ -3284,7 +3284,7 @@ const db = {
     state.fatture = fat.error ? [] : (fat.data || []).map(fattRowToFattura);
     state.listino = lst.error ? [] : (lst.data || []).map(l=>({id:l.id, descrizione:l.descrizione, prezzo:+l.prezzo||0, aliquota:+l.aliquota||0, natura:l.natura||'N4'})).sort((a,b)=>String(a.id).localeCompare(String(b.id)));
     state.pacchetti = pkq.error ? [] : (pkq.data || []).map(pkRowFrom);
-    state.consensi = csq.error ? [] : (csq.data || []).map(x=>({id:x.id, clienteId:x.cliente_id, tipo:x.tipo, data:x.data, revocato:!!x.revocato, firma:null}));
+    state.consensi = csq.error ? [] : (csq.data || []).map(x=>({id:x.id, clienteId:x.cliente_id, tipo:x.tipo, data:x.data, revocato:!!x.revocato, firma:null, carta:/^carta/.test(x.creato_da||''), creatoDa:x.creato_da||''}));
     state.datiFiscali = {}; if(!dfi.error) (dfi.data || []).forEach(x=>{ state.datiFiscali[x.cliente_id] = x.dati || {}; });
     state.fattImp = (fimp && !fimp.error && fimp.data && fimp.data.dati) ? fimp.data.dati : {};
     if(bop.data && bop.data.length){
@@ -12546,7 +12546,7 @@ function pkRowFrom(r){ return {id:r.id, clienteId:r.cliente_id, nome:r.nome, tip
 Object.assign(db, {
   async savePacchetto(p){ if(!dbEnabled || !sb) return; const {error} = await sb.from('pacchetti').upsert(pkRowTo(p)); if(error) console.error('Supabase savePacchetto', error); },
   async deletePacchetto(id){ if(!dbEnabled || !sb) return; const {error} = await sb.from('pacchetti').delete().eq('id',id); if(error) console.error('Supabase deletePacchetto', error); },
-  async saveConsenso(c){ if(!dbEnabled || !sb) return; const {error} = await sb.from('consensi').upsert({id:c.id, cliente_id:c.clienteId, tipo:c.tipo, data:c.data, firma:c.firma||null, testo:c.testo||null, revocato:!!c.revocato, creato_da:c.creatoDa||null}); if(error) console.error('Supabase saveConsenso', error); }
+  async saveConsenso(c){ if(!dbEnabled || !sb) return; const {error} = await sb.from('consensi').upsert({id:c.id, cliente_id:c.clienteId, tipo:c.tipo, data:c.data, revocato:!!c.revocato, creato_da:c.creatoDa||null, ...(c.firma ? {firma:c.firma} : {}), ...(c.testo ? {testo:c.testo} : {})}); if(error) console.error('Supabase saveConsenso', error); }
 });
 function pkResiduo(p){ return p.tipo==='sedute' ? (p.sedute||0) - (p.usi||[]).length : null; }
 function pkStato(p){
@@ -12594,9 +12594,9 @@ function renderCliExtra(c){
     </div>
     <div class="fat-box"><div class="fat-box-t">Consensi privacy</div>
       ${CONSENSI_TIPI.map(t=>{ const x = css.find(y=>y.tipo===t.id); return `<div class="fat-pg" style="grid-template-columns:1fr auto auto;"><span>${escHtml(t.nome)}${t.obbligatorio?' <span style="color:var(--ink-mute);font-size:11px;">(obbligatorio)</span>':''}</span>
-        <span class="fat-pill ${x?'pagata':(t.obbligatorio?'da_incassare':'')}">${x ? 'Firmato il '+fattData(x.data) : 'Mancante'}</span>
+        <span class="fat-pill ${x?'pagata':(t.obbligatorio?'da_incassare':'')}">${x ? (x.carta||x.firma==='carta' ? 'Firmato su carta il ' : 'Firmato il ')+fattData(x.data) : 'Mancante'}</span>
         ${x ? `<span style="display:flex;gap:4px;"><button class="btn-small" data-cs-print="${x.id}">PDF</button><button class="btn-small danger" data-cs-revoca="${x.id}" title="Revoca">Revoca</button></span>` : '<span></span>'}</div>`; }).join('')}
-      <button class="btn-small" id="csRaccogli" style="margin-top:10px;">Raccogli firma…</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;"><button class="btn-gold" id="csModulo">🖨 Stampa modulo consensi</button><button class="btn-small" id="csRaccogli">Firma sul tablet…</button></div>
     </div>`;
   const rer = ()=> renderCliExtra(c);
   const num = v=>parseInt(v)||0;
@@ -12617,11 +12617,52 @@ function renderCliExtra(c){
   ex.querySelectorAll('[data-cs-print]').forEach(b=> b.onclick = ()=> csStampa(b.dataset.csPrint, c));
   ex.querySelectorAll('[data-cs-revoca]').forEach(b=> b.onclick = ()=>{ if(!confirm('Revocare questo consenso?')) return; const x = state.consensi.find(y=>y.id===b.dataset.csRevoca); x.revocato = true; db.saveConsenso(x); rer(); });
   document.getElementById('csRaccogli').onclick = ()=> csApriFirma(c);
+  document.getElementById('csModulo').onclick = ()=> csModuloCarta(c);
 }
 function renderCliAnagraficaModal(c, edit){ renderCliAnagraficaModalBase(c, edit); try{ renderCliExtra(c); }catch(ex){ console.error('cliExtra', ex); } }
 
 // ---- firma consensi ----
 function csTesto(t, c){ return t.testo.replace(/\{nome\}/g, c.nome).replace(/\{titolare\}/g, (state.fattImp && state.fattImp.denominazione) || 'HRL'); }
+
+// ---- modulo consensi da stampare: la stampa registra i consensi come firmati su carta ----
+function csModuloCarta(c){
+  const m = document.getElementById('csModal'), body = document.getElementById('csBody');
+  const gia = new Set(csDiCliente(c.id).map(x=>x.tipo));
+  const da = CONSENSI_TIPI.filter(t=>!gia.has(t.id));
+  if(!da.length){ alert('Tutti i consensi risultano già raccolti.'); return; }
+  body.innerHTML = `<p style="margin-top:0;font-size:13px;color:var(--ink-mute);">Il modulo A4 contiene i dati anagrafici del paziente e i consensi scelti, con lo spazio per la firma. <b>Stampando, i consensi vengono registrati come firmati su carta alla data di oggi</b>: conserva l'originale firmato.</p>
+    ${da.map(t=>`<label style="display:block;border:1px solid var(--line-soft);border-radius:6px;padding:10px 12px;margin-bottom:8px;"><input type="checkbox" data-cm-t="${t.id}" ${t.obbligatorio?'checked':''}> <b>${escHtml(t.nome)}</b>${t.obbligatorio?'':' <span style="font-size:11px;color:var(--ink-mute);">(facoltativo)</span>'}</label>`).join('')}
+    <div class="ev-actions"><div></div><button class="btn-gold" id="cmStampa">Stampa e registra</button></div>`;
+  m.classList.add('open');
+  document.getElementById('cmStampa').onclick = ()=>{
+    const sel = [...body.querySelectorAll('[data-cm-t]:checked')].map(x=>CONSENSI_TIPI.find(t=>t.id===x.dataset.cmT));
+    if(!sel.length){ alert('Seleziona almeno un consenso.'); return; }
+    const win = window.open('', '_blank'); if(!win){ alert('Consenti i popup per stampare.'); return; }
+    const a = c.anagrafica || {}, sp = anSplitNome(c);
+    const tit = (state.fattImp && state.fattImp.denominazione) || 'HRL';
+    const oggi = fmtDateISO(new Date());
+    const riga = (l,v)=>`<tr><td class="l">${l}</td><td>${escHtml(v||'')}</td></tr>`;
+    const indirizzo = [a.indirizzo, [a.cap, a.comune].filter(Boolean).join(' '), a.provincia?'('+a.provincia+')':''].filter(Boolean).join(', ');
+    win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Consensi - ${escHtml(c.nome)}</title><style>
+      @page{size:A4;margin:16mm}body{font-family:Arial,sans-serif;color:#111;font-size:12px;line-height:1.45}
+      h1{font-size:17px;margin:0 0 2px}.sub{color:#555;margin-bottom:12px}h2{font-size:13px;margin:16px 0 6px;border-bottom:1px solid #999;padding-bottom:3px}
+      table{border-collapse:collapse;width:100%}td{padding:3px 6px;border:1px solid #bbb;vertical-align:top}td.l{width:28%;background:#f1f1f1;font-weight:bold}
+      .cs{margin-top:12px;page-break-inside:avoid}.cs p{margin:4px 0 8px;text-align:justify}.firma{display:flex;justify-content:space-between;gap:30px;margin-top:22px}
+      .firma div{flex:1;border-top:1px solid #333;padding-top:3px;font-size:11px;color:#444}.box{display:inline-block;width:12px;height:12px;border:1.3px solid #111;margin:0 4px -2px 14px}
+    </style></head><body>
+    <h1>${escHtml(tit)}</h1><div class="sub">Scheda paziente e consensi · ${fattData(oggi)}</div>
+    <h2>Dati del paziente</h2>
+    <table>${riga('Cognome', sp.cognome)}${riga('Nome', sp.nome)}${riga('Sesso', a.sesso)}${riga('Nato/a a', [a.luogoNascita, a.provNascita?'('+a.provNascita+')':''].filter(Boolean).join(' '))}${riga('Data di nascita', c.dataNascita ? fattData(c.dataNascita) : '')}${riga('Codice fiscale', a.cf)}${riga('Residenza', indirizzo)}${riga('Telefono', c.telefono||c.cell||'')}${riga('Cellulare 2', a.cell2)}${riga('Email', c.email)}${riga('Professione', a.professione)}</table>
+    <h2>Informative e consensi</h2>
+    ${sel.map(t=>`<div class="cs"><b>${escHtml(t.nome)}</b><p>${escHtml(csTesto(t,c))}</p>
+      ${t.obbligatorio ? '' : '<span class="box"></span> Do il consenso <span class="box"></span> Nego il consenso'}</div>`).join('')}
+    <div class="firma"><div>Luogo e data</div><div>Firma del paziente (o di chi ne esercita la tutela)</div></div>
+    <script>window.onload=()=>setTimeout(()=>window.print(),300)<\/script></body></html>`);
+    win.document.close();
+    sel.forEach(t=>{ const x = {id:fattNuovoId('cs'), clienteId:c.id, tipo:t.id, data:oggi, firma:'carta', carta:true, testo:csTesto(t,c), revocato:false, creatoDa:'carta · '+((state.professionista&&state.professionista.nome)||'')}; state.consensi.push(x); db.saveConsenso(x); });
+    m.classList.remove('open'); renderCliExtra(c); try{ renderClientiList(document.getElementById('cliSearchInput').value); }catch(e){}
+  };
+}
 function csApriFirma(c){
   const m = document.getElementById('csModal'), body = document.getElementById('csBody');
   const gia = new Set(csDiCliente(c.id).map(x=>x.tipo));
@@ -12650,10 +12691,10 @@ function csApriFirma(c){
 }
 async function csStampa(id, c){
   let x = state.consensi.find(y=>y.id===id);
-  if(x && !x.firma && dbEnabled && sb){ const {data} = await sb.from('consensi').select('firma,testo').eq('id',id).maybeSingle(); if(data){ x.firma = data.firma; x.testo = data.testo || x.testo; } }
+  if(x && !x.firma && !x.carta && dbEnabled && sb){ const {data} = await sb.from('consensi').select('firma,testo').eq('id',id).maybeSingle(); if(data){ x.firma = data.firma; x.testo = data.testo || x.testo; } }
   const t = CONSENSI_TIPI.find(y=>y.id===x.tipo) || {nome:x.tipo};
   const win = window.open('', '_blank'); if(!win){ alert('Consenti i popup per stampare.'); return; }
-  win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${escHtml(t.nome)}</title><style>body{font-family:Arial,sans-serif;margin:50px;color:#111;font-size:14px;line-height:1.5}h1{font-size:18px}.f{margin-top:40px}img{max-width:300px;border-bottom:1px solid #333}</style></head><body><h1>${escHtml(t.nome)}</h1><p>${escHtml(x.testo||'')}</p><div class="f">Data: ${fattData(x.data)}<br>Paziente: ${escHtml(c.nome)}<br><br>Firma:<br>${x.firma?`<img src="${x.firma}">`:'(firma non disponibile)'}</div><script>window.onload=()=>setTimeout(()=>window.print(),300)<\/script></body></html>`);
+  win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${escHtml(t.nome)}</title><style>body{font-family:Arial,sans-serif;margin:50px;color:#111;font-size:14px;line-height:1.5}h1{font-size:18px}.f{margin-top:40px}img{max-width:300px;border-bottom:1px solid #333}</style></head><body><h1>${escHtml(t.nome)}</h1><p>${escHtml(x.testo||'')}</p><div class="f">Data: ${fattData(x.data)}<br>Paziente: ${escHtml(c.nome)}<br><br>${x.carta||x.firma==='carta' ? 'Consenso firmato su carta: l\'originale firmato è archiviato in formato cartaceo presso lo studio.' : 'Firma:<br>'+(x.firma?`<img src="${x.firma}">`:'(firma non disponibile)')}</div><script>window.onload=()=>setTimeout(()=>window.print(),300)<\/script></body></html>`);
   win.document.close();
 }
 document.getElementById('csClose').onclick = ()=> document.getElementById('csModal').classList.remove('open');
