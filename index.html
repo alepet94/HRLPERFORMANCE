@@ -2127,6 +2127,7 @@ body[data-theme="light"] .paz-lk-list{background:#fff;border-color:#ccc;}
       <button type="button" class="btn-ghost" id="calMultiVisBtn">Colonne visibili</button>
       <div class="prof-dropdown" id="calMultiVisDropdown" style="display:none;"></div>
     </div>
+    <button class="btn-ghost" id="btnCalImpostazioni" style="display:none;">⚙ Impostazioni</button>
     <button class="btn-ghost" id="btnDisponibilita">Disponibilità settimanale</button>
     <button class="btn-ghost" id="btnRichieste">Richieste <span class="rich-badge" id="richBadge" style="display:none;">0</span></button>
     <button class="btn-ghost" id="btnAvvisi">Avvisi <span class="rich-badge" id="avvisiBadge" style="display:none;">0</span></button>
@@ -11189,6 +11190,12 @@ function apptMatchesCalFilter(ev){
   return c && clienteHasProf(c, state.calFilterProfId);
 }
 
+function calSettingsVis(){
+  const wk = state.calViewMode==='settimana' || !state.calViewMode;
+  const box = document.getElementById('calSettings'), btn = document.getElementById('btnCalImpostazioni');
+  if(box) box.style.display = (wk && state.calSetOpen) ? 'flex' : 'none';
+  if(btn){ btn.style.display = wk ? 'inline-block' : 'none'; btn.classList.toggle('active', !!state.calSetOpen); btn.onclick = ()=>{ state.calSetOpen = !state.calSetOpen; calSettingsVis(); }; }
+}
 function renderCalendarWeek(){
   if(!state.calWeekStart) state.calWeekStart = mondayOf(new Date());
   const cs = state.calSettings;
@@ -11208,6 +11215,7 @@ function renderCalendarWeek(){
     </div></div>
   `;
   bindCalSettingsEvents();
+  calSettingsVis();
 
   const retestDate = suggestedRetestDate();
   const activeC = activeClient();
@@ -12702,7 +12710,7 @@ document.querySelectorAll('#calendarArea [data-calmode]').forEach(opt=>{
     document.getElementById('calWeekWrap').style.display = state.calViewMode==='settimana' ? 'block' : 'none';
     document.getElementById('calMonthWrap').style.display = state.calViewMode==='mese' ? 'block' : 'none';
     document.getElementById('calMultiWrap').style.display = state.calViewMode==='multi' ? 'block' : 'none';
-    document.getElementById('calSettings').style.display = state.calViewMode==='settimana' ? 'flex' : 'none';
+    calSettingsVis();
     document.getElementById('btnDisponibilita').style.display = state.calViewMode==='settimana' ? 'inline-block' : 'none';
     renderCalendar();
   };
@@ -12732,7 +12740,7 @@ document.getElementById('calMonthGrid').addEventListener('click', (e)=>{
     document.querySelectorAll('#calendarArea [data-calmode]').forEach(o=>o.classList.toggle('active', o.dataset.calmode==='settimana'));
     document.getElementById('calWeekWrap').style.display = 'block';
     document.getElementById('calMonthWrap').style.display = 'none';
-    document.getElementById('calSettings').style.display = 'flex';
+    calSettingsVis();
     document.getElementById('btnDisponibilita').style.display = 'inline-block';
     renderCalendar();
     return;
@@ -13025,6 +13033,56 @@ document.addEventListener('mouseup', ()=>{
 });
 document.addEventListener('keydown', (e)=>{
   if(e.key==='Escape' && __mv && __mv.moved){ if(__mv.tip) __mv.tip.remove(); __mv = null; renderCalendar(); }
+});
+// selezione ad area col mouse (trascinando su uno spazio vuoto) -> apre il nuovo impegno
+// con l'orario scelto. Vale per il calendario settimanale e per il multicalendario.
+let __sel = null;
+['calGrid','calMultiGrid'].forEach(gid=>{
+  document.getElementById(gid).addEventListener('mousedown', (e)=>{
+    if(e.button!==0 || __mv) return;
+    if(e.target.closest('[data-event-id], .cal-block')) return;
+    const col = e.target.closest('.cal-day-col');
+    if(!col || col.classList.contains('off')) return;
+    __sel = { col, multi: gid==='calMultiGrid', y0: e.clientY, moved:false, a:0, b:0, box:null };
+  });
+});
+document.addEventListener('mousemove', (e)=>{
+  if(!__sel) return;
+  if(!__sel.moved){
+    if(Math.abs(e.clientY-__sel.y0) < 6) return;
+    __sel.moved = true;
+    __sel.box = document.createElement('div'); __sel.box.className = 'cal-sel-box';
+    __sel.box.style.cssText = 'position:absolute;left:2px;right:2px;background:rgba(201,162,75,.22);border:1px solid var(--gold);border-radius:4px;pointer-events:none;z-index:6;font-size:11px;color:var(--gold-bright);padding:2px 4px;overflow:hidden;';
+    __sel.col.appendChild(__sel.box);
+    e.preventDefault();
+  }
+  const PX = 1.2, rc = __sel.col.getBoundingClientRect();
+  const snap = y=> Math.max(calStartMin(), Math.min(calEndMin(), calStartMin() + Math.round(((y - rc.top)/PX)/15)*15));
+  let m1 = snap(__sel.y0), m2 = snap(e.clientY);
+  let lo = Math.min(m1,m2), hi = Math.max(m1,m2);
+  if(hi-lo < 15){ if(lo+15 <= calEndMin()) hi = lo+15; else lo = hi-15; }
+  __sel.a = lo; __sel.b = hi;
+  __sel.box.style.top = ((lo-calStartMin())*PX)+'px'; __sel.box.style.height = ((hi-lo)*PX)+'px';
+  __sel.box.textContent = minutesToTime(lo)+'–'+minutesToTime(hi);
+});
+document.addEventListener('mouseup', ()=>{
+  if(!__sel) return;
+  const m = __sel; __sel = null;
+  if(!m.moved) return;
+  if(m.box) m.box.remove();
+  window.__calDragSuppressClick = true;
+  setTimeout(()=>{ window.__calDragSuppressClick = false; }, 80);
+  if(m.multi){
+    const grid = document.getElementById('calMultiGrid');
+    openEventEditor({ day: state.calMultiDay, start: minutesToTime(m.a), end: minutesToTime(m.b), tipo:'impegno',
+      professionistaId: m.col.dataset.multicolKind==='prof' ? m.col.dataset.multicolId : null,
+      spazioId: m.col.dataset.multicolKind==='spazio' ? m.col.dataset.multicolId : null }, false);
+  } else {
+    openEventEditor({ day: m.col.dataset.day, start: minutesToTime(m.a), end: minutesToTime(m.b) }, false);
+  }
+});
+document.addEventListener('keydown', (e)=>{
+  if(e.key==='Escape' && __sel && __sel.moved){ if(__sel.box) __sel.box.remove(); __sel = null; }
 });
 // tasto destro su un punto vuoto del calendario settimanale: nuovo appuntamento
 document.getElementById('calGrid').addEventListener('contextmenu', (e)=>{
