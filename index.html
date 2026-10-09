@@ -8688,7 +8688,7 @@ function renderAvvisiBadge(){
 function renderAvvisiList(){
   const box = document.getElementById('avvisiListContent');
   const alerts = getReadinessAlerts().sort((a,b)=> (b.day+b.start).localeCompare(a.day+a.start));
-  const daProg = clientiDaProgrammare().sort((a,b)=>(a.nome||'').localeCompare(b.nome||''));
+  const daProg = clientiDaProgrammare().sort(cliCmp);
   const progHtml = daProg.length ? `<div class="fat-box-t" style="margin:4px 0 8px;">Clienti senza appuntamenti futuri (${daProg.length})</div>` + daProg.map(c=>`<div class="rich-item" data-avv-cli="${c.id}" style="cursor:pointer;"><div class="ri-top"><div class="ri-cliente">${escHtml(c.nome)}</div></div><div class="ri-detail">${escHtml(catLabel(c.categoria) || 'Categoria da assegnare')} · ${c.pathway ? escHtml(c.pathway) : 'nessun piano (pathway)'}</div></div>`).join('') : '';
   const pkA = pkAvvisi();
   const pkHtml = pkA.length ? `<div class="fat-box-t" style="margin:14px 0 8px;">Pacchetti in scadenza o esauriti (${pkA.length})</div>` + pkA.map(p=>{ const c = state.clienti.find(x=>x.id===p.clienteId); return `<div class="rich-item" data-avv-cli="${c.id}" style="cursor:pointer;"><div class="ri-top"><div class="ri-cliente">${escHtml(c.nome)}</div></div><div class="ri-detail">${escHtml(p.nome)} — ${escHtml(pkDescr(p))} · <b>${PK_STATO_LBL[pkStato(p)]}</b></div></div>`; }).join('') : '';
@@ -9277,6 +9277,11 @@ function renderDispRicorrenteModal(prefill){
 
 
 // ===== Anagrafica paziente (modello snellito della scheda del gestionale) =====
+// ordine alfabetico clienti: per cognome, poi per nome
+function cliCmp(a,b){
+  const x = anSplitNome(a), y = anSplitNome(b);
+  return (x.cognome||'').localeCompare(y.cognome||'','it',{sensitivity:'base'}) || (x.nome||'').localeCompare(y.nome||'','it',{sensitivity:'base'});
+}
 function anSplitNome(c){
   const a = c.anagrafica || {};
   if(a.nome || a.cognome) return {nome:a.nome||'', cognome:a.cognome||''};
@@ -9538,7 +9543,7 @@ function bindPazLookup(id, nessuno, onChange, keepId){
   function show(){
     const typed = q.value;
     const showAll = typed === nameOf(hid.value) && hid.value;
-    const base = state.clienti.filter(c=>!c.eliminato || c.id===keepId).sort((a,b)=>(a.nome||'').localeCompare(b.nome||''));
+    const base = state.clienti.filter(c=>!c.eliminato || c.id===keepId).sort(cliCmp);
     const m = (showAll ? base : base.filter(c=>pazMatch(c,typed)));
     items = m.slice(0,MAX); hi = items.length && !showAll && typed.trim() ? 0 : -1;
     paint(m.length);
@@ -9620,6 +9625,7 @@ function renderClientiList(filter){
     btnCestino.textContent = nEliminati ? `🗑 Cestino (${nEliminati})` : '🗑 Cestino';
   }
   let list = state.clienti.filter(c=> !c.eliminato && (!f || pazMatch(c,f)));
+  list.sort(cliCmp);
   if(canManageAll() && state.calFilterProfId){
     list = list.filter(c=>clienteHasProf(c,state.calFilterProfId));
   }
@@ -11815,7 +11821,7 @@ function renderSegClienti(box){
   const baseList = state.clienti.filter(c=>!c.eliminato && (!q || pazMatch(c,q)));
   const ag = cliAgenda();
   const list = baseList.filter(c=>catMatch(c, state.segCat||'') && avvMatch(c, ag, state.cliFilterAvv||''))
-    .sort((a,b)=>(a.nome||'').localeCompare(b.nome||''));
+    .sort(cliCmp);
   box.innerHTML = `<input class="editable" id="segSearch" placeholder="Cerca cliente: nome, telefono o email…" value="${escAttr(state.segSearch||'')}" style="max-width:420px;margin-bottom:14px;">
     <div class="cal-mode-toggle" id="segAvvChips" style="margin:0 0 12px;flex-wrap:wrap;">${avvChipsHtml(state.cliFilterAvv||'', avvConteggi(baseList, ag))}</div>
     <div class="cal-mode-toggle" id="segCatChips" style="margin:0 0 12px;flex-wrap:wrap;">${catChipsHtml(state.segCat||'', catConteggi(baseList))}</div>
@@ -11834,7 +11840,7 @@ function renderSegClienti(box){
 function renderSegAppuntamento(box){
   const d = state.segDraft || (state.segDraft = { clienteId:'', titolo:'', day: fmtDateISO(new Date()), start:'09:00', durata:60, profIds:[] });
   const profs = state.professionisti.filter(p=>p.area!=='Segreteria');
-  const clienti = state.clienti.filter(c=>!c.eliminato).sort((a,b)=>(a.nome||'').localeCompare(b.nome||''));
+  const clienti = state.clienti.filter(c=>!c.eliminato).sort(cliCmp);
   const startMin = timeToMinutes(d.start), endMin = startMin + (parseInt(d.durata)||60);
   const status = p=>{
     if(!d.profIds.includes(p.id)) return '';
