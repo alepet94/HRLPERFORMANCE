@@ -1859,6 +1859,7 @@ body[data-theme="light"] .paz-lk-list{background:#fff;border-color:#ccc;}
       <button class="btn-gold" id="btnNuovoCliente">+ Nuovo cliente</button>
     </div>
   </div>
+  <div id="cliCatChips" class="cal-mode-toggle" style="margin:0 0 14px;flex-wrap:wrap;"></div>
   <div class="cli-grid" id="cliGrid"></div>
 </div>
 
@@ -1882,6 +1883,7 @@ body[data-theme="light"] .paz-lk-list{background:#fff;border-color:#ccc;}
       <div class="ev-field"><label>Data di nascita (opzionale)</label><input class="editable" type="date" id="cliDataNascita"></div>
       <div class="ev-field"><label>Email (opzionale)</label><input class="editable" type="email" id="cliEmail" placeholder="per farlo accedere al suo profilo"></div>
     </div>
+    <div class="ev-field"><label>Categoria *</label><select class="editable" id="cliCategoria"><option value="">— scegli la categoria —</option><option value="normale">Persona normale</option><option value="amatore">Atleta dilettante</option><option value="pro">Atleta professionista</option><option value="manager">Manager</option></select></div>
     <div class="ev-field"><label>Note (opzionale)</label><input class="editable" id="cliNote" placeholder="es. infortunio pregresso, obiettivo generale..."></div>
     <div class="ev-actions"><div></div><button class="btn-gold" id="btnCreaCliente">Crea e continua</button></div>
   </div>
@@ -2399,6 +2401,35 @@ const PROFILI = [
   {id:'pro', name:'Atleta — PRO', desc:'Atleti professionisti o di alto livello'}
 ];
 
+// categoria del paziente, scelta alla registrazione: decide il gruppo e il
+// profilo di partenza del percorso (il manager usa per ora i pathway della
+// persona normale, finché non c'è un suo quadro obiettivi dedicato)
+const CATEGORIE = [
+  {id:'normale', name:'Persona normale', profilo:'normale'},
+  {id:'amatore', name:'Atleta dilettante', profilo:'amatore'},
+  {id:'pro', name:'Atleta professionista', profilo:'pro'},
+  {id:'manager', name:'Manager', profilo:'normale'}
+];
+function catLabel(id){ const c = CATEGORIE.find(x=>x.id===id); return c ? c.name : ''; }
+function catOptionsHtml(sel, vuota){
+  return (vuota ? `<option value="">${vuota}</option>` : '') + CATEGORIE.map(c=>`<option value="${c.id}" ${sel===c.id?'selected':''}>${c.name}</option>`).join('');
+}
+function applicaCategoria(c, cat){
+  c.categoria = cat || null;
+  const def = CATEGORIE.find(x=>x.id===cat);
+  if(def && !c.pathway) c.profilo = def.profilo;
+}
+function catChipsHtml(attiva, conteggi){
+  const chips = [['','Tutti'],...CATEGORIE.map(c=>[c.id,c.name]),['none','Da assegnare']];
+  return chips.map(([v,l])=>`<div class="cal-mode-opt ${attiva===v?'active':''}" data-catchip="${v}">${l}${conteggi[v]!=null?` <span style="opacity:.6">${conteggi[v]}</span>`:''}</div>`).join('');
+}
+function catConteggi(list){
+  const o = {'':list.length, none:0}; CATEGORIE.forEach(c=>o[c.id]=0);
+  list.forEach(c=>{ if(c.categoria && o[c.categoria]!=null) o[c.categoria]++; else o.none++; });
+  return o;
+}
+function catMatch(c, f){ return !f || (f==='none' ? !c.categoria : c.categoria===f); }
+
 // ==================== CONFIGURAZIONE SUPABASE ====================
 // 1. Crea un progetto su https://supabase.com (region EU consigliata)
 // 2. Nel SQL Editor del progetto, esegui lo script schema.sql fornito
@@ -2417,6 +2448,7 @@ function clienteToRow(c){
   return {
     id: c.id, nome: c.nome, eta: c.eta || null, data_nascita: c.dataNascita || null, note: c.note || null,
     profilo: c.profilo, pathway: c.pathway,
+    categoria: c.categoria || null,
     selected_kpis: Array.from(c.selectedKPIs || []),
     active_phase: c.activePhase || 0,
     notes: c.notes || {}, schede: c.schede || {},
@@ -2450,6 +2482,7 @@ function rowToCliente(r){
   return {
     id: r.id, nome: r.nome, eta: r.eta || '', dataNascita: r.data_nascita || '', note: r.note || '',
     profilo: r.profilo, pathway: r.pathway,
+    categoria: r.categoria || r.profilo || null,
     selectedKPIs: new Set(r.selected_kpis || []),
     activePhase: r.active_phase || 0,
     notes: r.notes || {}, schede: r.schede || {},
@@ -3862,6 +3895,7 @@ function renderCliAnagraficaModal(c, edit){
       ${c.dataNascita ? `<div class="ev-field"><label>Data di nascita</label><div>${c.dataNascita.split('-').reverse().join('/')}${clienteEtaAnni(c)!==null ? ' · ' + clienteEtaAnni(c) + ' anni' : ''}</div></div>` : ''}
       ${c.email ? `<div class="ev-field"><label>Email</label><div>${escHtml(c.email)}</div></div>` : ''}
       ${c.telefono ? `<div class="ev-field"><label>Telefono</label><div>${escHtml(c.telefono)}</div></div>` : ''}
+      <div class="ev-field"><label>Categoria</label><div>${escHtml(catLabel(c.categoria)) || '— Da assegnare —'}</div></div>
       ${c.note ? `<div class="ev-field"><label>Note</label><div style="white-space:pre-wrap;">${escHtml(c.note)}</div></div>` : ''}
       <div class="ev-field"><label>Professionisti assegnati</label><div>${profs.length ? profs.map(p=>escHtml(p.nome)+(p.area?' ('+escHtml(p.area)+')':'')).join(', ') : '— Nessuno —'}</div></div>
       <div style="font-size:11.5px;color:var(--ink-mute);margin-top:14px;">La Segreteria vede e gestisce i calendari di tutti, ma non le schede cliniche dei clienti. Per modificare i dati anagrafici usa la matita ✎ sulla scheda del cliente.</div>
@@ -3875,6 +3909,7 @@ function renderCliAnagraficaModal(c, edit){
       <div class="ev-field"><label>Email</label><input class="editable" type="email" id="anEmail" value="${escAttr(c.email||'')}"></div>
     </div>
     <div class="ev-field"><label>Telefono</label><input class="editable" type="tel" id="anTel" value="${escAttr(c.telefono||'')}"></div>
+    <div class="ev-field"><label>Categoria</label><select class="editable" id="anCat">${catOptionsHtml(c.categoria, '— da assegnare —')}</select></div>
     <div class="ev-field"><label>Note</label><textarea class="editable" id="anNote" rows="3">${escHtml(c.note||'')}</textarea></div>
     <div class="ev-field"><label>Professionisti assegnati</label><div>${profs.length ? profs.map(p=>escHtml(p.nome)+(p.area?' ('+escHtml(p.area)+')':'')).join(', ') : '— Nessuno —'}</div></div>
     <div style="display:flex;gap:10px;align-items:center;margin-top:14px;"><button class="btn-gold" id="anSalva">Salva anagrafica</button><span id="anMsg" style="font-size:13px;color:#4CAF50;"></span></div>
@@ -3888,6 +3923,7 @@ function renderCliAnagraficaModal(c, edit){
     c.email = document.getElementById('anEmail').value.trim();
     c.telefono = document.getElementById('anTel').value.trim();
     c.note = document.getElementById('anNote').value;
+    applicaCategoria(c, document.getElementById('anCat').value);
     db.saveCliente(c);
     document.getElementById('cliAnagraficaTitle').textContent = c.nome;
     document.getElementById('anMsg').textContent = '✓ Salvato';
@@ -9180,6 +9216,7 @@ function createCliente(data){
     email: data.email || '',
     telefono: data.telefono || '',
     profilo: null,
+    categoria: null,
     pathway: null,
     selectedKPIs: new Set(),
     activePhase: 0,
@@ -9203,6 +9240,7 @@ function createCliente(data){
     sistemaTestSelezionati: new Set(),
     schedeOsteopatia: []
   };
+  if(data.categoria) applicaCategoria(c, data.categoria);
   state.clienti.push(c);
   db.saveCliente(c);
   return c;
@@ -9431,6 +9469,12 @@ function renderClientiList(filter){
   if(canManageAll() && state.calFilterProfId){
     list = list.filter(c=>clienteHasProf(c,state.calFilterProfId));
   }
+  const chipBox = document.getElementById('cliCatChips');
+  if(chipBox){
+    chipBox.innerHTML = catChipsHtml(state.cliFilterCat||'', catConteggi(list));
+    chipBox.querySelectorAll('[data-catchip]').forEach(ch=> ch.onclick = ()=>{ state.cliFilterCat = ch.dataset.catchip; renderClientiList(document.getElementById('cliSearchInput').value); });
+  }
+  list = list.filter(c=>catMatch(c, state.cliFilterCat||''));
   if(list.length===0){
     box.innerHTML = `<div class="cli-empty-state">${state.clienti.filter(c=>!c.eliminato).length===0
       ? 'Nessun cliente ancora. Usa "+ Nuovo cliente" per iniziare.'
@@ -9447,6 +9491,7 @@ function renderClientiList(filter){
       ${canManageAll() ? `<button class="cli-edit" data-edit-anag="${c.id}" title="Modifica anagrafica" style="right:${isAdmin?40:12}px;">✎</button>` : ''}
       ${isAdmin ? `<button class="cli-del" data-del-cliente="${c.id}" title="Elimina cliente">×</button>` : ''}
       <div class="cli-name">${c.nome}</div>
+      <div style="font-size:11.5px;color:${c.categoria?'var(--gold-bright)':'var(--ink-mute)'};margin:-2px 0 4px;">${c.categoria ? escHtml(catLabel(c.categoria)) : 'Categoria da assegnare'}</div>
 
       <div class="cli-status ${summary?'':'empty'}">${summary || 'Nessun pathway assegnato'}</div>
       <div class="cli-meta">${clienteEtaAnni(c) ? clienteEtaAnni(c) + ' anni · ' : ''}${schedeCount} sched${schedeCount===1?'a':'e'}${profNames ? ' · '+profNames : ''}</div>
@@ -9533,6 +9578,7 @@ document.getElementById('btnNuovoCliente').onclick = ()=>{
   document.getElementById('cliDataNascita').value = '';
   document.getElementById('cliNote').value = '';
   document.getElementById('cliEmail').value = '';
+  document.getElementById('cliCategoria').value = '';
   document.getElementById('cliModal').classList.add('open');
 };
 document.getElementById('closeCli').onclick = ()=> document.getElementById('cliModal').classList.remove('open');
@@ -9542,7 +9588,10 @@ document.getElementById('cliAnagraficaModal').onclick = (e)=>{ if(e.target.id===
 document.getElementById('btnCreaCliente').onclick = ()=>{
   const nome = document.getElementById('cliNome').value.trim();
   if(!nome){ alert('Inserisci almeno il nome del cliente.'); return; }
+  const categoria = document.getElementById('cliCategoria').value;
+  if(!categoria){ alert('Scegli la categoria del cliente: serve per indirizzare il percorso.'); return; }
   const c = createCliente({
+    categoria,
     nome,
     dataNascita: document.getElementById('cliDataNascita').value,
     note: document.getElementById('cliNote').value,
@@ -11104,6 +11153,7 @@ function renderEventModal(){
         <div class="ev-row"><div class="ev-field"><label>Nome</label><input class="editable" id="evPazNome"></div>
         <div class="ev-field"><label>Cognome</label><input class="editable" id="evPazCognome"></div></div>
         <div class="ev-field"><label>Telefono</label><input class="editable" type="tel" id="evPazTel" placeholder="es. 333 1234567"></div>
+        <div class="ev-field"><label>Categoria</label><select class="editable" id="evPazCat">${catOptionsHtml('', '— da assegnare dopo —')}</select></div>
         <button type="button" class="btn-gold" id="evPazCrea">Crea paziente e selezionalo</button>
       </div>` : ''}
     </div>
@@ -11218,7 +11268,7 @@ function renderEventModal(){
     const cognome = document.getElementById('evPazCognome').value.trim();
     const tel = document.getElementById('evPazTel').value.trim();
     if(!nome || !cognome){ alert('Inserisci nome e cognome del paziente.'); return; }
-    const c = createCliente({ nome: nome + ' ' + cognome, telefono: tel });
+    const c = createCliente({ nome: nome + ' ' + cognome, telefono: tel, categoria: document.getElementById('evPazCat').value });
     const pEv = ed.professionistaId ? state.professionisti.find(p=>p.id===ed.professionistaId) : null;
     c.professionistiIds = (pEv && pEv.area!=='Segreteria') ? [pEv.id] : [];
     db.saveCliente(c);
@@ -11437,15 +11487,18 @@ function renderSegreteria(){
 }
 function renderSegClienti(box){
   const q = (state.segSearch||'').toLowerCase();
-  const list = state.clienti.filter(c=>!c.eliminato && (!q || pazMatch(c,q)))
+  const baseList = state.clienti.filter(c=>!c.eliminato && (!q || pazMatch(c,q)));
+  const list = baseList.filter(c=>catMatch(c, state.segCat||''))
     .sort((a,b)=>(a.nome||'').localeCompare(b.nome||''));
   box.innerHTML = `<input class="editable" id="segSearch" placeholder="Cerca cliente: nome, telefono o email…" value="${escAttr(state.segSearch||'')}" style="max-width:420px;margin-bottom:14px;">
+    <div class="cal-mode-toggle" id="segCatChips" style="margin:0 0 12px;flex-wrap:wrap;">${catChipsHtml(state.segCat||'', catConteggi(baseList))}</div>
     <div style="font-size:12.5px;color:var(--ink-mute);margin-bottom:10px;">${list.length} clienti</div>
     <div style="display:flex;flex-direction:column;gap:8px;">${list.map(c=>{
       const profs = clienteProfIds(c).map(segNomeProf).join(', ');
       return `<div class="val-card" style="cursor:pointer;" data-seg-cli="${c.id}"><div class="val-card-top"><div class="val-card-date" style="font-size:15px;">${escHtml(c.nome||'—')}</div><button class="cli-edit" style="position:static;" title="Modifica anagrafica">✎</button></div>
-        <div class="val-card-autore">${escHtml(c.telefono||c.email||'—')}${profs ? ' · Seguito da: '+escHtml(profs) : ''}</div></div>`;
+        <div class="val-card-autore">${escHtml(c.telefono||c.email||'—')}${c.categoria ? ' · '+escHtml(catLabel(c.categoria)) : ''}${profs ? ' · Seguito da: '+escHtml(profs) : ''}</div></div>`;
     }).join('') || '<div class="val-empty">Nessun cliente.</div>'}</div>`;
+  box.querySelectorAll('#segCatChips [data-catchip]').forEach(ch=> ch.onclick = ()=>{ state.segCat = ch.dataset.catchip; renderSegClienti(box); });
   const inp = document.getElementById('segSearch');
   inp.oninput = e=>{ state.segSearch = e.target.value; const pos = e.target.selectionStart; renderSegClienti(box); const n = document.getElementById('segSearch'); n.focus(); n.setSelectionRange(pos,pos); };
   box.querySelectorAll('[data-seg-cli]').forEach(el=> el.onclick = (e)=>{ const c = state.clienti.find(x=>x.id===el.dataset.segCli); if(!c) return; if(!e.target.closest('.cli-edit')){ openClientForRole(c.id); return; } renderCliAnagraficaModal(c, true); document.getElementById('cliAnagraficaModal').classList.add('open'); });
