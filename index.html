@@ -3733,22 +3733,27 @@ function renderSpaziModal(){
     return;
   }
   box.innerHTML = state.spazi.map(s=>`
-    <div style="border-bottom:1px solid var(--line-soft);padding-bottom:8px;margin-bottom:8px;">
-    <div class="team-row" data-spazio-row="${s.id}" style="border-bottom:none;">
-      <div style="flex:1;display:flex;gap:8px;align-items:center;">
-        <input class="editable" data-spazio-nome="${s.id}" value="${escAttr(s.nome)}" placeholder="Nome spazio" style="max-width:160px;">
-        <div class="color-swatches" style="margin:0;">
+    <div style="border:1px solid var(--line-soft);border-radius:10px;padding:14px;margin-bottom:12px;" data-spazio-row="${s.id}">
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+        <input class="editable" data-spazio-nome="${s.id}" value="${escAttr(s.nome)}" placeholder="Nome spazio" style="flex:1 1 180px;min-width:140px;font-size:15px;font-weight:600;">
+        ${s.prenotabile ? `<span class="fat-pill pagata" style="white-space:nowrap;">Prenotabile · ${s.postiOra||4} posti/ora</span>` : ''}
+        <button class="team-del" data-del-spazio="${s.id}" title="Elimina spazio" style="background:none;border:none;color:#e0776a;cursor:pointer;font-size:12px;text-decoration:underline;">Elimina</button>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px;">
+        <span style="font-size:12px;color:var(--ink-mute);margin-right:4px;">Colore</span>
+        <div class="color-swatches" style="margin:0;flex-direction:row;flex-wrap:wrap;">
           <div class="color-swatch none-swatch ${!s.colore?'sel':''}" data-spazio-colore="${s.id}" data-color="" title="Predefinito">—</div>
           ${EVENT_COLORS.map(c=>`<div class="color-swatch ${s.colore===c?'sel':''}" data-spazio-colore="${s.id}" data-color="${c}" style="background:${c};"></div>`).join('')}
         </div>
       </div>
-      <button class="team-del" data-del-spazio="${s.id}" title="Elimina spazio">Elimina</button>
-    </div>
-      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:12.5px;color:var(--ink-dim);padding:2px 0 0;">
-        <label style="display:flex;gap:6px;align-items:center;"><input type="checkbox" data-spazio-pren="${s.id}" ${s.prenotabile?'checked':''}> Prenotabile dai clienti (allenamento in autonomia)</label>
-        ${s.prenotabile ? `<label>Posti/ora <input class="editable" type="number" min="1" style="width:64px;" data-spazio-posti="${s.id}" value="${s.postiOra||4}"></label>
-        <span style="white-space:nowrap;">Dalle <input class="editable" type="time" style="width:100px;" data-spazio-ini="${s.id}" value="${s.apInizio||''}"> alle <input class="editable" type="time" style="width:100px;" data-spazio-fine="${s.id}" value="${s.apFine||''}"></span>
-        <span style="font-size:11.5px;color:var(--ink-mute);">Orari vuoti = orari del calendario.</span>` : ''}
+      <div style="margin-top:12px;padding-top:12px;border-top:1px dashed var(--line-soft);">
+        <label style="display:flex;gap:8px;align-items:center;font-size:13px;color:var(--ink);"><input type="checkbox" data-spazio-pren="${s.id}" ${s.prenotabile?'checked':''}> Prenotabile dai clienti (allenamento in autonomia)</label>
+        ${s.prenotabile ? `<div style="display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap;margin-top:10px;">
+          <div class="ev-field" style="margin:0;"><label>Posti per ora</label><input class="editable" type="number" min="1" style="width:80px;" data-spazio-posti="${s.id}" value="${s.postiOra||4}"></div>
+          <div class="ev-field" style="margin:0;"><label>Apre alle</label><input class="editable" type="time" style="width:120px;" data-spazio-ini="${s.id}" value="${s.apInizio||''}"></div>
+          <div class="ev-field" style="margin:0;"><label>Chiude alle</label><input class="editable" type="time" style="width:120px;" data-spazio-fine="${s.id}" value="${s.apFine||''}"></div>
+        </div>
+        <div style="font-size:11.5px;color:var(--ink-mute);margin-top:6px;">Orari vuoti = orari del calendario.</div>` : ''}
       </div>
     </div>`).join('');
   box.querySelectorAll('[data-spazio-pren]').forEach(cb=>{ cb.onchange = ()=>{ const sp = state.spazi.find(x=>x.id===cb.dataset.spazioPren); if(!sp) return; sp.prenotabile = cb.checked; if(cb.checked && !sp.postiOra) sp.postiOra = 4; db.saveSpazio(sp); renderSpaziModal(); }; });
