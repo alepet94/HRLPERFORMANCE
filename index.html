@@ -8085,6 +8085,7 @@ function apriDettaglioLezione(appuntamentoId){
     if(vol>0){
       html += `<div style="font-size:12.5px;color:var(--ink-mute);margin-top:8px;">Volume totale: <b style="color:var(--ink);">${vol} kg</b></div>`;
     }
+    html += execConfrontoHtml(a);
     if(a.esecuzione.nota){
       html += `<div class="ev-field" style="margin-top:10px;"><div class="lbl" style="text-transform:uppercase;font-size:11px;color:var(--ink-mute);margin-bottom:4px;">Nota del cliente per il preparatore</div>
         <div style="color:var(--ink-dim);font-size:13px;">${a.esecuzione.nota}</div></div>`;
@@ -8177,6 +8178,83 @@ function calcVolume(esercizi){
     });
   });
   return Math.round(total);
+}
+
+
+// ---------------- confronto con la seduta precedente della stessa scheda ----------------
+function numKg(v){ const n = parseFloat(String(v==null?'':v).replace(',','.')); return isNaN(n) ? null : n; }
+function execStatEs(e){
+  let top = null, vol = 0, reps = 0;
+  (e.sets||[]).forEach(st=>{
+    const kg = numKg(st.kg), rp = numKg(st.reps);
+    if(!(st.done || kg!==null)) return;
+    if(rp!==null) reps += rp;
+    if(kg!==null){ if(top===null || kg>top) top = kg; if(rp!==null) vol += kg*rp; }
+  });
+  return {top, vol, reps};
+}
+function execPrecedente(a){
+  if(!a || !a.clienteId) return null;
+  const key = a.day+a.start;
+  const cand = state.appuntamenti.filter(x=>x.id!==a.id && x.clienteId===a.clienteId && x.esecuzione && x.esecuzione.esercizi && x.schedaId && x.schedaId===a.schedaId && (x.day+x.start) < key)
+    .sort((x,y)=>(y.day+y.start).localeCompare(x.day+x.start));
+  return cand[0] || null;
+}
+function execConfronto(a){
+  const prev = execPrecedente(a);
+  if(!prev || !a.esecuzione) return null;
+  const rows = [];
+  let volA = 0, volP = 0, repsA = 0, repsP = 0, conKg = false;
+  (a.esecuzione.esercizi||[]).forEach(e=>{
+    const pe = (prev.esecuzione.esercizi||[]).find(x=>(x.nome||'').trim().toLowerCase()===(e.nome||'').trim().toLowerCase());
+    if(!pe) return;
+    const A = execStatEs(e), P = execStatEs(pe);
+    if(!A.reps && A.top===null) return;
+    if(A.top!==null || P.top!==null) conKg = true;
+    volA += A.vol; volP += P.vol; repsA += A.reps; repsP += P.reps;
+    const base = (A.top!==null && P.top!==null) ? {a:A.top, p:P.top, u:' kg'} : {a:A.reps, p:P.reps, u:' reps'};
+    const d = base.p>0 ? (base.a-base.p)/base.p*100 : null;
+    rows.push({nome:e.nome, a:base.a, p:base.p, u:base.u, d});
+  });
+  if(!rows.length) return null;
+  const useVol = conKg && volP>0;
+  const cd = useVol ? (volA-volP)/volP*100 : (repsP>0 ? (repsA-repsP)/repsP*100 : null);
+  const rA = a.esecuzione.rpeCliente, rP = prev.esecuzione.rpeCliente;
+  const rd = (rA && rP) ? rA - rP : null;
+  const cs = cd===null ? 0 : (cd>=2 ? 1 : cd<=-2 ? -1 : 0);
+  const rs = rd===null ? null : (rd>=2 ? 2 : rd===1 ? 1 : rd===-1 ? -1 : rd<=-2 ? -2 : 0);
+  let tono = 'neutro', msg;
+  if(rs===null) msg = cs>0 ? 'Carico in aumento rispetto all\'ultima volta. Manca l\'RPE di una delle due sedute, quindi non è possibile valutare lo sforzo.' : cs<0 ? 'Carico in calo rispetto all\'ultima volta. Manca l\'RPE di una delle due sedute.' : 'Carico stabile rispetto all\'ultima volta. Manca l\'RPE di una delle due sedute.';
+  else if(cs>0 && rs<=0){ tono='ok'; msg = 'Ottima progressione: più carico con sforzo uguale o minore. Valuta di aumentare ancora nella prossima seduta.'; }
+  else if(cs>0 && rs===1){ tono='ok'; msg = 'Progressione con sforzo leggermente maggiore: normale. Tieni d\'occhio l\'RPE alla prossima seduta.'; }
+  else if(cs>0 && rs>=2){ tono='warn'; msg = 'Salto di carico e di sforzo insieme: rischio di eccedere. Valuta di mantenere il carico o ridurre l\'incremento.'; }
+  else if(cs===0 && rs<=-1){ tono='ok'; msg = 'Stesso carico percepito come più facile: adattamento in corso, puoi aumentare il carico.'; }
+  else if(cs===0 && rs>=1){ tono='warn'; msg = 'Stesso carico ma sforzo maggiore: possibile affaticamento. Controlla readiness, recupero e note del cliente.'; }
+  else if(cs===0){ msg = 'Seduta stabile: carico e sforzo invariati. Consolida prima di progredire.'; }
+  else if(cs<0 && rs>=1){ tono='bad'; msg = 'Carico più basso e sforzo più alto: possibile affaticamento o fastidio. Verifica readiness, dolore e note.'; }
+  else { msg = 'Carico ridotto con sforzo uguale o minore: coerente se era uno scarico pianificato, altrimenti verifica il motivo.'; }
+  return {prev, rows, cd, useVol, rA, rP, rd, srpeA:a.esecuzione.srpeCliente, srpeP:prev.esecuzione.srpeCliente, tono, msg};
+}
+function execConfrontoHtml(a){
+  const c = execConfronto(a); if(!c) return '';
+  const col = {ok:'#6FCF97', warn:'#E0A05F', bad:'#E0776A', neutro:'var(--ink-dim)'}[c.tono];
+  const arr = d => d===null ? '' : (d>=2 ? '▲' : d<=-2 ? '▼' : '＝');
+  const pct = d => d===null ? '—' : (d>0?'+':'')+d.toFixed(0)+'%';
+  const fnum = n => String(Math.round(n*10)/10).replace('.',',');
+  const dd = c.prev.day.split('-').reverse().join('/');
+  return `<div class="fat-box" style="margin:14px 0;border-color:${col};">
+    <div class="fat-box-t" style="color:${col};">Confronto con la seduta del ${dd}</div>
+    <div style="font-size:13.5px;margin-bottom:10px;">${escHtml(c.msg)}</div>
+    <div class="readiness-summary" style="margin-bottom:8px;">
+      <span class="rs-chip">${c.useVol?'Volume':'Reps'} totali: <b>${arr(c.cd)} ${pct(c.cd)}</b></span>
+      ${c.rA ? `<span class="rs-chip">RPE: ${c.rP ? c.rP+' → ' : ''}<b>${c.rA}</b> ${c.rd===null?'':(c.rd>0?'▲ +'+c.rd:c.rd<0?'▼ '+c.rd:'＝')}</span>` : ''}
+      ${(c.srpeA!=null && c.srpeP!=null) ? `<span class="rs-chip">sRPE: ${c.srpeP} → <b>${c.srpeA}</b> AU</span>` : ''}
+    </div>
+    <table class="kpi-table"><thead><tr><th>Esercizio</th><th>Prima</th><th>Ora</th><th>Variazione</th></tr></thead><tbody>
+    ${c.rows.map(r=>`<tr><td>${escHtml(r.nome||'')}</td><td>${fnum(r.p)}${r.u}</td><td>${fnum(r.a)}${r.u}</td><td style="color:${r.d===null||Math.abs(r.d)<2?'var(--ink-dim)':(r.d>0?'#6FCF97':'#E0776A')};">${arr(r.d)} ${pct(r.d)}</td></tr>`).join('')}
+    </tbody></table>
+    <div style="font-size:11px;color:var(--ink-mute);margin-top:6px;">Carico = serie con il kg più alto; volume = somma kg × reps. Variazioni sotto il 2% = stabile.</div>
+  </div>`;
 }
 
 function apriEsecuzioneScheda(appuntamentoId){
@@ -8519,8 +8597,15 @@ function saveExecFlow(close){
   };
   db.saveAppuntamento(a);
   if(close){
-    document.getElementById('execModal').classList.remove('open');
     state.execFlow = null;
+    const conf = execConfrontoHtml(a);
+    if(conf){
+      document.getElementById('execModalTitle').textContent = 'Seduta salvata';
+      document.getElementById('execModalContent').innerHTML = `<div class="exec-header">Seduta salvata. Ecco come è andata rispetto all'ultima volta con questa scheda.</div>${conf}<div class="ev-actions"><div></div><button class="btn-gold" id="btnExecChiudi">Chiudi</button></div>`;
+      document.getElementById('btnExecChiudi').onclick = ()=>{ document.getElementById('execModal').classList.remove('open'); renderClientCalendar(); };
+      return;
+    }
+    document.getElementById('execModal').classList.remove('open');
     renderClientCalendar();
   }
 }
