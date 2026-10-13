@@ -9871,7 +9871,7 @@ const IMP_CAMPI = [
   ['cf','Codice fiscale',/codice\s*fiscale|^\s*c\.?f\.?\s*$/i],['nascita','Data di nascita',/data.*nascita|nato il|^\s*nascita/i],['luogoNascita','Luogo di nascita',/luogo.*nascita/i],
   ['sesso','Sesso',/sesso/i],['telefono','Cellulare / telefono',/cell|telefono|tel\.?\s*$|mobile/i],['email','Email',/e-?mail|posta/i],['pec','PEC',/\bpec\b/i],
   ['indirizzo','Indirizzo',/indirizzo|^\s*via\b/i],['cap','CAP',/^\s*cap\s*$/i],['comune','Comune',/comune|citt[aà]|residen/i],['provincia','Provincia',/^\s*prov/i],
-  ['professione','Professione',/professione|lavoro/i],['piva','Partita IVA',/p\.?\s*iva|partita/i]
+  ['professione','Professione',/professione|lavoro/i],['piva','Partita IVA',/p\.?\s*iva|partita/i],['categoria','Categoria (normale / amatore / pro / manager)',/categor/i]
 ];
 function impNormData(v){
   v = String(v||'').trim(); if(!v) return '';
@@ -9890,18 +9890,24 @@ function impRigaToDati(r, map, nomCognomeFirst){
   const sx = g('sesso').toUpperCase().slice(0,1);
   return {nome:cap(nome), cognome:cap(cognome), cf:g('cf').toUpperCase(), nascita:impNormData(g('nascita')), luogoNascita:g('luogoNascita'),
     sesso:(sx==='M'||sx==='F') ? sx : '', telefono:g('telefono'), email:g('email'), pec:g('pec'), indirizzo:g('indirizzo'), cap:g('cap'),
-    comune:g('comune'), provincia:g('provincia').toUpperCase().slice(0,2), professione:g('professione'), piva:g('piva')};
+    comune:g('comune'), provincia:g('provincia').toUpperCase().slice(0,2), professione:g('professione'), piva:g('piva'),
+    categoria: (v=>/manager/i.test(v)?'manager':/^pro|profession/i.test(v)?'pro':/amator|dilett/i.test(v)?'amatore':/normal|person/i.test(v)?'normale':'')(g('categoria'))};
 }
 function apriImportCsv(){
   const m = document.getElementById('impCliModal'), box = document.getElementById('impCliBody');
   state.imp = {rows:null};
   box.innerHTML = `<p style="font-size:13.5px;color:var(--ink-dim);margin-top:0;">Esporta l'elenco pazienti dal gestionale (o da Excel: <i>Salva come CSV</i>) e caricalo qui. Vedrai un'anteprima prima di importare e i duplicati verranno segnalati.</p>
+    <div style="font-size:12.5px;color:var(--ink-mute);margin-bottom:10px;">Modelli CSV da compilare in Excel/Fogli: <a href="#" id="impTplPaz">Pazienti</a> · <a href="#" id="impTplApp">Appuntamenti</a>. Il tipo di file (pazienti o appuntamenti) viene riconosciuto in automatico.</div>
     <input type="file" id="impFile" accept=".csv,.txt,text/csv"><div id="impStep2" style="margin-top:16px;"></div>`;
   m.classList.add('open');
+  document.getElementById('impTplPaz').onclick = e=>{ e.preventDefault(); impScaricaModello('pazienti'); };
+  document.getElementById('impTplApp').onclick = e=>{ e.preventDefault(); impScaricaModello('appuntamenti'); };
   document.getElementById('impFile').onchange = e=>{
     const f = e.target.files[0]; if(!f) return;
     const rd = new FileReader();
-    rd.onload = ()=>{ const rows = csvParse(rd.result); if(rows.length<2){ alert('Il file sembra vuoto o non leggibile.'); return; } state.imp = {head:rows[0].map(x=>x.trim()), rows:rows.slice(1), map:{}, cognomeFirst:true, categoria:'', dup:'salta'};
+    rd.onload = ()=>{ const rows = csvParse(rd.result); if(rows.length<2){ alert('Il file sembra vuoto o non leggibile.'); return; }
+      if(rows[0].some(h=>/ora\s*inizio/i.test(h))){ impAppInizia(rows); return; }
+      state.imp = {head:rows[0].map(x=>x.trim()), rows:rows.slice(1), map:{}, cognomeFirst:true, categoria:'', dup:'salta'};
       state.imp.head.forEach((h,i)=> IMP_CAMPI.forEach(([k,,re])=>{ if(state.imp.map[k]==null && re.test(h)) state.imp.map[k] = i; }));
       if(state.imp.map.cognome!=null && state.imp.map.nome!=null) delete state.imp.map.nominativo;
       impRender(); };
@@ -9939,13 +9945,92 @@ function impRender(){
   document.getElementById('impDup').onchange = e=>{ I.dup = e.target.value; impRender(); };
   document.getElementById('impGo').onclick = impEsegui;
 }
+
+// ---- modelli CSV e importazione appuntamenti ----
+const IMP_MODELLI = {
+  pazienti: {file:'modello-pazienti.csv', head:['Cognome','Nome','Sesso','Data di nascita','Luogo di nascita','Codice fiscale','Cellulare','Email','PEC','Indirizzo','CAP','Comune','Provincia','Professione','Partita IVA','Categoria']},
+  appuntamenti: {file:'modello-appuntamenti.csv', head:['Data','Ora inizio','Ora fine','Cognome','Nome','Codice fiscale','Professionista','Tipo','Titolo / prestazione','Spazio','Note']}
+};
+function impScaricaModello(k){
+  const m = IMP_MODELLI[k];
+  const blob = new Blob(['﻿'+m.head.join(';')+'\r\n'], {type:'text/csv;charset=utf-8'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = m.file; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 2000);
+}
+function impNormOra(v){
+  v = String(v||'').trim().replace('.',':').replace(/[hH]/,':'); if(!v) return '';
+  let m = v.match(/^(\d{1,2})(?::(\d{2}))?/); if(!m) return '';
+  const h = +m[1], mi = +(m[2]||0); if(h>24 || mi>59) return '';
+  return String(h).padStart(2,'0')+':'+String(mi).padStart(2,'0');
+}
+function impAppInizia(rows){
+  const head = rows[0].map(x=>x.trim());
+  const col = re=>head.findIndex(h=>re.test(h));
+  const map = {day:col(/^\s*data/i), start:col(/ora\s*inizio/i), end:col(/ora\s*fine/i), cognome:col(/^\s*cognome/i), nome:col(/^\s*nome\s*$/i), nominativo:col(/paziente|nominativo/i), cf:col(/codice\s*fiscale|^\s*cf\s*$/i), prof:col(/professionista|operatore/i), tipo:col(/^\s*tipo/i), titolo:col(/titolo|prestazione/i), spazio:col(/spazio|sala/i), note:col(/note/i)};
+  state.imp = {app:true, rows:rows.slice(1), map};
+  impAppRender();
+}
+function impAppValuta(r, M){
+  const g = k=> M[k]>=0 ? String(r[M[k]]||'').trim() : '';
+  const day = impNormData(g('day')), start = impNormOra(g('start')), end = impNormOra(g('end'));
+  let nome = g('nome'), cognome = g('cognome');
+  if(!nome && !cognome && g('nominativo')){ const p = g('nominativo').split(/\s+/); cognome = p[0]||''; nome = p.slice(1).join(' '); }
+  const tipoT = g('tipo').toLowerCase();
+  const tipo = /retest/.test(tipoT) ? 'retest' : /impegno|visita|colloquio|fisio|osteo|terap/.test(tipoT) ? 'impegno' : /ans/.test(tipoT) ? 'ans' : 'allenamento';
+  const out = {day, start, end, tipo, titolo:g('titolo'), note:g('note'), nome, cognome, avvisi:[]};
+  if(!day || !start){ out.errore = 'Data o ora inizio mancante'; return out; }
+  if(!end){ const [h,m] = start.split(':').map(Number); const t = h*60+m+60; out.end = String(Math.floor(t/60)%24).padStart(2,'0')+':'+String(t%60).padStart(2,'0'); out.avvisi.push('ora fine assente: 60 min'); }
+  if(nome || cognome || g('cf')){
+    const cf = g('cf').toUpperCase(), nk = normNomeKey(nome, cognome);
+    const c = state.clienti.find(x=>!x.eliminato && ((cf && x.anagrafica && (x.anagrafica.cf||'').toUpperCase()===cf) || (nk.trim() && normNomeKey(anSplitNome(x).nome, anSplitNome(x).cognome)===nk)));
+    if(!c){ out.errore = 'Paziente non trovato in anagrafica (importa prima i pazienti)'; return out; }
+    out.cliente = c;
+  } else if(tipo!=='impegno'){ out.errore = 'Paziente mancante'; return out; }
+  const pn = normStr(g('prof'));
+  if(pn){
+    const tk = z=>normStr(z).split(/[^a-z]+/).filter(w=>w.length>=3 && !/^(dott|dr|dottor|dottoressa|prof)$/.test(w));
+    const p = state.professionisti.find(x=>{ const n = normStr(x.nome); if(!n) return false; if(n===pn || n.includes(pn) || pn.includes(n)) return true; const A = tk(x.nome), B = tk(pn); return B.length>0 && B.every(w=>A.includes(w)); });
+    if(p) out.prof = p; else out.avvisi.push('professionista "'+g('prof')+'" non riconosciuto');
+  }
+  const sn = normStr(g('spazio'));
+  if(sn){ const sp = (state.spazi||[]).find(x=>normStr(x.nome)===sn); if(sp) out.spazio = sp; else out.avvisi.push('spazio non riconosciuto'); }
+  if(state.appuntamenti.some(a=>a.day===day && a.start===start && (a.clienteId||'')===(out.cliente?out.cliente.id:'') && (!out.prof || !a.professionistaId || a.professionistaId===out.prof.id))) out.errore = 'Già presente in agenda';
+  return out;
+}
+function impAppRender(){
+  const I = state.imp, box = document.getElementById('impStep2');
+  I.val = I.rows.map(r=>impAppValuta(r, I.map));
+  const ok = I.val.filter(v=>!v.errore), ko = I.val.length-ok.length;
+  const dd = d=>d.split('-').reverse().join('/');
+  box.innerHTML = `<div class="fat-sum"><div><span>Appuntamenti importabili</span><b>${ok.length}</b></div><div><span>Saltati</span><b>${ko}</b></div></div>
+    <div class="fat-table-wrap" style="max-height:280px;"><table class="fat-table"><thead><tr><th>Data</th><th>Orario</th><th>Paziente</th><th>Tipo</th><th>Esito</th></tr></thead><tbody>
+    ${I.val.slice(0,60).map(v=>`<tr><td>${v.day?dd(v.day):'—'}</td><td>${v.start||'—'}–${v.end||'—'}</td><td>${escHtml(v.cliente?v.cliente.nome:((v.cognome+' '+v.nome).trim()||'—'))}</td><td>${tipoLabel(v.tipo)}</td><td style="color:${v.errore?'#E0776A':'var(--ink)'};">${v.errore?escHtml(v.errore):'OK'+(v.avvisi.length?' · '+escHtml(v.avvisi.join(', ')):'')}</td></tr>`).join('')}</tbody></table></div>
+    ${I.val.length>60?`<div style="font-size:12px;color:var(--ink-mute);margin-top:4px;">Anteprima delle prime 60 su ${I.val.length}.</div>`:''}
+    <div class="ev-actions"><div></div><button class="btn-gold" id="impAppGo" ${ok.length?'':'disabled'}>Importa ${ok.length} appuntamenti</button></div>`;
+  document.getElementById('impAppGo').onclick = async ()=>{
+    const btn = document.getElementById('impAppGo'); btn.disabled = true; btn.textContent = 'Importo…';
+    const nuovi = ok.map((v,i)=>({id:'ev_imp_'+Date.now()+'_'+i+'_'+Math.random().toString(36).slice(2,5), clienteId:v.cliente?v.cliente.id:'', day:v.day, start:v.start, end:v.end, tipo:v.tipo, titolo:v.titolo, schedaId:'', noteSessione:v.note, operatore:'', seriesId:null, colore:null, esecuzione:null,
+      professionistaId: v.prof ? v.prof.id : ((v.cliente && clienteProfIds(v.cliente)[0]) || (state.professionista&&state.professionista.id) || null), spazioId: v.spazio ? v.spazio.id : null}));
+    if(dbEnabled && sb){
+      for(let i=0;i<nuovi.length;i+=100){
+        const {error} = await sb.from('appuntamenti').upsert(nuovi.slice(i,i+100).map(appuntamentoToRow));
+        if(error){ console.error('Supabase save appuntamenti (import)', error); alert('Importazione interrotta: alcuni appuntamenti NON sono stati salvati.'); break; }
+      }
+    }
+    state.appuntamenti.push(...nuovi);
+    document.getElementById('impCliModal').classList.remove('open');
+    try{ renderCalendar(); }catch(e){}
+    try{ renderClientiList(document.getElementById('cliSearchInput').value); }catch(e){}
+    alert(`Importati ${nuovi.length} appuntamenti.`);
+  };
+}
 async function impEsegui(){
   const I = state.imp; let creati = 0, completati = 0; const daSalvare = [];
   I.valutati.forEach(v=>{
     const d = v.d;
     const anag = {nome:d.nome, cognome:d.cognome, sesso:d.sesso, luogoNascita:d.luogoNascita, cf:d.cf, professione:d.professione, indirizzo:d.indirizzo, cap:d.cap, comune:d.comune, provincia:d.provincia, pec:d.pec, piva:d.piva};
     if(v.tipo==='nuovo'){
-      const c = createCliente({nome:(d.nome+' '+d.cognome).trim(), dataNascita:d.nascita, email:d.email, telefono:d.telefono, anagrafica:anag, categoria:I.categoria}, {nosave:true});
+      const c = createCliente({nome:(d.nome+' '+d.cognome).trim(), dataNascita:d.nascita, email:d.email, telefono:d.telefono, anagrafica:anag, categoria:d.categoria||I.categoria}, {nosave:true});
       daSalvare.push(c); creati++;
     } else if(v.tipo==='dup' && !v.interno && I.dup==='completa'){
       const c = v.dup[0].c, a = c.anagrafica = c.anagrafica || {};
@@ -10232,6 +10317,7 @@ function schedeSectionHTML(){
         <div class="actions">
           <button class="btn-download" data-dl-scheda="${s.id}">Scarica</button>
           <button class="btn-small" data-edit-scheda="${s.id}">Modifica</button>
+          <button class="btn-small" data-copy-scheda="${s.id}" title="Crea una copia modificabile, assegnata alla fase attiva">Copia</button>
           <button class="btn-small danger" data-del-scheda="${s.id}">Elimina</button>
         </div>
       </div>`;
@@ -10370,6 +10456,21 @@ function bindSchedaEvents(box){
     renderResult();
   };
 
+  box.querySelectorAll('[data-copy-scheda]').forEach(btn=>{
+    btn.onclick = ()=>{
+      const s = (state.schede[schedaKey()]||[]).find(x=>x.id===btn.dataset.copyScheda);
+      if(!s) return;
+      const design = designForClient(state.profilo, state.pathway, state.blockOperativoId);
+      const faseAttiva = design[state.activePhase] ? design[state.activePhase].fase : s.fase;
+      const c = JSON.parse(JSON.stringify(s));
+      c.id = 'sc_'+Date.now();
+      c.nome = (s.nome||'Scheda') + ' (copia)';
+      c.fase = faseAttiva;
+      c.data = ''; c.durataMin = ''; c.rpeSessione = '';
+      state.schedeFilterAllPhases = false;
+      openSchedaEditor(c);
+    };
+  });
   box.querySelectorAll('[data-edit-scheda]').forEach(btn=>{
     btn.onclick = ()=>{
       const key = schedaKey();
