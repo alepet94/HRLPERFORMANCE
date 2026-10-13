@@ -599,9 +599,10 @@ header.top{
   white-space:nowrap;
 }
 .btn-super-toggle.active{border-color:rgba(45,170,180,.55);color:#2BA8B4;background:rgba(45,170,180,.14);}
-.ex-row-grouped{background:rgba(45,170,180,.12);box-shadow:inset 3px 0 0 #2BA8B4;}
+.ex-row-grouped{background:color-mix(in srgb,var(--ssc,#2BA8B4) 14%,transparent);box-shadow:inset 3px 0 0 var(--ssc,#2BA8B4);}
+.ex-ss-0{--ssc:#2BA8B4;}.ex-ss-1{--ssc:#8B6FE0;}.ex-ss-2{--ssc:#3F8FE8;}.ex-ss-3{--ssc:#D9609A;}.ex-ss-4{--ssc:#4CB36B;}.ex-ss-5{--ssc:#D6A62B;}
 .ex-super-tag{
-  flex:none;background:#2BA8B4;color:#fff;
+  flex:none;background:var(--ssc,#2BA8B4);color:#fff;
   font-size:9.5px;font-weight:700;letter-spacing:.03em;
   padding:2px 5px;border-radius:2px;
 }
@@ -6999,10 +7000,10 @@ function schedaEditorFisioHTML(){
     const varia = !!e.serieValori;
     const dis = varia ? 'ex-disabled-by-serievalori' : '';
     const hasNote = e.note!==null && e.note!==undefined;
-    html += `<tr class="${inGroupOfMore ? 'ex-row-grouped' : ''}" data-group="${groupOfIdx[i]}" data-exf-row="${i}" draggable="true">
+    html += `<tr class="${inGroupOfMore ? 'ex-row-grouped ex-ss-'+(groupOfIdx[i]%6) : ''}" data-group="${groupOfIdx[i]}" data-exf-row="${i}" draggable="true">
       <td class="col-drag"><span class="ex-drag-handle" title="Trascina per riordinare gli esercizi">⠿</span></td>
       <td class="col-ex"><div class="col-ex-wrap">
-        ${inGroupOfMore ? `<span class="ex-super-tag" title="Superserie ${groupOfIdx[i]+1}">SS${groupOfIdx[i]+1}</span>` : ''}
+        ${inGroupOfMore ? `<span class="ex-super-tag ex-ss-${groupOfIdx[i]%6}" title="Superserie ${groupOfIdx[i]+1}">SS${groupOfIdx[i]+1}</span>` : ''}
         <input data-exf="${i}|nome" list="exNameOptions" value="${escAttr(e.nome)}" placeholder="es. Squat">
         ${vid ? `<a class="ex-video-link" href="${vid.youtube}" target="_blank" rel="noopener" title="${escAttr(vid.nome)}">▶</a>` : ''}
       </div></td>
@@ -10379,10 +10380,10 @@ function schedaEditorHTML(){
     const varia = !!e.serieValori;
     const dis = varia ? 'ex-disabled-by-serievalori' : '';
     const hasNote = e.note!==null && e.note!==undefined;
-    html += `<tr class="${inGroupOfMore ? 'ex-row-grouped' : ''}" data-group="${groupOfIdx[i]}" data-ex-row="${i}" draggable="true">
+    html += `<tr class="${inGroupOfMore ? 'ex-row-grouped ex-ss-'+(groupOfIdx[i]%6) : ''}" data-group="${groupOfIdx[i]}" data-ex-row="${i}" draggable="true">
       <td class="col-drag"><span class="ex-drag-handle" title="Trascina per riordinare gli esercizi">⠿</span></td>
       <td class="col-ex"><div class="col-ex-wrap">
-        ${inGroupOfMore ? `<span class="ex-super-tag" title="Superserie ${groupOfIdx[i]+1}">SS${groupOfIdx[i]+1}</span>` : ''}
+        ${inGroupOfMore ? `<span class="ex-super-tag ex-ss-${groupOfIdx[i]%6}" title="Superserie ${groupOfIdx[i]+1}">SS${groupOfIdx[i]+1}</span>` : ''}
         <input data-ex="${i}|nome" list="exNameOptions" value="${e.nome}" placeholder="es. Back Squat">
         ${vid ? `<a class="ex-video-link" href="${vid.youtube}" target="_blank" rel="noopener" title="${vid.nome}">▶</a>` : ''}
       </div></td>
