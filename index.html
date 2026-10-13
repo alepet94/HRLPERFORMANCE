@@ -11736,11 +11736,14 @@ function payStaffBlock(ev, container){
   if(!ev.clienteId) return;
   const manage = canManageAll();
   const st = payStato(ev);
-  const html = `<div class="ev-field" id="payBlock"><label>Costo prestazione</label>
+  let gia = null;
+  if(manage){ try{ fattInit(); gia = state.fatture.find(f=>f.dati && f.dati.appuntamentoId===ev.id && f.dati.tipoDoc!=='TD04') || null; }catch(ex){} }
+  const html = `<div class="ev-field" id="payBlock"><label>Prestazione, costo e fattura</label>
     <select class="editable" id="payPrest" style="max-width:100%;margin-bottom:6px;">${lstOptions(lstProfDelEvento(ev), ev.prestazioneId||'')}</select>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
       <input class="editable" id="payImporto" style="width:110px;" placeholder="€" value="${ev.importo!=null&&ev.importo!==''?escAttr(String(ev.importo).replace('.',',')):''}">
       <button class="btn-small" id="payImportoSave">Salva costo</button>
+      ${manage ? (gia ? `<button class="btn-small" id="evInfoFattVedi">${gia.stato==='emessa' ? 'Fatturato: n. '+gia.numero+'/'+gia.anno : 'Bozza di fattura'} →</button>` : `<button class="btn-small" id="evInfoFattGo">Crea fattura</button>`) : ''}
       ${st ? `<span class="fat-pill ${st==='pagato'?'pagata':''}">${st==='pagato'?'Pagato':'Da incassare'}</span>` : ''}
     </div>
     ${manage && st ? `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px;">
@@ -11753,6 +11756,17 @@ function payStaffBlock(ev, container){
   if(pp) pp.onchange = ()=>{
     const l = (state.listino||[]).find(x=>x.id===pp.value); if(!l) return;
     document.getElementById('payImporto').value = String(fattLordo(l.prezzo,l.aliquota)).replace('.',',');
+  };
+  const fv = document.getElementById('evInfoFattVedi');
+  if(fv) fv.onclick = ()=>{ closeEventInfo(); showView('fatturazione'); renderFatturazione(); fattApriEditor(gia.id); };
+  const fg = document.getElementById('evInfoFattGo');
+  if(fg) fg.onclick = ()=>{
+    const l = (state.listino||[]).find(x=>x.id===(pp ? pp.value : ''));
+    if(!l){ alert('Scegli prima la prestazione dal listino.'); return; }
+    ev.prestazioneId = l.id; ev.importo = fattLordo(l.prezzo,l.aliquota); db.saveAppuntamento(ev);
+    const pid2 = ev.professionistaId || '';
+    closeEventInfo(); showView('fatturazione'); renderFatturazione();
+    fattApriEditor(null, ev.clienteId, {data: ev.day, dati:{appuntamentoId: ev.id, ...(pid2?{profId:pid2}:{}), righe:[{descr:l.descrizione, qta:1, prezzo:+l.prezzo||0, aliquota:+l.aliquota||0, natura:l.natura||'N4'}]}});
   };
   const sv = document.getElementById('payImportoSave');
   if(sv) sv.onclick = ()=>{
@@ -11838,23 +11852,6 @@ function openEventInfo(ev){
     row('Spazio', sp ? escHtml(sp.nome) : '') +
     row('Note', ev.noteSessione ? escHtml(ev.noteSessione) : '');
   state.eventInfoId = ev.id;
-  if(canManageAll() && ev.clienteId){ try{ fattInit();
-    const gia = state.fatture.find(f=>f.dati && f.dati.appuntamentoId===ev.id && f.dati.tipoDoc!=='TD04');
-    const ct = document.getElementById('eventInfoContent');
-    ct.insertAdjacentHTML('beforeend', gia
-      ? `<div class="ev-field"><label>Fattura</label><div><button class="btn-small" id="evInfoFattVedi">${gia.stato==='emessa' ? 'Fatturato: n. '+gia.numero+'/'+gia.anno : 'Bozza di fattura'} →</button></div></div>`
-      : `<div class="ev-field"><label>Fattura</label><div style="display:flex;gap:8px;flex-wrap:wrap;"><select class="editable" id="evInfoListino" style="max-width:320px;"><option value="">Scegli la prestazione…</option>${state.listino.map(l=>`<option value="${l.id}">${escHtml(l.descrizione)} — € ${fattEur(fattLordo(l.prezzo,l.aliquota))}</option>`).join('')}</select><button class="btn-small" id="evInfoFattGo">Crea fattura</button></div></div>`);
-    const v = document.getElementById('evInfoFattVedi');
-    if(v) v.onclick = ()=>{ closeEventInfo(); showView('fatturazione'); renderFatturazione(); fattApriEditor(gia.id); };
-    const g = document.getElementById('evInfoFattGo');
-    if(g) g.onclick = ()=>{
-      const lid = document.getElementById('evInfoListino').value; const l = state.listino.find(x=>x.id===lid);
-      if(!l){ alert('Scegli prima la prestazione dal listino.'); return; }
-      const pid = ev.professionistaId || '';
-      closeEventInfo(); showView('fatturazione'); renderFatturazione();
-      fattApriEditor(null, ev.clienteId, {data: ev.day, dati:{appuntamentoId: ev.id, ...(pid?{profId:pid}:{}), righe:[{descr:l.descrizione, qta:1, prezzo:+l.prezzo||0, aliquota:+l.aliquota||0, natura:l.natura||'N4'}]}});
-    };
-  }catch(ex){ console.error('evInfo fattura', ex); } }
   try{ payStaffBlock(ev, document.getElementById('eventInfoContent')); }catch(ex){ console.error('evInfo pagamento', ex); }
   try{ pkSedutaDaAppuntamento(ev, document.getElementById('eventInfoContent')); }catch(ex){ console.error('evInfo pacchetto', ex); }
   document.getElementById('eventInfoModal').classList.add('open');
