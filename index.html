@@ -10253,7 +10253,9 @@ function computeSRPE(durata, rpe){
 // vive qui e non dentro state.schedaEditor — resta chiuso di default ogni
 // volta che si apre una scheda diversa
 let schedaGuidaOpen = false;
+let schedaCestino = [];  // esercizi eliminati nell'editor, ripristinabili con "Annulla eliminazione"
 function openSchedaEditor(existing){
+  schedaCestino = [];
   const design = designForClient(state.profilo, state.pathway, state.blockOperativoId);
   const defaultFase = design[state.activePhase] ? design[state.activePhase].fase : (design[0] ? design[0].fase : '');
   state.schedaEditor = existing
@@ -10412,7 +10414,7 @@ function schedaEditorHTML(){
     }
   });
   html += `</tbody></table>`;
-  html += `<button class="btn-add-row" id="btnAddEx">+ Aggiungi esercizio</button>`;
+  html += `<button class="btn-add-row" id="btnAddEx">+ Aggiungi esercizio</button>${schedaCestino.length ? ` <button type="button" class="btn-small" id="btnUndoEx" title="Rimette l'ultimo esercizio eliminato nella sua posizione">↶ Ripristina esercizio eliminato (${schedaCestino.length})</button>` : ''}`;
   html += `<div style="font-size:11px;color:var(--ink-mute);margin-top:4px;">Tempo: formato eccentrica.isometrica.concentrica, es. 3.1.1. Se lasciato vuoto non comparirà nella scheda del cliente.</div>`;
   html += `<div style="font-size:11px;color:var(--ink-mute);margin-top:2px;">Collega 2-3 esercizi consecutivi per creare una superserie: verranno eseguiti uno dopo l'altro nella schermata di allenamento.</div>`;
   html += `<div style="font-size:11px;color:var(--ink-mute);margin-top:2px;">"+ per serie": per un esercizio con carico/reps/tempo diversi ad ogni serie (es. rampe crescenti), attiva questa opzione e compila i valori serie per serie.</div>`;
@@ -10579,7 +10581,9 @@ function bindSchedaEvents(box){
   });
   box.querySelectorAll('[data-rm-ex]').forEach(btn=>{
     btn.onclick = ()=>{
-      ed.esercizi.splice(parseInt(btn.dataset.rmEx,10),1);
+      const pos = parseInt(btn.dataset.rmEx,10);
+      const [rimosso] = ed.esercizi.splice(pos,1);
+      if(rimosso) schedaCestino.push({pos, ex: rimosso});
       if(ed.esercizi.length===0) ed.esercizi.push(newEsercizioRow());
       renderResult();
     };
@@ -10625,6 +10629,14 @@ function bindSchedaEvents(box){
 
   const btnAddEx = document.getElementById('btnAddEx');
   if(btnAddEx) btnAddEx.onclick = ()=>{ ed.esercizi.push(newEsercizioRow()); renderResult(); };
+  const btnUndoEx = document.getElementById('btnUndoEx');
+  if(btnUndoEx) btnUndoEx.onclick = ()=>{
+    const u = schedaCestino.pop(); if(!u) return;
+    // se restava solo la riga vuota creata automaticamente, la sostituisce
+    if(ed.esercizi.length===1 && !ed.esercizi[0].nome) ed.esercizi.length = 0;
+    ed.esercizi.splice(Math.min(u.pos, ed.esercizi.length), 0, u.ex);
+    renderResult();
+  };
   const btnCancel = document.getElementById('btnCancelScheda');
   if(btnCancel) btnCancel.onclick = closeSchedaEditor;
   const btnSave = document.getElementById('btnSaveScheda');
