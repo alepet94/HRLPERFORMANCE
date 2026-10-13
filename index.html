@@ -2626,7 +2626,8 @@ function appuntamentoToRow(a){
     retest_data: a.retestData || null,
     spazio_id: a.spazioId || null,
     importo: (a.importo!=null && a.importo!=='') ? +a.importo : null,
-    pagato: !!a.pagato, pagato_il: a.pagatoIl || null, pagato_modo: a.pagatoModo || null
+    pagato: !!a.pagato, pagato_il: a.pagatoIl || null, pagato_modo: a.pagatoModo || null,
+    prestazione_id: a.prestazioneId || null
   };
 }
 function rowToAppuntamento(r){
@@ -2639,7 +2640,7 @@ function rowToAppuntamento(r){
     retestData: r.retest_data || null,
     spazioId: r.spazio_id || null,
     importo: (r.importo!=null) ? +r.importo : null,
-    pagato: !!r.pagato, pagatoIl: r.pagato_il || null, pagatoModo: r.pagato_modo || ''
+    pagato: !!r.pagato, pagatoIl: r.pagato_il || null, pagatoModo: r.pagato_modo || '', prestazioneId: r.prestazione_id || ''
   };
 }
 function richiestaToRow(r){
@@ -3288,7 +3289,7 @@ const db = {
     state.spazi = spz.error ? [] : (spz.data || []).map(rowToSpazio);
     // fatturazione: tabelle nuove, errore tollerato (migrazione mancante o ruolo senza accesso)
     state.fatture = fat.error ? [] : (fat.data || []).map(fattRowToFattura);
-    state.listino = lst.error ? [] : (lst.data || []).map(l=>({id:l.id, descrizione:l.descrizione, prezzo:+l.prezzo||0, aliquota:+l.aliquota||0, natura:l.natura||'N4'})).sort((a,b)=>String(a.id).localeCompare(String(b.id)));
+    state.listino = lst.error ? [] : (lst.data || []).map(l=>({id:l.id, descrizione:l.descrizione, prezzo:+l.prezzo||0, aliquota:+l.aliquota||0, natura:l.natura||'N4', ass:l.assegnazione||null})).sort((a,b)=>String(a.id).localeCompare(String(b.id)));
     state.pagInfo = (pgi && !pgi.error && pgi.data) ? {metodi: pgi.data.metodi || [], nota: pgi.data.nota || ''} : {metodi:[], nota:''};
     state.pacchetti = pkq.error ? [] : (pkq.data || []).map(pkRowFrom);
     state.consensi = csq.error ? [] : (csq.data || []).map(x=>({id:x.id, clienteId:x.cliente_id, tipo:x.tipo, data:x.data, revocato:!!x.revocato, firma:null, carta:/^carta/.test(x.creato_da||''), creatoDa:x.creato_da||''}));
@@ -11630,6 +11631,45 @@ function openEventEditor(data, isEdit){
   document.getElementById('eventModal').classList.add('open');
 }
 
+
+// ---- listino per professionista/area ----
+// l.ass = {profIds:[], aree:[]}; vuoto/assente = disponibile a tutti
+function lstDisponibile(l, prof){
+  const a = l.ass; if(!a || (!(a.profIds||[]).length && !(a.aree||[]).length)) return true;
+  if(!prof) return false;
+  return (a.profIds||[]).includes(prof.id) || (!!prof.area && (a.aree||[]).includes(prof.area));
+}
+function lstPerProf(profId){
+  const prof = profId ? state.professionisti.find(p=>p.id===profId) : null;
+  if(prof && prof.ruolo==='admin') return state.listino || [];   // l'admin vede tutto
+  return (state.listino||[]).filter(l=>lstDisponibile(l, prof));
+}
+function lstAssLabel(l){
+  const a = l.ass || {}; const parts = [];
+  (a.profIds||[]).forEach(id=>{ const p = state.professionisti.find(x=>x.id===id); if(p) parts.push(p.nome); });
+  (a.aree||[]).forEach(x=> parts.push('Area '+x));
+  return parts.length ? parts.join(', ') : 'Tutti';
+}
+// assegnazione automatica dal nome ("Antonio – …" -> Antonio; "Allenamento –" -> Preparatori)
+function lstAutoAss(l){
+  const pre = String(l.descrizione||'').split(/\s[–-]\s/)[0].trim();
+  if(/^allenamento$/i.test(pre)) return {profIds:[], aree:['Preparatore','Chinesiologo']};
+  if(/^(abbonamenti|corsi)$/i.test(pre)) return null;
+  const nomi = pre.split('/').map(x=>x.trim().split(/\s+/)[0].toLowerCase()).filter(Boolean);
+  const ids = [];
+  nomi.forEach(n=>{ (state.professionisti||[]).forEach(p=>{ if(String(p.nome||'').trim().toLowerCase().startsWith(n) && !ids.includes(p.id)) ids.push(p.id); }); });
+  return ids.length ? {profIds:ids, aree:[]} : null;
+}
+function lstProfDelEvento(ed){
+  if(ed.professionistaId) return ed.professionistaId;
+  const c = ed.clienteId ? state.clienti.find(x=>x.id===ed.clienteId) : null;
+  if(c){ const ids = clienteProfIds(c); if(ids[0]) return ids[0]; }
+  return state.professionista ? state.professionista.id : null;
+}
+function lstOptions(profId, selId){
+  return '<option value="">— scegli dal listino —</option>' + lstPerProf(profId).map(l=>`<option value="${escAttr(l.id)}" ${selId===l.id?'selected':''}>${escHtml(l.descrizione)} · € ${payEur(l.prezzo)}</option>`).join('');
+}
+
 // ================= PAGAMENTI PRESTAZIONI =================
 // Il costo si inserisce sull'appuntamento; la Segreteria spunta "pagato".
 // Grigio = da pagare, verde = pagato. Il paziente vede lo stato e, se da
@@ -11697,6 +11737,7 @@ function payStaffBlock(ev, container){
   const manage = canManageAll();
   const st = payStato(ev);
   const html = `<div class="ev-field" id="payBlock"><label>Costo prestazione</label>
+    <select class="editable" id="payPrest" style="max-width:100%;margin-bottom:6px;">${lstOptions(lstProfDelEvento(ev), ev.prestazioneId||'')}</select>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
       <input class="editable" id="payImporto" style="width:110px;" placeholder="€" value="${ev.importo!=null&&ev.importo!==''?escAttr(String(ev.importo).replace('.',',')):''}">
       <button class="btn-small" id="payImportoSave">Salva costo</button>
@@ -11708,8 +11749,14 @@ function payStaffBlock(ev, container){
     </div>` : ''}
   </div>`;
   container.insertAdjacentHTML('beforeend', html);
+  const pp = document.getElementById('payPrest');
+  if(pp) pp.onchange = ()=>{
+    const l = (state.listino||[]).find(x=>x.id===pp.value); if(!l) return;
+    document.getElementById('payImporto').value = String(fattLordo(l.prezzo,l.aliquota)).replace('.',',');
+  };
   const sv = document.getElementById('payImportoSave');
   if(sv) sv.onclick = ()=>{
+    ev.prestazioneId = pp ? pp.value : (ev.prestazioneId||'');
     const v = payNum(document.getElementById('payImporto').value);
     ev.importo = v; if(v==null || v<=0){ ev.pagato = false; ev.pagatoIl = null; ev.pagatoModo = ''; }
     db.saveAppuntamento(ev); payRefreshCalendars(); openEventInfo(ev);
@@ -11889,6 +11936,7 @@ function renderEventModal(){
       </select>
     </div>
     <div class="ev-field"><label>Note sessione (post-lezione)</label><input class="editable" id="evNoteSessione" value="${ed.noteSessione||''}" placeholder="es. buona tenuta sul carico, dolore lieve al ginocchio"></div>
+    <div class="ev-field"><label>Prestazione (listino del professionista)</label><select class="editable" id="evPrest" style="max-width:100%;">${lstOptions(lstProfDelEvento(ed), ed.prestazioneId||'')}</select></div>
     <div class="ev-field"><label>Costo prestazione (€, opzionale)</label><input class="editable" id="evImporto" style="max-width:140px;" value="${ed.importo!=null&&ed.importo!==''?escAttr(String(ed.importo).replace('.',',')):''}" placeholder="es. 60"></div>
     <div class="ev-field"><label>Operatore (opzionale)</label><input class="editable" id="evOperatore" value="${ed.operatore||''}" placeholder="es. Ale"></div>`;
 
@@ -11979,6 +12027,16 @@ function renderEventModal(){
   if(evSpazioSel) evSpazioSel.onchange = (e)=>{ ed.spazioId = e.target.value || null; };
   const evSchedaSel = document.getElementById('evScheda');
   if(evSchedaSel) evSchedaSel.onchange = (e)=>{ ed.schedaId = e.target.value; };
+  const evPrestSel = document.getElementById('evPrest');
+  const evFillPrest = ()=>{ if(evPrestSel) evPrestSel.innerHTML = lstOptions(lstProfDelEvento(ed), ed.prestazioneId||''); };
+  if(evPrestSel) evPrestSel.onchange = ()=>{
+    const l = (state.listino||[]).find(x=>x.id===evPrestSel.value);
+    ed.prestazioneId = l ? l.id : '';
+    if(l){ ed.importo = l.prezzo ? +fattLordo(l.prezzo,l.aliquota) : null; const ii = document.getElementById('evImporto'); if(ii) ii.value = ed.importo!=null ? String(ed.importo).replace('.',',') : ''; }
+  };
+  const evImpIn = document.getElementById('evImporto'); if(evImpIn) evImpIn.oninput = ()=>{ ed.importo = payNum(evImpIn.value); };
+  const evProfSel2 = document.getElementById('evProf'); if(evProfSel2) evProfSel2.addEventListener('change', evFillPrest);
+  const evCliSel2 = document.getElementById('evCliente'); if(evCliSel2) evCliSel2.addEventListener('change', evFillPrest);
   const evNoteSel = document.getElementById('evNoteSessione');
   if(evNoteSel) evNoteSel.oninput = (e)=>{ ed.noteSessione = e.target.value; };
   const evOpSel = document.getElementById('evOperatore');
@@ -12418,7 +12476,7 @@ function fattToRow(f){ return {id:f.id, anno:f.anno, numero:f.numero==null?null:
 Object.assign(db, {
   async saveFattura(f){ if(!dbEnabled || !sb) return {ok:true}; const {error} = await sb.from('fatture').upsert(fattToRow(f)); if(error){ if(error.code!=='23505') console.error('Supabase saveFattura', error); return {ok:false, error}; } return {ok:true}; },
   async deleteFattura(id){ if(!dbEnabled || !sb) return true; const {error} = await sb.from('fatture').delete().eq('id',id); if(error){ console.error('Supabase deleteFattura', error); return false; } return true; },
-  async saveListino(l){ if(!dbEnabled || !sb) return; const {error} = await sb.from('listino_prestazioni').upsert({id:l.id, descrizione:l.descrizione, prezzo:l.prezzo, aliquota:l.aliquota, natura:l.natura||null, attivo:true}); if(error) console.error('Supabase saveListino', error); },
+  async saveListino(l){ if(!dbEnabled || !sb) return; const {error} = await sb.from('listino_prestazioni').upsert({id:l.id, descrizione:l.descrizione, prezzo:l.prezzo, aliquota:l.aliquota, natura:l.natura||null, attivo:true, assegnazione:l.ass||{}}); if(error) console.error('Supabase saveListino', error); },
   async deleteListino(id){ if(!dbEnabled || !sb) return; const {error} = await sb.from('listino_prestazioni').delete().eq('id',id); if(error) console.error('Supabase deleteListino', error); },
   async saveDatiFiscali(cid, dati){ if(!dbEnabled || !sb) return; const {error} = await sb.from('dati_fiscali_clienti').upsert({cliente_id:cid, dati}); if(error) console.error('Supabase saveDatiFiscali', error); },
   async savePagInfo(info){ if(!dbEnabled || !sb) return true; const {error} = await sb.from('pagamento_info').upsert({id:1, metodi:info.metodi||[], nota:info.nota||''}); if(error){ console.error('Supabase savePagInfo', error); alert('Salvataggio non riuscito: esegui prima il blocco SQL PAGAMENTI su Supabase.'); return false; } return true; },
@@ -12536,8 +12594,30 @@ function fattApriListino(){
         <select class="editable" data-k="aliquota">${[0,4,5,10,22].map(a=>`<option ${+l.aliquota===a?'selected':''}>${a}</option>`).join('')}</select>
         <input class="editable" data-k="lordo" value="${escAttr(String(fattLordo(l.prezzo,l.aliquota)).replace('.',','))}">
         <select class="editable" data-k="natura">${FATT_NATURE.map(([v,t])=>`<option value="${v}" ${(l.natura||'N4')===v?'selected':''}>${v}</option>`).join('')}</select>
-        <button class="btn-small danger" data-dl="${l.id}">×</button></div>`).join('') || '<div class="val-empty">Nessuna prestazione in listino.</div>'}
-      <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;"><button class="btn-small" id="lstAdd">+ Aggiungi prestazione</button><button class="btn-small" id="lstImp">Ripristina voci del listino HRL mancanti</button></div>`;
+        <button class="btn-small danger" data-dl="${l.id}">×</button></div>
+      <details class="lst-ass" data-la="${l.id}" style="margin:-2px 0 10px 4px;font-size:12.5px;"><summary style="cursor:pointer;color:var(--ink-dim);">Disponibile per: <b>${escHtml(lstAssLabel(l))}</b></summary>
+        <div style="padding:8px 4px;display:flex;flex-direction:column;gap:6px;">
+          <div><span style="color:var(--ink-mute);">Aree:</span> ${AREE_COMPETENZA.map(a=>`<label style="margin-right:10px;white-space:nowrap;"><input type="checkbox" data-la-area="${escAttr(a)}" ${((l.ass||{}).aree||[]).includes(a)?'checked':''}> ${escHtml(a)}</label>`).join('')}</div>
+          <div><span style="color:var(--ink-mute);">Professionisti:</span> ${(state.professionisti||[]).map(p=>`<label style="margin-right:10px;white-space:nowrap;"><input type="checkbox" data-la-prof="${p.id}" ${((l.ass||{}).profIds||[]).includes(p.id)?'checked':''}> ${escHtml(p.nome)}</label>`).join('')}</div>
+          <div style="color:var(--ink-mute);">Nessuna spunta = disponibile a tutti.</div>
+        </div></details>`).join('') || '<div class="val-empty">Nessuna prestazione in listino.</div>'}
+      <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;"><button class="btn-small" id="lstAdd">+ Aggiungi prestazione</button><button class="btn-small" id="lstImp">Ripristina voci del listino HRL mancanti</button><button class="btn-small" id="lstAuto">Assegna automaticamente dal nome</button></div>`;
+    m.querySelectorAll('details.lst-ass').forEach(d=>{
+      const l = state.listino.find(x=>x.id===d.dataset.la);
+      d.addEventListener('toggle', ()=>{ if(d.open) m.dataset.openLa = d.dataset.la; });
+      d.querySelectorAll('input[type=checkbox]').forEach(ch=> ch.onchange = ()=>{
+        l.ass = {
+          aree: [...d.querySelectorAll('[data-la-area]')].filter(x=>x.checked).map(x=>x.dataset.laArea),
+          profIds: [...d.querySelectorAll('[data-la-prof]')].filter(x=>x.checked).map(x=>x.dataset.laProf)
+        };
+        d.querySelector('summary b').textContent = lstAssLabel(l);
+        db.saveListino(l);
+      });
+    });
+    document.getElementById('lstAuto').onclick = ()=>{
+      let n = 0; state.listino.forEach(l=>{ const hasAss = l.ass && ((l.ass.profIds||[]).length || (l.ass.aree||[]).length); if(hasAss) return; const a = lstAutoAss(l); if(a){ l.ass = a; db.saveListino(l); n++; } });
+      draw(); alert(n ? n+' prestazioni assegnate: controlla l\'elenco e correggi dove serve.' : 'Niente da assegnare automaticamente.');
+    };
     m.querySelectorAll('.fat-lst-row').forEach(row=>{
       const l = state.listino.find(x=>x.id===row.dataset.l);
       row.querySelectorAll('[data-k]').forEach(inp=> inp.onchange = ()=>{
