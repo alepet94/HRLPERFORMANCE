@@ -2624,7 +2624,9 @@ function appuntamentoToRow(a){
     colore: a.colore || null, esecuzione: a.esecuzione || null,
     professionista_id: a.professionistaId || null,
     retest_data: a.retestData || null,
-    spazio_id: a.spazioId || null
+    spazio_id: a.spazioId || null,
+    importo: (a.importo!=null && a.importo!=='') ? +a.importo : null,
+    pagato: !!a.pagato, pagato_il: a.pagatoIl || null, pagato_modo: a.pagatoModo || null
   };
 }
 function rowToAppuntamento(r){
@@ -2635,7 +2637,9 @@ function rowToAppuntamento(r){
     colore: r.colore || null, esecuzione: r.esecuzione || null,
     professionistaId: r.professionista_id || null,
     retestData: r.retest_data || null,
-    spazioId: r.spazio_id || null
+    spazioId: r.spazio_id || null,
+    importo: (r.importo!=null) ? +r.importo : null,
+    pagato: !!r.pagato, pagatoIl: r.pagato_il || null, pagatoModo: r.pagato_modo || ''
   };
 }
 function richiestaToRow(r){
@@ -3249,14 +3253,15 @@ const db = {
         sb.from('dati_fiscali_clienti').select('*'),
         sb.from('fatturazione_impostazioni').select('*').eq('id',1).maybeSingle(),
         sb.from('pacchetti').select('*'),
-        sb.from('consensi').select('id,cliente_id,tipo,data,revocato,creato_da')
+        sb.from('consensi').select('id,cliente_id,tipo,data,revocato,creato_da'),
+        sb.from('pagamento_info').select('*').eq('id',1).maybeSingle()
       ]);
     } catch(ex){
       console.error('Supabase load exception', ex);
       db.lastError = (ex && ex.message) ? ex.message : String(ex);
       return false;
     }
-    const [c,a,r,f,cs,t,ex,dr,nc,bop,seg,spz,fat,lst,dfi,fimp,pkq,csq] = results;
+    const [c,a,r,f,cs,t,ex,dr,nc,bop,seg,spz,fat,lst,dfi,fimp,pkq,csq,pgi] = results;
     // "segnalazioni" e "spazi" sono tabelle nuove: se Ale non ha ancora
     // eseguito le relative migrazioni su Supabase, la select fallisce
     // (tabella inesistente) — non deve bloccare il caricamento di tutto il
@@ -3284,6 +3289,7 @@ const db = {
     // fatturazione: tabelle nuove, errore tollerato (migrazione mancante o ruolo senza accesso)
     state.fatture = fat.error ? [] : (fat.data || []).map(fattRowToFattura);
     state.listino = lst.error ? [] : (lst.data || []).map(l=>({id:l.id, descrizione:l.descrizione, prezzo:+l.prezzo||0, aliquota:+l.aliquota||0, natura:l.natura||'N4'})).sort((a,b)=>String(a.id).localeCompare(String(b.id)));
+    state.pagInfo = (pgi && !pgi.error && pgi.data) ? {metodi: pgi.data.metodi || [], nota: pgi.data.nota || ''} : {metodi:[], nota:''};
     state.pacchetti = pkq.error ? [] : (pkq.data || []).map(pkRowFrom);
     state.consensi = csq.error ? [] : (csq.data || []).map(x=>({id:x.id, clienteId:x.cliente_id, tipo:x.tipo, data:x.data, revocato:!!x.revocato, firma:null, carta:/^carta/.test(x.creato_da||''), creatoDa:x.creato_da||''}));
     state.datiFiscali = {}; if(!dfi.error) (dfi.data || []).forEach(x=>{ state.datiFiscali[x.cliente_id] = x.dati || {}; });
@@ -7916,10 +7922,10 @@ function renderClientCalendarWeek(){
       const s = timeToMinutes(ev.start), e = timeToMinutes(ev.end);
       const top = (s - cs.startHour*60)*PX;
       const height = Math.max((e-s)*PX, 16);
-      const colorStyle = ev.colore ? `border-color:${ev.colore};background:${ev.colore}22;` : '';
+      const colorStyle = (ev.colore ? `border-color:${ev.colore};background:${ev.colore}22;` : '') + payStyle(ev);
       html += `<div class="cal-block tipo-${ev.tipo}" data-event-id="${ev.id}" style="top:${top}px;height:${height}px;${colorStyle}">
         <div${ev.colore ? ` style="color:${ev.colore};"` : ''}>${ev.titolo || tipoLabel(ev.tipo)}</div>
-        <div class="cb-time">${ev.start}–${ev.end}</div>
+        <div class="cb-time">${ev.start}–${ev.end}</div>${payTag(ev,true)}
       </div>`;
     });
     html += `</div>`;
@@ -7957,7 +7963,7 @@ function renderClientCalendarMonth(){
       <div class="cal-month-daynum">${d.getDate()}</div>
       ${visible.map(ev=>{
         const cc = ev.colore;
-        const style = cc ? `border-color:${cc};background:${cc}22;color:${cc};` : '';
+        const style = (cc ? `border-color:${cc};background:${cc}22;color:${cc};` : '') + payStyleMonth(ev);
         return `<div class="cal-month-event" data-event-id="${ev.id}" style="${style}" title="${ev.titolo||tipoLabel(ev.tipo)} · ${ev.start}–${ev.end}">${ev.start} ${ev.titolo||tipoLabel(ev.tipo)}</div>`;
       }).join('')}
       ${extra>0 ? `<div class="cal-month-more" data-goweek="${dateStr}">+${extra} altri</div>` : ''}
@@ -8048,6 +8054,11 @@ function apriDettaglioLezione(appuntamentoId){
     html += `<div class="ev-field"><div class="lbl" style="text-transform:uppercase;font-size:11px;color:var(--ink-mute);margin-bottom:4px;">Note della sessione</div>
       <div style="color:var(--ink-dim);font-size:13px;">${a.noteSessione}</div></div>`;
   }
+  if(payStato(a)){
+    const pg = payStato(a)==='pagato';
+    html += `<div class="ev-field"><div class="lbl" style="text-transform:uppercase;font-size:11px;color:var(--ink-mute);margin-bottom:4px;">Pagamento</div>
+      <button class="btn-small" id="btnPagaLezione" style="${pg?'border-color:#4CAF50;color:#4CAF50;':'border-color:#9aa0a8;'}">${pg ? '✓ Pagato · € '+payEur(a.importo) : 'Da pagare · € '+payEur(a.importo)+' — come pagare'}</button></div>`;
+  }
   if(scheda){
     // la scheda non si apre da sola cliccando l'allenamento: resta chiusa
     // finché non si preme "Visualizza scheda" (sola lettura)
@@ -8106,6 +8117,8 @@ function apriDettaglioLezione(appuntamentoId){
   }
   box.innerHTML = html;
   document.getElementById('lessonModal').classList.add('open');
+  const btnPaga = document.getElementById('btnPagaLezione');
+  if(btnPaga) btnPaga.onclick = ()=> payApriCliente(a.id);
   const btnVisSch = document.getElementById('btnVisualizzaScheda');
   if(btnVisSch) btnVisSch.onclick = ()=>{
     const bx = document.getElementById('lessonSchedaBox');
@@ -11342,11 +11355,11 @@ function renderCalendarMulti(){
       const top = (s - calStartMin())*PX;
       const height = Math.max((e-s)*PX, 16);
       const evClient = ev.clienteId ? state.clienti.find(c=>c.id===ev.clienteId) : null;
-      const colorStyle = ev.colore ? `border-color:${ev.colore};background:${ev.colore}22;` : '';
+      const colorStyle = (ev.colore ? `border-color:${ev.colore};background:${ev.colore}22;` : '') + payStyle(ev);
       html += `<div class="cal-block movable tipo-${ev.tipo}" data-event-id="${ev.id}" style="top:${top}px;height:${height}px;${colorStyle}${colLanes[ev.id]||''}">
         <div${ev.colore ? ` style="color:${ev.colore};"` : ''}>${escHtml(ev.titolo || tipoLabel(ev.tipo))}</div>
         ${evClient ? `<div class="cb-time">${escHtml(evClient.nome)}</div>` : ''}
-        <div class="cb-time">${ev.start}–${ev.end}</div>
+        <div class="cb-time">${ev.start}–${ev.end}</div>${payTag(ev,false)}
       </div>`;
     });
     html += `</div>`;
@@ -11522,11 +11535,11 @@ function renderCalendarWeek(){
       const evClient = ev.clienteId ? state.clienti.find(c=>c.id===ev.clienteId) : null;
       const evProfId = ev.professionistaId || (evClient ? clienteProfIds(evClient)[0] : null);
       const evProf = (canManageAll() && !state.calFilterProfId && evProfId) ? state.professionisti.find(p=>p.id===evProfId) : null;
-      const colorStyle = ev.colore ? `border-color:${ev.colore};background:${ev.colore}22;` : '';
+      const colorStyle = (ev.colore ? `border-color:${ev.colore};background:${ev.colore}22;` : '') + payStyle(ev);
       html += `<div class="cal-block movable tipo-${ev.tipo}" data-event-id="${ev.id}" style="top:${top}px;height:${height}px;${colorStyle}${dayLanes[ev.id]||''}">
         <div${ev.colore ? ` style="color:${ev.colore};"` : ''}>${ev.titolo || tipoLabel(ev.tipo)}</div>
         ${evClient ? `<div class="cb-time">${evClient.nome}${evProf?' · '+evProf.nome:''}</div>` : ''}
-        <div class="cb-time">${ev.start}–${ev.end}</div>
+        <div class="cb-time">${ev.start}–${ev.end}</div>${payTag(ev,false)}
       </div>`;
     });
     html += `</div>`;
@@ -11562,7 +11575,7 @@ function renderCalendarMonth(){
       <div class="cal-month-daynum">${d.getDate()}</div>
       ${visible.map(ev=>{
         const c = ev.colore;
-        const style = c ? `border-color:${c};background:${c}22;color:${c};` : '';
+        const style = (c ? `border-color:${c};background:${c}22;color:${c};` : '') + payStyleMonth(ev);
         return `<div class="cal-month-event" data-event-id="${ev.id}" style="${style}" title="${ev.titolo||tipoLabel(ev.tipo)} · ${ev.start}–${ev.end}">${ev.start} ${ev.titolo||tipoLabel(ev.tipo)}</div>`;
       }).join('')}
       ${extra>0 ? `<div class="cal-month-more" data-goweek="${dateStr}">+${extra} altri</div>` : ''}
@@ -11616,6 +11629,153 @@ function openEventEditor(data, isEdit){
   renderEventModal();
   document.getElementById('eventModal').classList.add('open');
 }
+
+// ================= PAGAMENTI PRESTAZIONI =================
+// Il costo si inserisce sull'appuntamento; la Segreteria spunta "pagato".
+// Grigio = da pagare, verde = pagato. Il paziente vede lo stato e, se da
+// pagare, gli estremi di pagamento (PayPal, Satispay, ...) o la segreteria.
+const PAG_MODI = ['In segreteria','PayPal','Satispay','Bonifico','Contanti','POS','Altro'];
+function payNum(v){ const n = parseFloat(String(v==null?'':v).replace(',','.')); return isNaN(n) ? null : n; }
+function payEur(n){ return Number(n||0).toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function payStato(ev){ return (ev && ev.importo!=null && ev.importo!=='' && +ev.importo>0) ? (ev.pagato ? 'pagato' : 'dovuto') : null; }
+function payStyle(ev){
+  const st = payStato(ev); if(!st) return '';
+  return st==='pagato'
+    ? 'border-color:#4CAF50;background:rgba(76,175,80,.22);'
+    : 'border-color:#8a8f98;background:rgba(138,143,152,.22);';
+}
+function payStyleMonth(ev){
+  const st = payStato(ev); if(!st) return '';
+  return st==='pagato' ? 'border-color:#4CAF50;background:rgba(76,175,80,.22);color:#4CAF50;' : 'border-color:#8a8f98;background:rgba(138,143,152,.22);color:#9aa0a8;';
+}
+function payTag(ev, forClient){
+  const st = payStato(ev); if(!st) return '';
+  const col = st==='pagato' ? '#4CAF50' : '#9aa0a8';
+  const txt = st==='pagato' ? '€ '+payEur(ev.importo)+' · pagato' : '€ '+payEur(ev.importo)+(forClient ? ' · da pagare' : ' · da incassare');
+  return `<div class="cb-time" style="color:${col};font-weight:600;">${txt}</div>`;
+}
+function payModalEnsure(){
+  let m = document.getElementById('payModal');
+  if(!m){
+    m = document.createElement('div'); m.className='modal-bg'; m.id='payModal';
+    m.innerHTML = '<div class="modal"><button class="modal-close" id="payModalClose">×</button><div id="payModalBody"></div></div>';
+    document.body.appendChild(m);
+    document.getElementById('payModalClose').onclick = ()=> m.classList.remove('open');
+    m.addEventListener('click', e=>{ if(e.target===m) m.classList.remove('open'); });
+  }
+  return m;
+}
+function payRefreshCalendars(){
+  try{ if(typeof renderCalendar==='function' && document.getElementById('calGrid')) renderCalendar(); }catch(ex){}
+  try{ if(document.getElementById('clientCalGrid')) renderClientCalendar(); }catch(ex){}
+}
+// vista paziente: estremi per pagare
+function payApriCliente(apptId){
+  const ev = state.appuntamenti.find(a=>a.id===apptId); if(!ev) return;
+  const m = payModalEnsure(); const body = document.getElementById('payModalBody');
+  const st = payStato(ev); if(!st) return;
+  const dt = ev.day.split('-').reverse().join('/');
+  if(st==='pagato'){
+    body.innerHTML = `<h3 style="margin-top:0;">Pagamento ricevuto ✓</h3>
+      <div style="color:var(--ink-dim);font-size:13.5px;line-height:1.5;">${escHtml(ev.titolo||tipoLabel(ev.tipo))} · ${dt}<br><b>€ ${payEur(ev.importo)}</b>${ev.pagatoModo ? ' · '+escHtml(ev.pagatoModo) : ''}${ev.pagatoIl ? ' · il '+ev.pagatoIl.split('-').reverse().join('/') : ''}</div>`;
+  } else {
+    const info = state.pagInfo || {metodi:[], nota:''};
+    const link = u=> /^https?:\/\//i.test(u||'') ? `<a class="btn-small" href="${escAttr(u)}" target="_blank" rel="noopener" style="display:inline-block;margin-top:6px;text-decoration:none;">Apri →</a>` : '';
+    body.innerHTML = `<h3 style="margin-top:0;">Da pagare: € ${payEur(ev.importo)}</h3>
+      <div style="color:var(--ink-dim);font-size:13px;margin-bottom:12px;">${escHtml(ev.titolo||tipoLabel(ev.tipo))} · ${dt}</div>
+      ${(info.metodi||[]).map(x=>`<div style="border:1px solid var(--line);border-radius:6px;padding:10px 12px;margin-bottom:8px;">
+        <b>${escHtml(x.nome||'')}</b>
+        <div style="white-space:pre-wrap;font-size:13px;color:var(--ink-dim);margin-top:4px;">${escHtml(x.dettagli||'')}</div>${link(x.link)}</div>`).join('')}
+      <div style="border:1px dashed var(--line);border-radius:6px;padding:10px 12px;font-size:13px;color:var(--ink-dim);">${escHtml(info.nota || 'Puoi anche pagare direttamente in segreteria.')}</div>
+      <div style="font-size:11.5px;color:var(--ink-mute);margin-top:10px;">Quando il pagamento viene registrato dalla segreteria, la prestazione diventa verde.</div>`;
+  }
+  m.classList.add('open');
+}
+// staff: blocco costo/pagato dentro il dettaglio evento
+function payStaffBlock(ev, container){
+  if(!ev.clienteId) return;
+  const manage = canManageAll();
+  const st = payStato(ev);
+  const html = `<div class="ev-field" id="payBlock"><label>Costo prestazione</label>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+      <input class="editable" id="payImporto" style="width:110px;" placeholder="€" value="${ev.importo!=null&&ev.importo!==''?escAttr(String(ev.importo).replace('.',',')):''}">
+      <button class="btn-small" id="payImportoSave">Salva costo</button>
+      ${st ? `<span class="fat-pill ${st==='pagato'?'pagata':''}">${st==='pagato'?'Pagato':'Da incassare'}</span>` : ''}
+    </div>
+    ${manage && st ? `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px;">
+      <label style="display:flex;gap:6px;align-items:center;font-size:13px;"><input type="checkbox" id="payChk" ${ev.pagato?'checked':''}> Pagato</label>
+      <select class="editable" id="payModo" style="max-width:170px;">${PAG_MODI.map(x=>`<option ${ (ev.pagatoModo||'In segreteria')===x?'selected':''}>${x}</option>`).join('')}</select>
+    </div>` : ''}
+  </div>`;
+  container.insertAdjacentHTML('beforeend', html);
+  const sv = document.getElementById('payImportoSave');
+  if(sv) sv.onclick = ()=>{
+    const v = payNum(document.getElementById('payImporto').value);
+    ev.importo = v; if(v==null || v<=0){ ev.pagato = false; ev.pagatoIl = null; ev.pagatoModo = ''; }
+    db.saveAppuntamento(ev); payRefreshCalendars(); openEventInfo(ev);
+  };
+  const chk = document.getElementById('payChk');
+  if(chk) chk.onchange = ()=>{
+    ev.pagato = chk.checked; ev.pagatoModo = document.getElementById('payModo').value;
+    ev.pagatoIl = chk.checked ? fmtDateISO(new Date()) : null;
+    db.saveAppuntamento(ev); payRefreshCalendars(); openEventInfo(ev);
+  };
+  const md = document.getElementById('payModo');
+  if(md) md.onchange = ()=>{ if(ev.pagato){ ev.pagatoModo = md.value; db.saveAppuntamento(ev); } };
+}
+// segreteria: elenco prestazioni da incassare (dentro Fatturazione)
+function payRenderIncassi(){
+  const box = document.getElementById('payIncassiBox'); if(!box) return;
+  const q = (state.payQ||'');
+  const lista = state.appuntamenti.filter(a=>payStato(a)==='dovuto' && a.clienteId).filter(a=>{
+    if(!q) return true; const c = state.clienti.find(x=>x.id===a.clienteId); return c && pazMatch(c, q);
+  }).sort((a,b)=> (a.day+a.start).localeCompare(b.day+b.start));
+  const tot = lista.reduce((t,a)=>t+(+a.importo||0),0);
+  box.innerHTML = `<div class="fat-incassi" style="border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin-bottom:14px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+      <b>Prestazioni da incassare${lista.length ? ' ('+lista.length+' · € '+payEur(tot)+')' : ''}</b>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;"><input class="editable" id="payQ" placeholder="Cerca cliente…" value="${escAttr(q)}" style="max-width:200px;"><button class="btn-small" id="payInfoBtn">Estremi di pagamento</button></div>
+    </div>
+    ${lista.length ? `<table class="fat-table" style="margin-top:10px;"><thead><tr><th>Data</th><th>Cliente</th><th>Prestazione</th><th class="n">Importo</th><th>Modalità</th><th>Incassato</th></tr></thead><tbody>
+      ${lista.map(a=>{ const c = state.clienti.find(x=>x.id===a.clienteId);
+        return `<tr data-pay="${a.id}"><td>${a.day.split('-').reverse().join('/')}</td><td>${escHtml(c?c.nome:'')}</td><td>${escHtml(a.titolo||tipoLabel(a.tipo))}</td><td class="n">€ ${payEur(a.importo)}</td>
+        <td><select class="editable" data-paymodo style="max-width:140px;">${PAG_MODI.map(x=>`<option>${x}</option>`).join('')}</select></td>
+        <td><input type="checkbox" data-paychk title="Segna come pagato"></td></tr>`; }).join('')}</tbody></table>`
+      : '<div class="val-empty" style="margin-top:8px;">Nessuna prestazione in attesa di pagamento.</div>'}
+  </div>`;
+  box.querySelectorAll('[data-paychk]').forEach(ch=> ch.onchange = ()=>{
+    const tr = ch.closest('tr'); const a = state.appuntamenti.find(x=>x.id===tr.dataset.pay); if(!a) return;
+    a.pagato = true; a.pagatoModo = tr.querySelector('[data-paymodo]').value; a.pagatoIl = fmtDateISO(new Date());
+    db.saveAppuntamento(a); payRenderIncassi(); payRefreshCalendars();
+  });
+  const qi = document.getElementById('payQ');
+  if(qi) qi.oninput = ()=>{ state.payQ = qi.value; payRenderIncassi(); const n = document.getElementById('payQ'); if(n){ n.focus(); n.setSelectionRange(n.value.length,n.value.length); } };
+  document.getElementById('payInfoBtn').onclick = payApriInfo;
+}
+function payApriInfo(){
+  const m = payModalEnsure(); const body = document.getElementById('payModalBody');
+  const info = state.pagInfo = state.pagInfo || {metodi:[], nota:''};
+  const draw = ()=>{
+    body.innerHTML = `<h3 style="margin-top:0;">Estremi di pagamento</h3>
+      <div style="font-size:12.5px;color:var(--ink-mute);margin-bottom:10px;">Il paziente li vede cliccando su una prestazione “da pagare”.</div>
+      ${info.metodi.map((x,i)=>`<div style="border:1px solid var(--line);border-radius:6px;padding:10px;margin-bottom:8px;" data-m="${i}">
+        <div style="display:flex;gap:8px;"><input class="editable" data-k="nome" placeholder="es. PayPal, Satispay, Bonifico" value="${escAttr(x.nome||'')}"><button class="btn-small danger" data-delm="${i}">×</button></div>
+        <textarea class="editable" data-k="dettagli" rows="3" style="margin-top:6px;width:100%;" placeholder="Istruzioni: IBAN, intestatario, causale, numero…">${escHtml(x.dettagli||'')}</textarea>
+        <input class="editable" data-k="link" style="margin-top:6px;" placeholder="Link di pagamento (opzionale, https://…)" value="${escAttr(x.link||'')}"></div>`).join('')}
+      <button class="btn-small" id="payAddM">+ Aggiungi metodo</button>
+      <div class="ev-field" style="margin-top:12px;"><label>Messaggio per il pagamento in segreteria</label><input class="editable" id="payNota" value="${escAttr(info.nota||'')}" placeholder="Puoi anche pagare direttamente in segreteria."></div>
+      <div style="margin-top:12px;"><button class="btn-gold" id="paySaveInfo">Salva</button></div>`;
+    body.querySelectorAll('[data-m]').forEach(row=> row.querySelectorAll('[data-k]').forEach(inp=> inp.oninput = ()=>{ info.metodi[+row.dataset.m][inp.dataset.k] = inp.value; }));
+    body.querySelectorAll('[data-delm]').forEach(b=> b.onclick = ()=>{ info.metodi.splice(+b.dataset.delm,1); draw(); });
+    document.getElementById('payAddM').onclick = ()=>{ info.metodi.push({nome:'',dettagli:'',link:''}); draw(); };
+    document.getElementById('paySaveInfo').onclick = async ()=>{
+      info.nota = document.getElementById('payNota').value;
+      const ok = await db.savePagInfo(info); if(ok!==false) m.classList.remove('open');
+    };
+  };
+  draw(); m.classList.add('open');
+}
+
 function openEventInfo(ev){
   const c = ev.clienteId ? state.clienti.find(x=>x.id===ev.clienteId) : null;
   const pid = ev.professionistaId || (c ? clienteProfIds(c)[0] : null);
@@ -11648,6 +11808,7 @@ function openEventInfo(ev){
       fattApriEditor(null, ev.clienteId, {data: ev.day, dati:{appuntamentoId: ev.id, ...(pid?{profId:pid}:{}), righe:[{descr:l.descrizione, qta:1, prezzo:+l.prezzo||0, aliquota:+l.aliquota||0, natura:l.natura||'N4'}]}});
     };
   }catch(ex){ console.error('evInfo fattura', ex); } }
+  try{ payStaffBlock(ev, document.getElementById('eventInfoContent')); }catch(ex){ console.error('evInfo pagamento', ex); }
   try{ pkSedutaDaAppuntamento(ev, document.getElementById('eventInfoContent')); }catch(ex){ console.error('evInfo pacchetto', ex); }
   document.getElementById('eventInfoModal').classList.add('open');
 }
@@ -11728,6 +11889,7 @@ function renderEventModal(){
       </select>
     </div>
     <div class="ev-field"><label>Note sessione (post-lezione)</label><input class="editable" id="evNoteSessione" value="${ed.noteSessione||''}" placeholder="es. buona tenuta sul carico, dolore lieve al ginocchio"></div>
+    <div class="ev-field"><label>Costo prestazione (€, opzionale)</label><input class="editable" id="evImporto" style="max-width:140px;" value="${ed.importo!=null&&ed.importo!==''?escAttr(String(ed.importo).replace('.',',')):''}" placeholder="es. 60"></div>
     <div class="ev-field"><label>Operatore (opzionale)</label><input class="editable" id="evOperatore" value="${ed.operatore||''}" placeholder="es. Ale"></div>`;
 
     if(ed.tipo==='retest'){
@@ -11895,6 +12057,7 @@ function saveEventEditor(){
   ed.schedaId = schedaSel ? schedaSel.value : '';
   ed.noteSessione = noteSel ? noteSel.value : '';
   ed.operatore = opSel ? opSel.value : '';
+  { const impEl = document.getElementById('evImporto'); if(impEl){ const v = payNum(impEl.value); ed.importo = v; if(v==null||v<=0){ ed.pagato=false; ed.pagatoIl=null; ed.pagatoModo=''; } } }
   if(!ed.day || !ed.start || !ed.end || ed.end<=ed.start){
     alert('Controlla data e orari: l\'orario di fine deve essere dopo quello di inizio.');
     return;
@@ -12258,6 +12421,7 @@ Object.assign(db, {
   async saveListino(l){ if(!dbEnabled || !sb) return; const {error} = await sb.from('listino_prestazioni').upsert({id:l.id, descrizione:l.descrizione, prezzo:l.prezzo, aliquota:l.aliquota, natura:l.natura||null, attivo:true}); if(error) console.error('Supabase saveListino', error); },
   async deleteListino(id){ if(!dbEnabled || !sb) return; const {error} = await sb.from('listino_prestazioni').delete().eq('id',id); if(error) console.error('Supabase deleteListino', error); },
   async saveDatiFiscali(cid, dati){ if(!dbEnabled || !sb) return; const {error} = await sb.from('dati_fiscali_clienti').upsert({cliente_id:cid, dati}); if(error) console.error('Supabase saveDatiFiscali', error); },
+  async savePagInfo(info){ if(!dbEnabled || !sb) return true; const {error} = await sb.from('pagamento_info').upsert({id:1, metodi:info.metodi||[], nota:info.nota||''}); if(error){ console.error('Supabase savePagInfo', error); alert('Salvataggio non riuscito: esegui prima il blocco SQL PAGAMENTI su Supabase.'); return false; } return true; },
   async saveFattImp(dati){ if(!dbEnabled || !sb) return true; const {error} = await sb.from('fatturazione_impostazioni').upsert({id:1, dati}); if(error){ console.error('Supabase saveFattImp', error); return false; } return true; }
 });
 
@@ -12283,6 +12447,7 @@ function renderFatturazione(){
   const daInc = r2(emesse.filter(f=>fattSegno(f)>0 && !(f.dati.nc||[]).length).reduce((s,f)=>s+Math.max(0,fattCalc(f.dati).totale-fattPagato(f)),0));
   const nSdi = state.fatture.filter(f=>f.stato==='emessa' && ((f.dati.sdi||{}).stato||'pronto')==='pronto').length;
   box.innerHTML = `
+    <div id="payIncassiBox"></div>
     <div class="fat-toolbar">
       <button class="btn-gold" id="fattNew">+ Nuova fattura</button>
       <button class="btn-ghost" id="fattListinoBtn">Listino prestazioni</button>
@@ -12308,6 +12473,7 @@ function renderFatturazione(){
     </tbody></table></div>`;
   const rerender = ()=> renderFatturazione();
   document.getElementById('fattNew').onclick = ()=> fattApriEditor(null);
+  payRenderIncassi();
   document.getElementById('fattListinoBtn').onclick = fattApriListino;
   document.getElementById('fattImpBtn').onclick = fattApriImp;
   document.getElementById('fattCsvBtn').onclick = ()=> fattCsv(list);
