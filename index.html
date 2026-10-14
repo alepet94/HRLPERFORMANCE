@@ -94,6 +94,26 @@ a{color:var(--gold);}
 .oggi-item-act{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;}
 .oggi-more{font-size:12px;color:var(--ink-mute);padding:6px 0;}
 
+
+/* ---------- lista clienti: filtri e menu compatti ---------- */
+.cli-menu-wrap{position:relative;}
+.cli-pop{position:absolute;top:calc(100% + 6px);left:0;z-index:60;min-width:260px;background:var(--navy-850);border:1px solid var(--line);border-radius:10px;padding:8px;box-shadow:0 10px 30px rgba(0,0,0,.35);max-height:70vh;overflow:auto;}
+.cli-pop-right{left:auto;right:0;min-width:200px;display:flex;flex-direction:column;gap:2px;}
+.cli-pop-right .btn-ghost{width:100%;justify-content:flex-start;border:0;border-radius:6px;text-align:left;}
+.cli-pop-t{font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-mute);padding:8px 10px 4px;}
+.cli-pop-row{display:flex;justify-content:space-between;gap:16px;padding:7px 10px;border-radius:6px;font-size:13px;color:var(--ink-dim);cursor:pointer;}
+.cli-pop-row:hover{background:var(--line-soft, rgba(255,255,255,.05));}
+.cli-pop-row.on{color:var(--ink);font-weight:600;background:var(--line-soft, rgba(255,255,255,.06));}
+.cli-pop-row .n{color:var(--ink-mute);font-weight:400;font-size:12px;}
+.cli-attivi{display:none;gap:8px;flex-wrap:wrap;margin:-8px 0 12px;}
+.cli-fchip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:20px;padding:4px 6px 4px 12px;font-size:12px;color:var(--ink-dim);}
+.cli-fchip button{background:none;border:0;color:var(--ink-mute);cursor:pointer;font-size:14px;line-height:1;padding:0 4px;}
+.cli-count{font-size:12px;color:var(--ink-mute);margin:0 0 10px;}
+.cli-more{grid-column:1/-1;text-align:center;padding:10px 0;}
+.avv-chip.warn{color:var(--ink-dim);}
+.cli-menu-wrap > .btn-ghost{border-color:var(--line);color:var(--ink-dim);white-space:nowrap;}
+#btnNuovoCliente{white-space:nowrap;}
+
 /* ---------- auth ---------- */
 body.client-auth-mode #btnOggi,
 body.client-auth-mode #btnClienti,
@@ -831,7 +851,7 @@ header.top{
 .cli-edit{position:absolute;top:10px;background:none;border:none;color:var(--ink-mute);font-size:17px;cursor:pointer;line-height:1;padding:2px 4px;}
 .cli-edit:hover{color:var(--gold);}
 .cli-card .cli-name{font-family:var(--serif);font-size:16px;color:var(--ink);margin-bottom:6px;padding-right:16px;}
-.cli-card .cli-status{font-size:12px;color:var(--gold-bright);margin-bottom:4px;}
+.cli-card .cli-status{font-size:12px;color:var(--ink-dim);margin-bottom:4px;}
 .cli-card .cli-status.empty{color:var(--ink-mute);}
 .cli-card .cli-meta{font-size:11.5px;color:var(--ink-mute);}
 
@@ -1850,7 +1870,7 @@ body[data-theme="light"] .paz-lk-list{background:#fff;border-color:#ccc;}
 .fat-tot .grand b{font-size:20px;color:var(--gold-bright);}
 .fat-pg{display:grid;grid-template-columns:110px 1fr auto 34px;gap:8px;align-items:center;padding:4px 0;border-bottom:1px solid var(--line-soft);}
 @media(max-width:700px){.fat-rg-head{display:none}.fat-rg{grid-template-columns:1fr 1fr}}
-.avv-chip.warn:not(.active){color:#E0776A;border-color:rgba(224,119,106,.5);}
+.avv-chip.warn:not(.active){color:var(--ink-dim);}
 </style>
 </head>
 <body>
@@ -1896,16 +1916,19 @@ body[data-theme="light"] .paz-lk-list{background:#fff;border-color:#ccc;}
     <div class="cli-header-actions">
       <select class="editable" id="cliFilterProf" style="display:none;max-width:220px;"></select>
       <input class="editable" id="cliSearchInput" placeholder="Cerca cliente: nome, telefono o email…">
-      <button class="btn-ghost" id="btnTeam" style="display:none;">Team</button>
-      <button class="btn-ghost" id="btnSpazi" style="display:none;">Spazi comuni</button>
-      <button class="btn-ghost" id="btnNuovoProfessionista" style="display:none;">+ Nuovo professionista</button>
-      <button class="btn-ghost" id="btnCestino" style="display:none;" title="Clienti eliminati, recuperabili">🗑 Cestino</button>
-      <button class="btn-ghost" id="btnImportCli" style="display:none;">Importa CSV</button>
+      <div class="cli-menu-wrap"><button class="btn-ghost" id="btnCliFiltri">Filtri ▾</button><div class="cli-pop" id="cliFiltriPop" style="display:none;"></div></div>
+      <div class="cli-menu-wrap"><button class="btn-ghost" id="btnCliAltro" title="Altre azioni" style="display:none;">⋯</button><div class="cli-pop cli-pop-right" id="cliAltroMenu" style="display:none;">
+        <button class="btn-ghost" id="btnTeam" style="display:none;">Team</button>
+        <button class="btn-ghost" id="btnSpazi" style="display:none;">Spazi comuni</button>
+        <button class="btn-ghost" id="btnNuovoProfessionista" style="display:none;">+ Nuovo professionista</button>
+        <button class="btn-ghost" id="btnCestino" style="display:none;" title="Clienti eliminati, recuperabili">🗑 Cestino</button>
+        <button class="btn-ghost" id="btnImportCli" style="display:none;">Importa CSV</button>
+      </div></div>
       <button class="btn-gold" id="btnNuovoCliente">+ Nuovo cliente</button>
     </div>
   </div>
-  <div id="cliCatChips" class="cal-mode-toggle" style="margin:0 0 10px;flex-wrap:wrap;"></div>
-  <div id="cliAvvChips" class="cal-mode-toggle" style="margin:0 0 14px;flex-wrap:wrap;"></div>
+  <div class="cli-attivi" id="cliFiltriAttivi"></div>
+  <div class="cli-count" id="cliCount"></div>
   <div class="cli-grid" id="cliGrid"></div>
 </div>
 
@@ -9756,10 +9779,64 @@ function avvChipsHtml(attivo, cont){
 }
 function avvAgendaHtml(c, ag){
   const o = ag[c.id] || {}, f = d=>d ? d.split('-').reverse().slice(0,2).join('/') : null;
-  const bad = t=>`<span style="color:#E0776A;">${t}</span>`;
+  const bad = t=>`<span style="opacity:.6;">${t}</span>`;
   const pk = pkDiCliente(c.id,true)[0];
-  return `<div style="font-size:12px;color:var(--ink-mute);margin-top:6px;">Prossimo: ${f(o.prossimo) || bad('nessuno')} · Retest: ${f(o.retest) || bad('nessuno')}${o.ultimo?' · Ultimo: '+f(o.ultimo):''}</div>${pk ? `<div style="font-size:12px;margin-top:3px;color:${pkStato(pk)==='attivo'?'var(--ink-mute)':'#E0776A'};">${escHtml(pk.nome)}: ${escHtml(pkDescr(pk))}${pkStato(pk)!=='attivo'?' ('+PK_STATO_LBL[pkStato(pk)].toLowerCase()+')':''}</div>` : ''}${csMancanti(c).length ? `<div style="font-size:12px;margin-top:3px;color:#E0776A;">Consensi privacy mancanti</div>` : ''}`;
+  // mostra solo ciò che c'è: niente "nessuno" ripetuto su migliaia di schede
+  const parti = [o.prossimo ? 'Prossimo: '+f(o.prossimo) : '', o.retest ? 'Retest: '+f(o.retest) : '', o.ultimo ? 'Ultimo: '+f(o.ultimo) : ''].filter(Boolean);
+  return `${parti.length ? `<div style="font-size:12px;color:var(--ink-mute);margin-top:6px;">${parti.join(' · ')}</div>` : ''}${pk ? `<div style="font-size:12px;margin-top:3px;color:var(--ink-mute);">${escHtml(pk.nome)}: ${escHtml(pkDescr(pk))}${pkStato(pk)!=='attivo'?' ('+PK_STATO_LBL[pkStato(pk)].toLowerCase()+')':''}</div>` : ''}`;
 }
+// ---- pannello "Filtri" della lista clienti (un solo selettore al posto delle due file di bottoni)
+function cliRenderFiltriPop(baseList, ag, f){
+  const pop = document.getElementById('cliFiltriPop');
+  if(!pop) return;
+  const catBase = baseList;
+  const cc = catConteggi(catBase);
+  const lstCat = baseList.filter(c=>catMatch(c, state.cliFilterCat||''));
+  const ac = avvConteggi(lstCat, ag);
+  const cats = [['','Tutti'],...CATEGORIE.map(c=>[c.id,c.name]),['none','Da assegnare']];
+  const avv = AVV_FILTRI.filter(([k])=> !(k==='senzaPiano' && isSegreteriaOnly()));
+  const row = (attr,v,l,n,on)=>`<div class="cli-pop-row ${on?'on':''}" data-${attr}="${escAttr(v)}"><span>${escHtml(l)}</span><span class="n">${n!=null ? n.toLocaleString('it-IT') : ''}</span></div>`;
+  pop.innerHTML = `<div class="cli-pop-t">Categoria</div>${cats.map(([v,l])=>row('fcat',v,l,cc[v],(state.cliFilterCat||'')===v)).join('')}
+    <div class="cli-pop-t">Da controllare</div>${row('favv','','Tutti',null,!state.cliFilterAvv)}${avv.map(([k,l])=>row('favv',k,l,ac[k],state.cliFilterAvv===k)).join('')}`;
+  pop.querySelectorAll('[data-fcat]').forEach(r=> r.onclick = ()=>{ state.cliFilterCat = r.dataset.fcat; renderClientiList(document.getElementById('cliSearchInput').value); });
+  pop.querySelectorAll('[data-favv]').forEach(r=> r.onclick = ()=>{ state.cliFilterAvv = r.dataset.favv; renderClientiList(document.getElementById('cliSearchInput').value); });
+}
+function cliRenderFiltriAttivi(){
+  const box = document.getElementById('cliFiltriAttivi'), btn = document.getElementById('btnCliFiltri');
+  if(!box) return;
+  const out = [];
+  if(state.cliFilterCat){ const c = CATEGORIE.find(x=>x.id===state.cliFilterCat); out.push(['cat', state.cliFilterCat==='none' ? 'Da assegnare' : (c ? c.name : '')]); }
+  if(state.cliFilterAvv){ const a = AVV_FILTRI.find(x=>x[0]===state.cliFilterAvv); if(a) out.push(['avv', a[1]]); }
+  box.innerHTML = out.map(([k,l])=>`<span class="cli-fchip">${escHtml(l)}<button data-fclear="${k}" title="Togli filtro">×</button></span>`).join('');
+  box.style.display = out.length ? 'flex' : 'none';
+  box.querySelectorAll('[data-fclear]').forEach(b=> b.onclick = ()=>{ if(b.dataset.fclear==='cat') state.cliFilterCat = ''; else state.cliFilterAvv = ''; renderClientiList(document.getElementById('cliSearchInput').value); });
+  if(btn) btn.textContent = out.length ? `Filtri (${out.length}) ▾` : 'Filtri ▾';
+}
+function cliChiudiPopup(){
+  state.cliFiltriOpen = false;
+  const p1 = document.getElementById('cliFiltriPop'), p2 = document.getElementById('cliAltroMenu');
+  if(p1) p1.style.display = 'none'; if(p2) p2.style.display = 'none';
+}
+document.addEventListener('click', e=>{
+  if(!e.target.isConnected || e.target.closest('.cli-menu-wrap')) return;
+  cliChiudiPopup();
+});
+document.getElementById('btnCliFiltri').onclick = ()=>{
+  const was = !!state.cliFiltriOpen;
+  cliChiudiPopup();
+  if(!was){
+    state.cliFiltriOpen = true;
+    document.getElementById('cliFiltriPop').style.display = 'block';
+    renderClientiList(document.getElementById('cliSearchInput').value);
+  }
+};
+document.getElementById('btnCliAltro').onclick = ()=>{
+  const m = document.getElementById('cliAltroMenu'), was = m.style.display==='block';
+  cliChiudiPopup();
+  if(!was) m.style.display = 'block';
+};
+document.getElementById('cliAltroMenu').addEventListener('click', e=>{ if(e.target.closest('button')) cliChiudiPopup(); });
+
 function renderClientiList(filter){
   renderCliFilterProf();
   try{ renderAvvisiBadge(); }catch(ex){}
@@ -9778,19 +9855,15 @@ function renderClientiList(filter){
   if(canManageAll() && state.calFilterProfId){
     list = list.filter(c=>clienteHasProf(c,state.calFilterProfId));
   }
-  const chipBox = document.getElementById('cliCatChips');
-  if(chipBox){
-    chipBox.innerHTML = catChipsHtml(state.cliFilterCat||'', catConteggi(list));
-    chipBox.querySelectorAll('[data-catchip]').forEach(ch=> ch.onclick = ()=>{ state.cliFilterCat = ch.dataset.catchip; renderClientiList(document.getElementById('cliSearchInput').value); });
-  }
-  list = list.filter(c=>catMatch(c, state.cliFilterCat||''));
   const ag = cliAgenda();
-  const avvBox = document.getElementById('cliAvvChips');
-  if(avvBox){
-    avvBox.innerHTML = avvChipsHtml(state.cliFilterAvv||'', avvConteggi(list, ag));
-    avvBox.querySelectorAll('[data-avv]').forEach(ch=> ch.onclick = ()=>{ state.cliFilterAvv = (state.cliFilterAvv===ch.dataset.avv) ? '' : ch.dataset.avv; renderClientiList(document.getElementById('cliSearchInput').value); });
-  }
+  const popOpen = !!state.cliFiltriOpen;
+  list = list.filter(c=>catMatch(c, state.cliFilterCat||''));
+  // il pannello Filtri calcola i conteggi solo quando è aperto (con migliaia di clienti)
+  if(popOpen) cliRenderFiltriPop(state.clienti.filter(c=>!c.eliminato && (!f || pazMatch(c,f)) && !(canManageAll() && state.calFilterProfId && !clienteHasProf(c,state.calFilterProfId))), ag, f);
   list = list.filter(c=>avvMatch(c, ag, state.cliFilterAvv||''));
+  cliRenderFiltriAttivi();
+  const altro = document.getElementById('cliAltroMenu'), btnAltro = document.getElementById('btnCliAltro');
+  if(altro && btnAltro){ btnAltro.style.display = [...altro.children].some(b=>b.style.display!=='none') ? 'inline-flex' : 'none'; }
   if(list.length===0){
     box.innerHTML = `<div class="cli-empty-state">${state.clienti.filter(c=>!c.eliminato).length===0
       ? 'Nessun cliente ancora. Usa "+ Nuovo cliente" per iniziare.'
@@ -9799,6 +9872,13 @@ function renderClientiList(filter){
   }
   const showProf = canManageAll() && !state.calFilterProfId;
   const isAdmin = !!(state.professionista && state.professionista.ruolo==='admin');
+  // con migliaia di clienti si mostrano a blocchi: i filtri/la ricerca azzerano il blocco
+  const limKey = [f, state.cliFilterCat||'', state.cliFilterAvv||'', state.calFilterProfId||''].join('|');
+  if(state.cliLimKey!==limKey){ state.cliLimKey = limKey; state.cliLimit = 60; }
+  const totale = list.length;
+  const cnt = document.getElementById('cliCount');
+  if(cnt) cnt.textContent = totale.toLocaleString('it-IT') + (totale===1 ? ' cliente' : ' clienti');
+  list = list.slice(0, state.cliLimit||60);
   box.innerHTML = list.map(c=>{
     // se la categoria e il profilo coincidono (es. "Persona normale") la riga sotto
     // mostra solo il pathway, per non ripetere due volte la stessa etichetta
@@ -9810,13 +9890,15 @@ function renderClientiList(filter){
       ${canManageAll() ? `<button class="cli-edit" data-edit-anag="${c.id}" title="Modifica anagrafica" style="right:${isAdmin?40:12}px;">✎</button>` : ''}
       ${isAdmin ? `<button class="cli-del" data-del-cliente="${c.id}" title="Elimina cliente">×</button>` : ''}
       <div class="cli-name">${c.nome}</div>
-      <div style="font-size:11.5px;color:${c.categoria?'var(--gold-bright)':'var(--ink-mute)'};margin:-2px 0 4px;">${c.categoria ? escHtml(catLabel(c.categoria)) : 'Categoria da assegnare'}</div>
+      <div style="font-size:11.5px;color:var(--ink-mute);margin:-2px 0 4px;">${c.categoria ? escHtml(catLabel(c.categoria)) : 'Categoria da assegnare'}</div>
 
-      <div class="cli-status ${summary?'':'empty'}">${summary || 'Pathway da assegnare: apri la scheda per iniziare'}</div>
+      <div class="cli-status ${summary?'':'empty'}">${summary || 'Pathway da assegnare'}</div>
       <div class="cli-meta">${clienteEtaAnni(c) ? clienteEtaAnni(c) + ' anni · ' : ''}${schedeCount} sched${schedeCount===1?'a':'e'}${profNames ? ' · '+profNames : ''}</div>
       ${avvAgendaHtml(c, ag)}
     </div>`;
-  }).join('');
+  }).join('') + (totale>list.length ? `<div class="cli-more"><button class="btn-ghost" id="btnCliMore">Mostra altri (${(totale-list.length).toLocaleString('it-IT')})</button></div>` : '');
+  const bMore = document.getElementById('btnCliMore');
+  if(bMore) bMore.onclick = ()=>{ state.cliLimit = (state.cliLimit||60) + 120; renderClientiList(document.getElementById('cliSearchInput').value); };
 
   box.querySelectorAll('[data-open-cliente]').forEach(card=>{
     card.onclick = (e)=>{
@@ -9893,7 +9975,8 @@ document.getElementById('btnClienti').onclick = ()=>{
   showView('clienti');
   renderClientiList(document.getElementById('cliSearchInput').value);
 };
-document.getElementById('cliSearchInput').oninput = (e)=> renderClientiList(e.target.value);
+let _cliSrchT = null;
+document.getElementById('cliSearchInput').oninput = (e)=>{ clearTimeout(_cliSrchT); const v = e.target.value; _cliSrchT = setTimeout(()=> renderClientiList(v), 180); };
 
 // ===== Import pazienti da CSV + controllo duplicati =====
 function normTel(t){ return String(t||'').replace(/\D+/g,'').slice(-9); }
