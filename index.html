@@ -8076,8 +8076,8 @@ function renderClientCalendarWeek(){
   document.getElementById('clientCalRangeLabel').textContent =
     `${weekDates[0].getDate()}/${weekDates[0].getMonth()+1} – ${weekDates[6].getDate()}/${weekDates[6].getMonth()+1}/${weekDates[6].getFullYear()}`;
 
-  const PX = 1.2;
   const totalMin = (cs.endHour - cs.startHour)*60;
+  const PX = calFitPX('clientCalGrid', totalMin);
   const gridHeight = Math.max(totalMin*PX, 100);
 
   const todayStrClient = fmtDateISO(new Date());
@@ -8170,7 +8170,7 @@ document.getElementById('clientCalGrid').addEventListener('click', (e)=>{
   if(col && !col.classList.contains('off')){
     const rect = col.getBoundingClientRect();
     const y = e.clientY - rect.top;
-    const PX = 1.2;
+    const PX = CAL_PX;
     const cs = state.calSettings;
     let startMin = cs.startHour*60 + Math.round((y/PX)/15)*15;
     startMin = Math.max(cs.startHour*60, Math.min(startMin, cs.endHour*60 - 30));
@@ -11371,6 +11371,30 @@ function calFasciaGet(){
 function calStartMin(){ return calFasciaGet()==='pomeriggio' ? 780 : 390; } // 'giorno' = tutta la giornata 6:30–19:00
 function calEndMin(){ return calFasciaGet()==='mattina' ? 780 : 1140; }
 function calClamp(s,e){ const a=Math.max(s,calStartMin()), b=Math.min(e,calEndMin()); return b>a ? [a,b] : null; }
+// altezza del calendario adattata allo schermo: tutta la giornata (mattina e
+// pomeriggio) deve stare in una schermata senza scorrere; sotto un minimo di
+// leggibilità la pagina scorre normalmente
+let CAL_PX = 1.2;
+function calFitPX(gridId, totalMin){
+  const el = document.getElementById(gridId);
+  let top = el ? el.getBoundingClientRect().top + window.scrollY : 0;
+  if(!(top>60)) top = 260;
+  const avail = window.innerHeight - top - 70;   // 70 = riga dei giorni + margine
+  CAL_PX = Math.max(0.5, Math.min(1.3, avail / Math.max(totalMin, 60)));
+  return CAL_PX;
+}
+let _calResizeT = null;
+window.addEventListener('resize', ()=>{
+  clearTimeout(_calResizeT);
+  _calResizeT = setTimeout(()=>{
+    try{
+      const ca = document.getElementById('calendarArea');
+      if(ca && ca.style.display==='block') renderCalendar();
+      else { const cc = document.getElementById('clientCalWrap'); if(cc && cc.style.display!=='none' && typeof renderClientCalendar==='function' && activeClient()) renderClientCalendar(); }
+    }catch(ex){}
+  }, 250);
+});
+
 function calHourLabels(PX){
   let h = '';
   for(let m=Math.ceil(calStartMin()/30)*30; m<=calEndMin(); m+=30){
@@ -11824,8 +11848,8 @@ function renderCalendarMulti(){
 
   renderCalMultiVisDropdown();
 
-  const PX = 1.2;
   const totalMin = (calEndMin() - calStartMin());
+  const PX = calFitPX('calMultiGrid', totalMin);
   const gridHeight = Math.max(totalMin*PX, 100);
   const grid = document.getElementById('calMultiGrid');
   if(!cols.length){
@@ -12002,8 +12026,8 @@ function renderCalendarWeek(){
     ? `<span class="retest-badge">Retest consigliato per ${activeC.nome} entro il ${retestDate.getDate()}/${retestDate.getMonth()+1}/${retestDate.getFullYear()} — in base alla review di "${activeC.pathway}"</span>`
     : '';
 
-  const PX = 1.2;
   const totalMin = (calEndMin() - calStartMin());
+  const PX = calFitPX('calGrid', totalMin);
   const gridHeight = Math.max(totalMin*PX, 100);
 
   const todayStrOp = fmtDateISO(new Date());
@@ -13932,7 +13956,7 @@ document.getElementById('calGrid').addEventListener('click', (e)=>{
     const wStart = parseInt(freeEl.dataset.freeStart,10);
     const wEnd = parseInt(freeEl.dataset.freeEnd,10);
     const rect = freeEl.getBoundingClientRect();
-    const PX = 1.2;
+    const PX = CAL_PX;
     const yMin = Math.round(((e.clientY - rect.top)/PX)/15)*15;
     let start = Math.max(wStart, Math.min(wStart + yMin, wEnd - 15));
     const end = Math.min(start + 60, wEnd);
@@ -13950,7 +13974,7 @@ document.getElementById('calGrid').addEventListener('click', (e)=>{
   if(col && !col.classList.contains('off')){
     const rect = col.getBoundingClientRect();
     const y = e.clientY - rect.top;
-    const PX = 1.2;
+    const PX = CAL_PX;
     const cs = state.calSettings;
     let startMin = calStartMin() + Math.round((y/PX)/15)*15;
     startMin = Math.max(calStartMin(), Math.min(startMin, calEndMin() - 30));
@@ -13971,7 +13995,7 @@ document.getElementById('calGrid').addEventListener('mousedown', (e)=>{
   const col = e.target.closest('.cal-day-col');
   if(!col || col.classList.contains('off')) return;
   const rect = col.getBoundingClientRect();
-  const PX = 1.2;
+  const PX = CAL_PX;
   const cs = state.calSettings;
   const yStart = e.clientY - rect.top;
   let startMin = calStartMin() + Math.round((yStart/PX)/15)*15;
@@ -13984,7 +14008,7 @@ document.addEventListener('mousemove', (e)=>{
   if(dy < 6 && !__calDrag.moved) return;
   __calDrag.moved = true;
   const rect = __calDrag.col.getBoundingClientRect();
-  const PX = 1.2;
+  const PX = CAL_PX;
   const cs = state.calSettings;
   const y = e.clientY - rect.top;
   let curMin = calStartMin() + Math.round((y/PX)/15)*15;
@@ -14157,7 +14181,7 @@ document.addEventListener('mousemove', (e)=>{
     __mv.el.classList.add('moving');
     __mv.tip = document.createElement('div'); __mv.tip.className = 'cal-mv-tip'; document.body.appendChild(__mv.tip);
   }
-  const PX = 1.2;
+  const PX = CAL_PX;
   let col = __mv.col;
   if(!__mv.multi) document.querySelectorAll('#calGrid .cal-day-col:not(.off)').forEach(c=>{
     const rc = c.getBoundingClientRect();
