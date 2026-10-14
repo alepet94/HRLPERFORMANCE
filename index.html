@@ -121,6 +121,14 @@ a{color:var(--gold);}
 .gate-hint{font-size:11.5px;color:var(--ink-mute);margin:0 0 10px;}
 .gate-open{border-left:2px solid var(--line);padding-left:14px;margin-bottom:10px;}
 
+
+/* ---------- calendario: legenda a comparsa e menu Gestione ---------- */
+.cal-info-btn{position:fixed;right:22px;bottom:22px;z-index:70;width:34px;height:34px;border-radius:50%;border:1px solid var(--line);background:var(--navy-850);color:var(--ink-dim);font:italic 700 16px Georgia,serif;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.35);}
+.cal-info-btn:hover{color:var(--ink);border-color:var(--ink-mute);}
+.cal-info-pop{position:fixed;right:22px;bottom:66px;z-index:70;width:min(360px,calc(100vw - 44px));background:var(--navy-850);border:1px solid var(--line);border-radius:12px;padding:14px 16px;box-shadow:0 10px 30px rgba(0,0,0,.4);}
+.cal-info-t{font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-mute);margin-bottom:8px;}
+.cal-info-txt{font-size:12px;color:var(--ink-dim);line-height:1.5;}
+
 /* ---------- auth ---------- */
 body.client-auth-mode #btnOggi,
 body.client-auth-mode #btnClienti,
@@ -128,6 +136,7 @@ body.client-auth-mode #btnDashboard,
 body.client-auth-mode #btnCalendario,
 body.client-auth-mode #btnSegreteria,
 body.client-auth-mode #btnFatturazione,
+body.client-auth-mode #gestWrap,
 body.client-auth-mode #btnTemplate,
 body.client-auth-mode #btnEsercizi,
 body.client-auth-mode #btnBlocchiOperativi,
@@ -135,6 +144,7 @@ body.client-auth-mode #btnHelp{display:none;}
 body.seg-only-mode #btnOggi,
 body.seg-only-mode #btnCalendario,
 body.seg-only-mode #btnSegnalazioni,
+body.seg-only-mode #gestWrap,
 body.seg-only-mode #btnTemplate,
 body.seg-only-mode #btnEsercizi,
 body.seg-only-mode #btnBlocchiOperativi{display:none;}
@@ -980,7 +990,7 @@ header.top{
 .cal-multi-grid{display:grid;}
 /* calendario professionisti: scorre dentro il proprio riquadro, così le intestazioni
    (nomi dei professionisti / giorni) restano fisse in alto mentre si scende con le ore */
-#calWeekWrap,#calMultiWrap{overflow:auto;max-height:max(400px,calc(100vh - 345px));}
+#calWeekWrap,#calMultiWrap{overflow:auto;}
 #calWeekWrap .cal-axis-head,#calMultiWrap .cal-axis-head{position:sticky;top:0;z-index:3;background:var(--navy-900);}
 .cal-multi-grid .cal-col-head{position:sticky;top:0;}
 .cal-multi-grid .cal-col-head .cch-sub{font-size:10px;color:var(--ink-mute);margin-top:1px;}
@@ -1904,9 +1914,11 @@ body[data-theme="light"] .paz-lk-list{background:#fff;border-color:#ccc;}
     <button class="btn-ghost" id="btnCalendario">Calendario</button>
     <button class="btn-ghost" id="btnSegreteria" style="display:none;">Segreteria</button>
     <button class="btn-ghost" id="btnFatturazione" style="display:none;">Fatturazione</button>
-    <button class="btn-ghost" id="btnTemplate">Template</button>
-    <button class="btn-ghost" id="btnEsercizi">Libreria esercizi</button>
-    <button class="btn-ghost" id="btnBlocchiOperativi">Blocchi operativi</button>
+    <div class="cli-menu-wrap" id="gestWrap"><button class="btn-ghost" id="btnGestione">Gestione ▾</button><div class="cli-pop cli-pop-right" id="gestMenu" style="display:none;left:0;right:auto;">
+      <button class="btn-ghost" id="btnTemplate">Template</button>
+      <button class="btn-ghost" id="btnEsercizi">Libreria esercizi</button>
+      <button class="btn-ghost" id="btnBlocchiOperativi">Blocchi operativi</button>
+    </div></div>
     <button class="btn-ghost" id="btnHelp">Come funziona</button>
     <button class="theme-toggle" id="btnThemeToggle" title="Cambia tema chiaro/scuro"></button>
     <div id="profBadgeWrap" style="display:none;"></div>
@@ -2210,17 +2222,22 @@ body[data-theme="light"] .paz-lk-list{background:#fff;border-color:#ccc;}
   </div>
 
   <div class="cal-settings" id="calSettings"></div>
-  <div class="cal-legend">
-    <span class="leg-item"><span class="leg-dot dot-impegno"></span>Impegno</span>
-    <span class="leg-item"><span class="leg-dot dot-allenamento"></span>Allenamento</span>
-    <span class="leg-item"><span class="leg-dot dot-retest"></span>Retest</span>
-    <span class="leg-item"><span class="leg-dot dot-ans"></span>Percorso ANS</span>
-    <span class="leg-item"><span class="leg-dot dot-recv"></span>Orario di ricevimento</span>
-    <span class="leg-item"><span class="leg-dot dot-nondisp"></span>Non disponibile</span>
-    <span class="leg-item"><span class="leg-dot dot-free"></span>Finestra libera (clicca per inserire)</span>
-  </div>
   <div id="retestHint"></div>
-  <div style="font-size:11.5px;color:var(--ink-mute);margin-top:4px;">Clicca per aggiungere rapidamente un impegno, clicca e trascina per selezionare un intervallo (appuntamento, disponibilità o non disponibilità), trascina un appuntamento per spostarlo. Clicca su "Ricevi"/"Non disponibile" per modificarli.</div>
+  <button class="cal-info-btn" id="btnCalInfo" type="button" title="Legenda e come si usa">i</button>
+  <div class="cal-info-pop" id="calInfoPop" style="display:none;">
+    <div class="cal-info-t">Legenda</div>
+    <div class="cal-legend" style="flex-direction:column;align-items:flex-start;gap:6px;">
+      <span class="leg-item"><span class="leg-dot dot-impegno"></span>Impegno</span>
+      <span class="leg-item"><span class="leg-dot dot-allenamento"></span>Allenamento</span>
+      <span class="leg-item"><span class="leg-dot dot-retest"></span>Retest</span>
+      <span class="leg-item"><span class="leg-dot dot-ans"></span>Percorso ANS</span>
+      <span class="leg-item"><span class="leg-dot dot-recv"></span>Orario di ricevimento</span>
+      <span class="leg-item"><span class="leg-dot dot-nondisp"></span>Non disponibile</span>
+      <span class="leg-item"><span class="leg-dot dot-free"></span>Finestra libera (clicca per inserire)</span>
+    </div>
+    <div class="cal-info-t" style="margin-top:12px;">Come si usa</div>
+    <div class="cal-info-txt">Clicca per aggiungere rapidamente un impegno, clicca e trascina per selezionare un intervallo (appuntamento, disponibilità o non disponibilità), trascina un appuntamento per spostarlo. Clicca su "Ricevi"/"Non disponibile" per modificarli.</div>
+  </div>
 
   <div class="cal-grid-scroll" id="calWeekWrap">
     <div class="cal-grid" id="calGrid"></div>
@@ -10089,6 +10106,22 @@ document.getElementById('btnCestino').onclick = ()=>{
 document.getElementById('closeCestino').onclick = ()=> document.getElementById('cestinoModal').classList.remove('open');
 document.getElementById('cestinoModal').onclick = (e)=>{ if(e.target.id==='cestinoModal') document.getElementById('cestinoModal').classList.remove('open'); };
 
+
+// menu "Gestione" (Template, Libreria esercizi, Blocchi operativi) e legenda del calendario
+document.getElementById('btnGestione').onclick = ()=>{
+  const m = document.getElementById('gestMenu');
+  m.style.display = m.style.display==='block' ? 'none' : 'block';
+};
+document.getElementById('gestMenu').addEventListener('click', e=>{ if(e.target.closest('button')) document.getElementById('gestMenu').style.display = 'none'; });
+document.getElementById('btnCalInfo').onclick = ()=>{
+  const p = document.getElementById('calInfoPop');
+  p.style.display = p.style.display==='none' ? 'block' : 'none';
+};
+document.addEventListener('click', e=>{
+  if(!e.target.isConnected) return;
+  if(!e.target.closest('#gestWrap')){ const m = document.getElementById('gestMenu'); if(m) m.style.display = 'none'; }
+  if(!e.target.closest('#btnCalInfo') && !e.target.closest('#calInfoPop')){ const p = document.getElementById('calInfoPop'); if(p) p.style.display = 'none'; }
+});
 document.getElementById('btnOggi').onclick = ()=> oggiShow();
 document.getElementById('btnClienti').onclick = ()=>{
   showView('clienti');
