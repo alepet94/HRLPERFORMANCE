@@ -114,6 +114,13 @@ a{color:var(--gold);}
 .cli-menu-wrap > .btn-ghost{border-color:var(--line);color:var(--ink-dim);white-space:nowrap;}
 #btnNuovoCliente{white-space:nowrap;}
 
+
+.gate-toggle{background:none;border:0;color:var(--ink);font:inherit;font-size:13px;font-weight:600;cursor:pointer;padding:6px 0;display:inline-flex;align-items:center;gap:8px;}
+.gate-toggle:hover{color:var(--gold-bright);}
+.gate-caret{color:var(--ink-mute);font-size:12px;width:12px;}
+.gate-hint{font-size:11.5px;color:var(--ink-mute);margin:0 0 10px;}
+.gate-open{border-left:2px solid var(--line);padding-left:14px;margin-bottom:10px;}
+
 /* ---------- auth ---------- */
 body.client-auth-mode #btnOggi,
 body.client-auth-mode #btnClienti,
@@ -3294,6 +3301,54 @@ function applyRetestResultsToClientGates(clienteId, gateKey, risultati){
   if(state.clienteAttivoId===c.id) renderResult();
 }
 
+
+// ---------------- salvataggio cliente "a colonne" con unione delle modifiche ----------------
+// Prima ogni salvataggio riscriveva TUTTA la riga del cliente dalla copia in
+// memoria: se un collega aveva la stessa scheda aperta da prima, il suo
+// salvataggio rimetteva i dati vecchi sopra quelli appena inseriti (es. i
+// valori dei gate di una fase). Ora si scrivono solo le colonne cambiate e,
+// per i dati strutturati, si uniscono le modifiche locali a quelle già
+// presenti sul server (3-way merge rispetto a com'era all'apertura).
+function cliRowJson(c){
+  const row = clienteToRow(c), o = {};
+  Object.keys(row).forEach(k=>{ o[k] = JSON.stringify(row[k]===undefined ? null : row[k]); });
+  return o;
+}
+function merge3(base, local, server){
+  const J = JSON.stringify;
+  if(J(local)===J(base)) return server;
+  if(J(server)===J(base)) return local;
+  const isO = v=> v && typeof v==='object' && !Array.isArray(v);
+  if(isO(local) && isO(server)){
+    const b = isO(base) ? base : {}, out = {};
+    new Set([...Object.keys(local), ...Object.keys(server)]).forEach(k=>{
+      const inL = k in local, inS = k in server;
+      if(!inL){ if(J(server[k])!==J(b[k])) out[k] = server[k]; return; }
+      if(!inS){ if(J(local[k])!==J(b[k])) out[k] = local[k]; return; }
+      out[k] = merge3(b[k], local[k], server[k]);
+    });
+    return out;
+  }
+  return local;
+}
+function replaceInPlace(dst, src){
+  if(Array.isArray(dst) && Array.isArray(src)){ dst.splice(0, dst.length, ...src); return true; }
+  if(dst && src && typeof dst==='object' && typeof src==='object' && !Array.isArray(dst) && !Array.isArray(src)){
+    Object.keys(dst).forEach(k=>{ delete dst[k]; });
+    Object.assign(dst, src); return true;
+  }
+  return false;
+}
+function dbSaveFail(error){
+  const msg = (error && error.message) ? error.message : String(error);
+  console.error('Supabase saveCliente', error);
+  state.saveErrShown = true;
+  showDbBanner('err', 'Salvataggio NON riuscito: ' + msg + '. Le ultime modifiche potrebbero non essere state salvate: riprova o ricarica la pagina prima di continuare.');
+}
+function dbSaveOk(){
+  if(state.saveErrShown){ state.saveErrShown = false; showDbBanner('', ''); }
+}
+
 // ---------------- livello di persistenza (best-effort, non bloccante) ----------------
 const db = {
   lastError: null,
@@ -3372,7 +3427,67 @@ const db = {
     }
     return true;
   },
-  async saveCliente(c){ if(!dbEnabled || !sb) return; const {error} = await sb.from('clienti').upsert(clienteToRow(c)); if(error) console.error('Supabase saveCliente', error); },
+  // salvataggi in coda per cliente (mai due scritture sovrapposte della stessa riga)
+  saveCliente(c){
+    if(!dbEnabled || !sb) return Promise.resolve();
+    c._q = (c._q || Promise.resolve()).then(()=> db._saveClienteNow(c)).catch(ex=> dbSaveFail(ex));
+    return c._q;
+  },
+  async _saveClienteNow(c){
+    const row = clienteToRow(c);
+    if(!c._base){
+      // cliente nuovo o mai aperto: scrittura completa come prima
+      const {error} = await sb.from('clienti').upsert(row);
+      if(error){ dbSaveFail(error); return; }
+      dbSaveOk(); return;
+    }
+    const cur = cliRowJson(c);
+    const changed = Object.keys(row).filter(k=> cur[k]!==c._base[k]);
+    if(!changed.length) return;
+    const jsonCols = changed.filter(k=> row[k]!==null && typeof row[k]==='object');
+    let server = null;
+    if(jsonCols.length){
+      const r = await sb.from('clienti').select(jsonCols.join(',')).eq('id', c.id).maybeSingle();
+      if(r.error){ dbSaveFail(r.error); return; }
+      server = r.data;
+    }
+    const payload = {};
+    changed.forEach(k=>{
+      if(server && jsonCols.includes(k) && server[k]!==undefined && server[k]!==null){
+        payload[k] = merge3(JSON.parse(c._base[k]), row[k], server[k]);
+      } else payload[k] = row[k];
+    });
+    const {data, error} = await sb.from('clienti').update(payload).eq('id', c.id).select('id');
+    if(error){ dbSaveFail(error); return; }
+    if(!data || !data.length){ dbSaveFail({message:'nessuna riga aggiornata (permessi insufficienti o cliente eliminato)'}); return; }
+    // porta in memoria anche le modifiche dei colleghi appena unite, senza cambiare gli oggetti già in uso
+    const campo = {notes:'notes', schede:'schede', valutazioni:'valutazioni'};
+    changed.forEach(k=>{
+      const mj = JSON.stringify(payload[k]);
+      if(mj!==cur[k] && campo[k] && c[campo[k]]) replaceInPlace(c[campo[k]], payload[k]);
+      c._base[k] = mj;
+    });
+    dbSaveOk();
+  },
+  // rilegge il cliente dal server prima di aprirlo, così si parte dai dati più recenti
+  // (solo se in locale non ci sono modifiche ancora da salvare)
+  async refreshCliente(id){
+    if(!dbEnabled || !sb) return;
+    const c = state.clienti.find(x=>x.id===id);
+    if(!c) return;
+    try{ await c._q; }catch(ex){}
+    try{
+      const {data, error} = await sb.from('clienti').select('*').eq('id', id).maybeSingle();
+      if(error || !data) return;
+      if(c._base){
+        const cur = cliRowJson(c);
+        if(Object.keys(cur).some(k=> cur[k]!==c._base[k])) return;
+      }
+      const fresh = rowToCliente(data);
+      Object.keys(fresh).forEach(k=>{ c[k] = fresh[k]; });
+      c._base = cliRowJson(c);
+    }catch(ex){ console.error('refreshCliente', ex); }
+  },
   async deleteCliente(id){ if(!dbEnabled || !sb) return; const {error} = await sb.from('clienti').delete().eq('id',id); if(error) console.error('Supabase deleteCliente', error); },
   async saveAppuntamento(a){ if(!dbEnabled || !sb) return; const {error} = await sb.from('appuntamenti').upsert(appuntamentoToRow(a)); if(error) console.error('Supabase saveAppuntamento', error); },
   async deleteAppuntamento(id){ if(!dbEnabled || !sb) return; const {error} = await sb.from('appuntamenti').delete().eq('id',id); if(error) console.error('Supabase deleteAppuntamento', error); },
@@ -3958,6 +4073,7 @@ function syncClientFromState(){
 function loadClientIntoWorkspace(id){
   const c = state.clienti.find(x=>x.id===id);
   if(!c) return;
+  if(dbEnabled && !c._base){ try{ c._base = cliRowJson(c); }catch(ex){} }
   state.clienteAttivoId = c.id;
   state.profilo = c.profilo;
   state.pathway = c.pathway;
@@ -3988,10 +4104,13 @@ function loadClientIntoWorkspace(id){
 function openClientForRole(id){
   const c = state.clienti.find(x=>x.id===id);
   if(!c) return;
-  loadClientIntoWorkspace(id);
-  showView('pathway');
-  renderContextBar();
-  activateClientTab(state.clientTab);
+  const go = ()=>{
+    loadClientIntoWorkspace(id);
+    showView('pathway');
+    renderContextBar();
+    activateClientTab(state.clientTab);
+  };
+  if(dbEnabled && sb) db.refreshCliente(id).then(go, go); else go();
 }
 function renderCliAnagraficaModalBase(c, edit){
   const box = document.getElementById('cliAnagraficaContent');
@@ -11371,12 +11490,16 @@ function oggiRegistrata(a, c, prof){
   if(area==='Nutrizionista') return (c.schedeEnergetica||[]).some(x=>x.data===d);
   return false;
 }
-function oggiApriCliente(clienteId, tab){
+function oggiApriCliente(clienteId, tab, dopo){
   state.oggiBack = true;
-  loadClientIntoWorkspace(clienteId);
-  showView('pathway');
-  renderContextBar();
-  activateClientTab(tab || state.clientTab);
+  const go = ()=>{
+    loadClientIntoWorkspace(clienteId);
+    showView('pathway');
+    renderContextBar();
+    activateClientTab(tab || state.clientTab);
+    if(dopo) dopo();
+  };
+  if(dbEnabled && sb) db.refreshCliente(clienteId).then(go, go); else go();
 }
 // "Registra seduta": apre il cliente nell'area giusta per il professionista
 // che segue l'appuntamento, con data e professionista già impostati
@@ -11403,8 +11526,9 @@ function oggiRegistraSeduta(appId){
     const d = emptySchedaEnergetica(); d.data = a.day; d.professionistaId = me.id;
     state.schedaEnergeticaDraft = d;
   } else if(area==='Sleep Coach') tab = 'areaHuman';
-  oggiApriCliente(c.id, tab);
-  if(tab==='pathway' && a.tipo==='allenamento' && a.schedaId) apriEsecuzioneScheda(a.id);
+  oggiApriCliente(c.id, tab, ()=>{
+    if(tab==='pathway' && a.tipo==='allenamento' && a.schedaId) apriEsecuzioneScheda(a.id);
+  });
 }
 function oggiTimelineHTML(evs, isToday){
   if(!evs.length) return `<div class="timeline-empty">Nessun appuntamento oggi.</div>`;
@@ -11597,9 +11721,10 @@ function renderOggi(){
   q('[data-oggi-rif]', b=> b.onclick = ()=>{ richRifiuta(b.dataset.oggiRif); renderOggi(); });
   q('[data-oggi-val]', b=> b.onclick = ()=>{
     const [cid, vid] = b.dataset.oggiVal.split('|');
-    oggiApriCliente(cid, 'valutazioni');
-    const v = (state.valutazioni||[]).find(x=>x.id===vid);
-    if(v) openValutazioneEditor(v, false);
+    oggiApriCliente(cid, 'valutazioni', ()=>{
+      const v = (state.valutazioni||[]).find(x=>x.id===vid);
+      if(v) openValutazioneEditor(v, false);
+    });
   });
 }
 function oggiShow(){
@@ -14679,17 +14804,25 @@ function renderResult(){
           <div class="lbl">Note coach</div>
           <input class="editable" data-note="${key}|note" placeholder="Annotazioni per questo atleta/caso" value="${note.note||''}">
         </div>
-        ${hasAnyGate ? `<div class="gate-check-banner ${(gateIngressoOk||!(d.gateIngresso||[]).length) && (gateUscitaOk||!(d.gateUscita||[]).length) ? 'ok':'warn'}">
+        ${(()=>{
+          // i gate restano chiusi finché non si apre la fase "Gate": scheda più pulita
+          const gtot = (d.gateIngresso||[]).length + (d.gateUscita||[]).length;
+          const gok = (d.gateIngresso||[]).concat(d.gateUscita||[]).filter(g=>note.gateValues[g.id] && note.gateValues[g.id].raggiunto).length;
+          const aperto = !!(state.gateOpen && state.gateOpen[key]);
+          return `<div class="gate-panel-head">
+            <button type="button" class="gate-toggle ${aperto?'open':''}" data-gate-toggle="${key}"><span class="gate-caret">${aperto?'▾':'▸'}</span> Gate della fase${gtot ? ` <span class="gate-count ${gok===gtot?'ok':''}">${gok}/${gtot} raggiunti</span>` : ''}</button>
+            ${aperto ? `<button type="button" class="btn-small" data-manage-bop-gates="${d.blockId}">✎ Gestisci gate del blocco</button>` : ''}
+          </div>
+          ${aperto ? `<div class="gate-open">
+          <div class="gate-hint">Definiti nel blocco operativo: qui inserisci il valore rilevato per questo atleta.</div>
+          ${hasAnyGate ? `<div class="gate-check-banner ${(gateIngressoOk||!(d.gateIngresso||[]).length) && (gateUscitaOk||!(d.gateUscita||[]).length) ? 'ok':'warn'}">
           Controllo fine fase — ${(d.gateIngresso||[]).length ? `gate di ingresso ${gateIngressoOk?'✓ tutti raggiunti':'non ancora tutti raggiunti'}` : 'nessun gate di ingresso richiesto'}; ${(d.gateUscita||[]).length ? `gate di uscita ${gateUscitaOk?'✓ tutti raggiunti':'non ancora tutti raggiunti'}` : 'nessun gate di uscita richiesto'}.
         </div>` : ''}
-        <div class="gate-panel-head">
-          <span class="lbl" style="margin:0;">Gate della fase <span style="color:var(--ink-mute);font-weight:400;font-family:var(--sans);text-transform:none;">— definiti nel blocco operativo, qui inserisci il valore rilevato per questo atleta</span></span>
-          <button type="button" class="btn-small" data-manage-bop-gates="${d.blockId}">✎ Gestisci gate del blocco</button>
-        </div>
-        <div class="two-col gate-two-col">
-          ${gateListHTML(key, d.blockId, d.id, 'gateIngresso', d.gateIngresso, note.gateValues, 'Gate di ingresso')}
-          ${gateListHTML(key, d.blockId, d.id, 'gateUscita', d.gateUscita, note.gateValues, 'Gate di uscita')}
-        </div>
+          <div class="two-col gate-two-col">
+            ${gateListHTML(key, d.blockId, d.id, 'gateIngresso', d.gateIngresso, note.gateValues, 'Gate di ingresso')}
+            ${gateListHTML(key, d.blockId, d.id, 'gateUscita', d.gateUscita, note.gateValues, 'Gate di uscita')}
+          </div></div>` : ''}`;
+        })()}
         <div class="field">
           <div class="lbl">Operatori in questa fase</div>
           <div class="prof-tags">
@@ -14828,6 +14961,14 @@ function renderResult(){
   // (vedi renderBlockOperativoEditorForm) e qui sono solo visibili; il
   // valore rilevato e lo stato "raggiunto" per QUESTO atleta vivono invece
   // nelle sue note (state.notes[key].gateValues).
+  box.querySelectorAll('[data-gate-toggle]').forEach(btn=>{
+    btn.onclick = ()=>{
+      if(!state.gateOpen) state.gateOpen = {};
+      const k = btn.dataset.gateToggle;
+      state.gateOpen[k] = !state.gateOpen[k];
+      renderResult();
+    };
+  });
   box.querySelectorAll('[data-manage-bop-gates]').forEach(btn=>{
     btn.onclick = ()=>{
       const full = state.blocchiOperativi.find(x=>x.id===btn.dataset.manageBopGates);
@@ -14843,6 +14984,7 @@ function renderResult(){
       state.notes[key].gateValues[gid].valore = inp.value;
     };
     inp.onblur = ()=> syncClientFromState();
+    inp.onchange = ()=> syncClientFromState();
   });
   box.querySelectorAll('[data-gate-reached]').forEach(chk=>{
     chk.onchange = ()=>{
