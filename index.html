@@ -137,6 +137,7 @@ body.client-auth-mode #btnCalendario,
 body.client-auth-mode #btnSegreteria,
 body.client-auth-mode #btnFatturazione,
 body.client-auth-mode #gestWrap,
+body.client-auth-mode #segWrap,
 body.client-auth-mode #btnTemplate,
 body.client-auth-mode #btnEsercizi,
 body.client-auth-mode #btnBlocchiOperativi,
@@ -1914,6 +1915,10 @@ body[data-theme="light"] .paz-lk-list{background:#fff;border-color:#ccc;}
     <button class="btn-ghost" id="btnCalendario">Calendario</button>
     <button class="btn-ghost" id="btnSegreteria" style="display:none;">Segreteria</button>
     <button class="btn-ghost" id="btnFatturazione" style="display:none;">Fatturazione</button>
+    <div class="cli-menu-wrap" id="segWrap" style="display:none;"><button class="btn-ghost" id="btnSegMenu">Segreteria ▾</button><div class="cli-pop cli-pop-right" id="segMenu" style="display:none;left:0;right:auto;">
+      <button class="btn-ghost" id="btnSegMenuSeg">Segreteria</button>
+      <button class="btn-ghost" id="btnSegMenuFatt">Fatturazione</button>
+    </div></div>
     <div class="cli-menu-wrap" id="gestWrap"><button class="btn-ghost" id="btnGestione">Gestione ▾</button><div class="cli-pop cli-pop-right" id="gestMenu" style="display:none;left:0;right:auto;">
       <button class="btn-ghost" id="btnTemplate">Template</button>
       <button class="btn-ghost" id="btnEsercizi">Libreria esercizi</button>
@@ -4063,8 +4068,10 @@ function showView(name){
   if(name!=='calendario' && name!=='segreteria') state.segFlag = false;
   const sa = document.getElementById('segreteriaArea'); if(sa) sa.style.display = name==='segreteria' ? 'block' : 'none';
   const fa = document.getElementById('fatturazioneArea'); if(fa) fa.style.display = name==='fatturazione' ? 'block' : 'none';
-  const fb = document.getElementById('btnFatturazione'); if(fb) fb.style.display = canManageAll() ? '' : 'none';
-  const sb = document.getElementById('btnSegreteria'); if(sb) sb.style.display = canManageAll() ? '' : 'none';
+  // segreteria "pura": due tasti in vista; admin: un menu "Segreteria ▾" con Fatturazione dentro
+  const fb = document.getElementById('btnFatturazione'); if(fb) fb.style.display = isSegreteriaOnly() ? '' : 'none';
+  const sb = document.getElementById('btnSegreteria'); if(sb) sb.style.display = isSegreteriaOnly() ? '' : 'none';
+  const sw = document.getElementById('segWrap'); if(sw) sw.style.display = (canManageAll() && !isSegreteriaOnly()) ? '' : 'none';
   window.scrollTo(0,0);
 }
 
@@ -10113,12 +10120,20 @@ document.getElementById('btnGestione').onclick = ()=>{
   m.style.display = m.style.display==='block' ? 'none' : 'block';
 };
 document.getElementById('gestMenu').addEventListener('click', e=>{ if(e.target.closest('button')) document.getElementById('gestMenu').style.display = 'none'; });
+document.getElementById('btnSegMenu').onclick = ()=>{
+  const m = document.getElementById('segMenu');
+  m.style.display = m.style.display==='block' ? 'none' : 'block';
+};
+document.getElementById('segMenu').addEventListener('click', e=>{ if(e.target.closest('button')) document.getElementById('segMenu').style.display = 'none'; });
+document.getElementById('btnSegMenuSeg').onclick = ()=> document.getElementById('btnSegreteria').onclick();
+document.getElementById('btnSegMenuFatt').onclick = ()=> document.getElementById('btnFatturazione').onclick();
 document.getElementById('btnCalInfo').onclick = ()=>{
   const p = document.getElementById('calInfoPop');
   p.style.display = p.style.display==='none' ? 'block' : 'none';
 };
 document.addEventListener('click', e=>{
   if(!e.target.isConnected) return;
+  if(!e.target.closest('#segWrap')){ const m = document.getElementById('segMenu'); if(m) m.style.display = 'none'; }
   if(!e.target.closest('#gestWrap')){ const m = document.getElementById('gestMenu'); if(m) m.style.display = 'none'; }
   if(!e.target.closest('#btnCalInfo') && !e.target.closest('#calInfoPop')){ const p = document.getElementById('calInfoPop'); if(p) p.style.display = 'none'; }
 });
