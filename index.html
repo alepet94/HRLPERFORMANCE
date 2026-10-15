@@ -1010,14 +1010,9 @@ header.top{
 .cal-col-head.today .ddate{color:var(--gold-bright);font-weight:600;}
 .cli-cal-wrap .cal-col-head.today{background:var(--client-accent-dim);border-bottom-color:var(--client-accent);}
 .cli-cal-wrap .cal-col-head.today .dname, .cli-cal-wrap .cal-col-head.today .ddate{color:var(--client-accent-bright);}
-.cal-day-col.today{background:
-  repeating-linear-gradient(to bottom, rgba(199,162,76,0.05), rgba(199,162,76,0.05) 59px, var(--line-soft) 60px);
-  box-shadow:inset 1px 0 0 var(--gold), inset -1px 0 0 var(--gold);
-}
-.cli-cal-wrap .cal-day-col.today{
-  background:repeating-linear-gradient(to bottom, rgba(95,168,163,0.07), rgba(95,168,163,0.07) 59px, var(--line-soft) 60px);
-  box-shadow:inset 1px 0 0 var(--client-accent), inset -1px 0 0 var(--client-accent);
-}
+/* oggi: si evidenzia solo l'intestazione del giorno, la colonna resta neutra */
+.cal-day-col.today{}
+
 .cal-axis-head{border-bottom:1px solid var(--line-soft);}
 
 .cal-axis{position:relative;border-left:none;}
@@ -1405,7 +1400,6 @@ body[data-theme="light"]{
 body[data-theme="light"] .pt-fill{background:var(--lime);}
 body[data-theme="light"] header.top{background:rgba(241,240,238,0.94);}
 body[data-theme="light"] .brand .mark-logo{filter:invert(1);}
-body[data-theme="light"] .cal-day-col.today,
 body[data-theme="light"] .cal-month-day.today{background:rgba(228,204,55,0.3);box-shadow:inset 0 0 0 1px #B7A118;}
 body[data-theme="light"] .cal-month-day.today .cal-month-daynum{background:#B7A118;color:#0E0E0C;}
 body[data-theme="light"] .btn-gold{color:#fff;}
