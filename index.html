@@ -1980,6 +1980,10 @@ body[data-theme="light"] .paz-lk-list{background:#fff;border-color:#ccc;}
       <button class="btn-gold" id="btnQrPrint">Stampa</button>
       <button class="btn-ghost" id="btnQrCopy">Copia link</button>
     </div>
+    <div class="qr-actions" id="qrAdmin">
+      <button class="btn-ghost" id="btnQrNew">Nuovo codice</button>
+      <button class="btn-ghost" id="btnQrRevoke">Revoca accesso</button>
+    </div>
     <div class="qr-url" id="qrUrl"></div>
   </div>
 </div>
@@ -2624,6 +2628,7 @@ function rowToCliente(r){
     email: r.email || '',
     telefono: r.telefono || '',
     authUserId: r.auth_user_id || null,
+    qrToken: r.qr_token || null,
     blockOperativoId: r.block_operativo_id || null,
     valutazioni: r.valutazioni || [],
     eliminato: !!r.eliminato,
@@ -3603,10 +3608,12 @@ const ACCESSO_HINT = (()=>{
   if(!/^#accesso/.test(h)) return null;
   const m = h.match(/[&?]e=([^&]*)/);
   let email = ''; try{ email = m ? decodeURIComponent(m[1]) : ''; }catch(e){}
-  return {email};
+  const k = h.match(/[&?]k=([A-Za-z0-9]{20,64})/);
+  return {email, k: k ? k[1] : ''};
 })();
 function clienteAccessoUrl(c){
   const base = location.origin && location.origin!=='null' ? location.origin + location.pathname : location.href.split('#')[0];
+  if(c && c.qrToken) return base + '#accesso&k=' + c.qrToken;
   return base + '#accesso' + (c && c.email ? '&e=' + encodeURIComponent(c.email.trim()) : '');
 }
 function qrSvg(text){
@@ -3617,12 +3624,41 @@ function qrSvg(text){
   const t = n + m*2;
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${t} ${t}" shape-rendering="crispEdges"><rect width="${t}" height="${t}" fill="#fff"/><path d="${d}" fill="#000"/></svg>`;
 }
-function openQrAccesso(c){
+function qrNewToken(){
+  const a = new Uint8Array(16); crypto.getRandomValues(a);
+  return Array.from(a, b=>b.toString(16).padStart(2,'0')).join('');
+}
+async function qrSaveToken(c, token, unlink){
+  if(!dbEnabled || !sb) return true;
+  const upd = {qr_token: token}; if(unlink) upd.auth_user_id = null;
+  const { data, error } = await sb.from('clienti').update(upd).eq('id', c.id).select('id');
+  if(error || !data || !data.length){ alert('Impossibile salvare il codice: ' + (error ? error.message : 'nessuna riga aggiornata (permessi o SQL non eseguito)')); return false; }
+  if(unlink) c.authUserId = null;
+  return true;
+}
+async function openQrAccesso(c){
+  // il codice segreto nasce al primo utilizzo (serve il database)
+  if(dbEnabled && sb && !c.qrToken){
+    const t = qrNewToken();
+    if(!(await qrSaveToken(c, t, false))) return;
+    c.qrToken = t;
+  }
   const url = clienteAccessoUrl(c);
   document.getElementById('qrTitle').textContent = c.nome;
-  document.getElementById('qrSub').textContent = c.email
-    ? 'Il cliente inquadra il codice, poi accede con ' + c.email + ' (anche con link via email, senza password).'
-    : 'Manca l\'email del cliente: inseriscila nella barra "Email accesso" e riapri il codice. Senza, il cliente dovrà scriverla a mano.';
+  document.getElementById('qrSub').textContent = c.qrToken
+    ? 'Il cliente inquadra il codice ed entra direttamente, senza password. Il codice è personale: stampalo o mostralo solo a lui.'
+    : 'Database non collegato: il codice porta solo alla schermata di accesso.';
+  document.getElementById('qrAdmin').style.display = c.qrToken ? 'flex' : 'none';
+  document.getElementById('btnQrNew').onclick = async ()=>{
+    if(!confirm('Generare un nuovo codice? Quello attuale smetterà di funzionare per i nuovi accessi.')) return;
+    const t = qrNewToken(); if(!(await qrSaveToken(c, t, true))) return;
+    c.qrToken = t; openQrAccesso(c);
+  };
+  document.getElementById('btnQrRevoke').onclick = async ()=>{
+    if(!confirm('Revocare l\'accesso? Il cliente non potrà più entrare con il QR e verrà scollegato.')) return;
+    if(!(await qrSaveToken(c, null, true))) return;
+    c.qrToken = null; document.getElementById('qrModal').classList.remove('open'); renderContextBar();
+  };
   document.getElementById('qrBox').innerHTML = qrSvg(url);
   document.getElementById('qrUrl').textContent = url;
   document.getElementById('btnQrCopy').onclick = async ()=>{
@@ -3638,6 +3674,29 @@ function openQrAccesso(c){
 }
 document.getElementById('closeQr').onclick = ()=> document.getElementById('qrModal').classList.remove('open');
 document.getElementById('qrModal').onclick = (e)=>{ if(e.target.id==='qrModal') document.getElementById('qrModal').classList.remove('open'); };
+
+function qrEmail(k){ return 'qr-' + k.toLowerCase() + '@qr.hrl-pathways.app'; }
+// accesso diretto dal QR: account tecnico legato al codice + collegamento alla scheda (RPC)
+async function accessoQrLogin(k){
+  const fail = (m)=>{ renderAuthLogin(m); };
+  const email = qrEmail(k);
+  try{
+    const { data: ok, error: e0 } = await sb.rpc('qr_valido', {p_token: k});
+    if(e0){ fail('Accesso con QR non attivo (' + e0.message + '). Chiedi al centro.'); return; }
+    if(!ok){ fail('Codice non valido o revocato. Chiedi al centro un nuovo QR.'); return; }
+    let res = await sb.auth.signInWithPassword({email, password: k});
+    if(res.error){
+      const su = await sb.auth.signUp({email, password: k});
+      if(su.error){ fail('Errore nella creazione dell\'accesso: ' + su.error.message); return; }
+      await sb.rpc('qr_conferma_account', {p_email: email});
+      res = await sb.auth.signInWithPassword({email, password: k});
+      if(res.error){ fail('Accesso non riuscito: ' + res.error.message); return; }
+    }
+    const { error: le } = await sb.rpc('link_cliente_qr', {p_token: k});
+    if(le){ fail('Codice non valido o revocato. Chiedi al centro un nuovo QR.'); await sb.auth.signOut(); return; }
+    await afterLogin(res.data.session);
+  } catch(ex){ fail((ex && ex.message) ? ex.message : 'Errore imprevisto.'); }
+}
 
 function renderAuthLogin(errorMsg, infoMsg){
   const box = document.getElementById('authContent');
@@ -4129,6 +4188,13 @@ async function initAuthFlow(){
   document.getElementById('authContent').innerHTML = '<p class="auth-sub">Verifica accesso…</p>';
   try{
     const { data } = await sb.auth.getSession();
+    if(ACCESSO_HINT && ACCESSO_HINT.k){
+      // QR: se c'è già una sessione di un altro utente, esce e entra come il cliente del codice
+      if(data.session && (data.session.user.email||'').toLowerCase() === qrEmail(ACCESSO_HINT.k)){ await afterLogin(data.session); return; }
+      if(data.session) await sb.auth.signOut();
+      document.getElementById('authContent').innerHTML = '<p class="auth-sub">Accesso in corso…</p>';
+      await accessoQrLogin(ACCESSO_HINT.k); return;
+    }
     if(!data.session){ renderAuthLogin(); return; }
     await afterLogin(data.session);
   } catch(ex){
@@ -9887,7 +9953,7 @@ function renderContextBar(){
       ${showAssign ? `<span class="ccb-meta">Seguito da</span>${profAssignHTML(clienteProfIds(c),'ccb')}` : ''}
     </div>
   `;
-  document.getElementById('btnQrAccesso').onclick = ()=> openQrAccesso(c);
+  document.getElementById('btnQrAccesso').onclick = ()=>{ openQrAccesso(c); };
   const eb = document.getElementById('btnEditAnagCtx');
   if(eb) eb.onclick = ()=>{ renderCliAnagraficaModal(c, true); document.getElementById('cliAnagraficaModal').classList.add('open'); };
   document.getElementById('btnBackToClienti').onclick = ()=>{
