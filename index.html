@@ -12442,13 +12442,16 @@ function openEventEditor(data, isEdit){
 // ---- listino per professionista/area ----
 // l.ass = {profIds:[], aree:[]}; vuoto/assente = disponibile a tutti
 function lstDisponibile(l, prof){
-  const a = l.ass; if(!a || (!(a.profIds||[]).length && !(a.aree||[]).length)) return true;
+  let a = l.ass;
+  // senza assegnazione esplicita si deduce dal nome ("Antonio – …", "Allenamento – …"); se non si capisce, vale per tutti
+  if(!a || (!(a.profIds||[]).length && !(a.aree||[]).length)) a = lstAutoAss(l);
+  if(!a || (!(a.profIds||[]).length && !(a.aree||[]).length)) return true;
   if(!prof) return false;
   return (a.profIds||[]).includes(prof.id) || (!!prof.area && (a.aree||[]).includes(prof.area));
 }
 function lstPerProf(profId){
   const prof = profId ? state.professionisti.find(p=>p.id===profId) : null;
-  if(prof && prof.ruolo==='admin') return state.listino || [];   // l'admin vede tutto
+  if(prof && prof.ruolo==='admin' && !prof.area) return state.listino || [];   // admin senza area: vede tutto; con un'area (es. Preparatore) vede la sua parte
   return (state.listino||[]).filter(l=>lstDisponibile(l, prof));
 }
 function lstAssLabel(l){
