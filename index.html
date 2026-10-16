@@ -2047,8 +2047,8 @@ body[data-theme="light"] .paz-lk-list{background:#fff;border-color:#ccc;}
     <div class="cli-tab" data-tab="sistema">Sistema</div>
     <div class="cli-tab" data-tab="areaHuman">Area Human</div>
     <div class="cli-tab" data-tab="fisioterapia">Area acuti</div>
-    <div class="cli-tab" data-tab="pathway">Area Performance</div>
     <div class="cli-tab" data-tab="biomeccanica">Biomeccanica</div>
+    <div class="cli-tab" data-tab="pathway">Area Performance</div>
     <div class="cli-tab" data-tab="storico">Storico</div>
     <div class="cli-tab" data-tab="calendario">Calendario cliente</div>
   </div>
@@ -6740,7 +6740,7 @@ const BM_PROTOCOLLO = [
   ['baro','Baropodometria'],['ktwt','KTWT'],['squat','Squat + trunk movement'],['oh','OH squat'],
   ['sl','SL squat'],['yb','Y Balance anteriore'],['warm','Warm up'],['cmj','CMJ'],
   ['slj','SLJ'],['dj','DJ'],['sldj','SLDJ'],['fwb','FW hop bipodalico'],
-  ['fwm','FW hop monopodalico'],['th','Triple jump monopodalico'],['fv','Loaded squat / curva F-V'],['mono','Monoarticolari']
+  ['fwm','FW hop monopodalico'],['th','Triple jump monopodalico'],['fv','Loaded squat / curva F-V'],['mono','Monoarticolari'],['imtp','IMTP']
 ];
 // righe "Movimento": [chiave, test, lato/misura, protocollo che la attiva]
 const BM_MOV = [
@@ -6753,13 +6753,14 @@ const BM_MOV = [
 ];
 const BM_STR = [
   ['ext','Leg extension 60°'],['curl','Leg curl 30°'],['hq','Rapporto H:Q (curl / ext)'],
-  ['imtp','IMTP'],['sq3','Squat 3MN'],['alt1','Altro'],['alt2','Altro']
+  ['sq3','Squat 3MN'],['alt1','Altro'],['alt2','Altro']
 ];
 const BM_M4 = ['Jump Height (cm)','mRSI (JH / CT)','Peak Braking Power (W/kg)','Peak Force Asymmetry (%)'];
+const BM_MCMJ = BM_M4.concat(['Peak Force (N/kg)']);   // il Peak Force del CMJ serve per il DSI
 const BM_MDJ = ['Jump Height (cm)','RSI','GCT (ms)','Peak Force Asymmetry (%)'];
 const BM_MFW = ['Distanza (cm)','Jump Height (cm)','RSI','GCT (ms)','Peak Force Asymmetry (%)'];
 const BM_JUMPS = [
-  ['cmj','CMJ','bi',BM_M4],['slj','SLJ — salto monopodalico','uni',BM_M4],
+  ['cmj','CMJ','bi',BM_MCMJ],['slj','SLJ — salto monopodalico','uni',BM_M4],
   ['dj','DJ','bi',BM_MDJ],['sldj','SLDJ — drop jump monopodalico','uni',BM_MDJ],
   ['fwb','FW HOP — bipodalico','bi',BM_MFW],['fwm','FW HOP — monopodalico','uni',BM_MFW],
   ['th','TRIPLE HOP — monopodalico','uni',BM_MFW]
@@ -6795,6 +6796,18 @@ function bmNuova(c, tipo){
     });
   }
   return v;
+}
+// DSI (Dynamic Strength Index) = Peak Force del CMJ / Peak Force dell'IMTP (stessa unità, es. N/kg).
+// Soglie (Sheppard et al. 2011): < 0.60 → priorità forza balistica; 0.60–0.80 → forza concorrente;
+// > 0.80 → priorità forza massimale.
+function bmDsi(v){
+  const cmj = bmNum((((v.jump||{}).cmj||{})[4]||{}).v), im = bmNum((v.imtp||{}).v);
+  if(cmj===null || !im) return null;
+  const d = cmj/im;
+  const r = d<0.60 ? {profilo:'Strength', focus:'Ballistic Strength Training', it:'priorità forza balistica (salti, pliometria)'}
+          : d<=0.80 ? {profilo:'Balanced', focus:'Concurrent Strength Training', it:'forza concorrente (massimale + balistica)'}
+          : {profilo:'Ballistic', focus:'Max Strength Training', it:'priorità forza massimale'};
+  return {dsi:d, ...r};
 }
 function bmNum(x){ const n = parseFloat(String(x).replace(',','.')); return isNaN(n) ? null : n; }
 function bmAsimm(dx, sx){
@@ -6881,6 +6894,11 @@ function renderBiomeccanicaTab(){
       : `<tr><td>${(k==='alt1'||k==='alt2') ? inp('strAltro.'+k,{ph:'Altro: …'}) : l}</td><td>${inp('str.'+k+'.dx')}</td><td>${inp('str.'+k+'.sx')}</td><td>${dis('bmSA_'+k)}</td><td>${inp('str.'+k+'.note')}</td></tr>`).join('')}
     </tbody></table>` : '';
 
+  const imtpHtml = has('imtp') ? `${secti('IMTP · DSI')}
+    <table class="bm-t"><thead><tr><th>Metrica</th><th>Valore</th><th>Precedente</th><th>Δ %</th><th>Note</th></tr></thead><tbody>
+    <tr><td>Peak Force (N/kg)</td><td>${inp('imtp.v')}</td><td>${inp('imtp.p')}</td><td>${dis('bmImtpD')}</td><td>${inp('imtp.note')}</td></tr></tbody></table>
+    <div class="bm-hint" id="bmDsi"></div>` : '';
+
   const jumpHtml = BM_JUMPS.filter(j=>has(j[0])).map(([k,l,kind,mets])=>{
     const head2 = kind==='bi'
       ? '<tr><th>Metrica</th><th>Valore</th><th>Precedente</th><th>Δ %</th><th>Note</th></tr>'
@@ -6914,7 +6932,7 @@ function renderBiomeccanicaTab(){
     </div>
     ${secti('Protocollo — spunta i test eseguiti')}
     <div class="bm-proto">${BM_PROTOCOLLO.map(([k,l],i)=>`<label class="sist-test-item"><input type="checkbox" data-bmproto="${k}" ${has(k)?'checked':''}> ${i+1}. ${l}</label>`).join('')}</div>
-    ${movHtml}${strHtml}${jumpSec}${fvHtml}
+    ${movHtml}${strHtml}${jumpSec}${imtpHtml}${fvHtml}
     ${secti('Report')}
     <div class="bm-card">
       ${BM_REPORT_CAMPI.map(([k,l])=>`<label class="bm-rl">${l}<textarea class="editable bm-in" rows="${k==='programma'?4:3}" data-bm="report.${k}">${escHtml((v.report||{})[k]||'')}</textarea></label>`).join('')}
@@ -6936,6 +6954,8 @@ function renderBiomeccanicaTab(){
       if(kind==='bi'){ const d = bmDelta(o.v,o.p); set(`bmD_${k}_${i}`, d===null?'—':(d>0?'+':'')+bmFmt(d)+' %'); }
       else { const a = bmAsimm(o.dx,o.sx); set(`bmA_${k}_${i}`, a===null?'—':bmFmt(a)+' %'); const e = document.getElementById(`bmA_${k}_${i}`); if(e) e.classList.toggle('bm-warn', a!==null && a>10); }
     }));
+    { const d = bmDelta((v.imtp||{}).v, (v.imtp||{}).p); set('bmImtpD', d===null?'—':(d>0?'+':'')+bmFmt(d)+' %'); }
+    { const e = document.getElementById('bmDsi'); if(e){ const r = bmDsi(v); e.innerHTML = r ? `<b>DSI ${r.dsi.toFixed(2)}</b> (Peak Force CMJ / Peak Force IMTP) · profilo <b>${r.profilo}</b> · indicazione: ${r.it}` : 'DSI = Peak Force CMJ ÷ Peak Force IMTP: inserisci “Peak Force (N/kg)” nel CMJ e nell\'IMTP (stessa unità). &lt; 0.60 forza balistica · 0.60–0.80 concorrente · &gt; 0.80 forza massimale.'; } }
     const a = bmNum(((v.mov||{}).yb_sx||{}).valore), b = bmNum(((v.mov||{}).yb_dx||{}).valore);
     const yb = document.getElementById('bmYb'); if(yb) yb.textContent = (a!==null&&b!==null) ? `Differenza attuale: ${bmFmt(Math.abs(a-b))} cm${Math.abs(a-b)>4?' ⚠':''}` : '';
     const d = bmDeficit(v);
@@ -6991,7 +7011,9 @@ function apriReportBiomeccanico(c, v){
     has('cmj') ? tile('CMJ mRSI', jv('cmj',1,'v'), '', dSub('cmj',1)) : '',
     has('cmj') ? tile('CMJ Peak Braking Power', jv('cmj',2,'v'), 'W/kg', dSub('cmj',2)) : '',
     has('cmj') ? tile('CMJ Peak Force Asymmetry', jv('cmj',3,'v'), '%', dSub('cmj',3)) : '',
-    has('mono') ? tile('IMTP', (()=>{ const o=((v.str||{}).imtp)||{}; return (o.dx||o.sx) ? (o.dx||'—')+' / '+(o.sx||'—') : ''; })(), 'DX / SX') : '',
+    has('cmj') ? tile('CMJ Peak Force', jv('cmj',4,'v'), 'N/kg', dSub('cmj',4)) : '',
+    has('imtp') ? tile('IMTP Peak Force', (v.imtp||{}).v, 'N/kg', (()=>{ const d = bmDelta((v.imtp||{}).v,(v.imtp||{}).p); return d===null ? '' : (d>0?'+':'')+bmFmt(d)+' % vs precedente'; })()) : '',
+    (()=>{ const r = (has('cmj')&&has('imtp')) ? bmDsi(v) : null; return r ? tile('Force profile', 'DSI '+r.dsi.toFixed(2), '', escHtml(r.profilo)) + tile('Training focus', r.focus, '') : ''; })(),
     has('dj') ? tile('DJ RSI', jv('dj',1,'v'), '', dSub('dj',1)) : '',
     has('dj') ? tile('DJ GCT', jv('dj',2,'v'), 'ms', dSub('dj',2)) : '',
     has('fv') && v.fv && v.fv.rm ? tile('1RM stimato', v.fv.rm, 'kg') : '',
