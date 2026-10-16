@@ -1044,10 +1044,7 @@ header.top{
   line-height:1.3;
 }
 .cal-block .cb-time{font-size:9.5px;opacity:0.75;}
-.cal-block.tipo-impegno{background:#3A4560;border:1px solid #4A5878;color:#DCE2F0;}
-.cal-block.tipo-allenamento{background:var(--gold-dim);border:1px solid var(--gold);color:var(--gold-bright);}
-.cal-block.tipo-retest{background:rgba(95,168,163,0.18);border:1px solid #5FA8A3;color:#8FCFC9;}
-.cal-block.tipo-ans{background:rgba(124,147,224,0.18);border:1px solid #7C93E0;color:#A9B7EE;}
+.cal-block.tipo-impegno,.cal-block.tipo-allenamento,.cal-block.tipo-retest,.cal-block.tipo-ans{background:var(--gold-dim);border:1px solid var(--gold);color:var(--gold-bright);}
 
 .cal-free{
   position:absolute;left:3px;right:3px;border-radius:3px;
@@ -2096,10 +2093,7 @@ body[data-theme="light"] .paz-lk-list{background:#fff;border-color:#ccc;}
       <button class="btn-ghost" id="btnPrenotaPalestra" style="display:none;">🏋 Prenota la palestra</button>
     </div>
     <div class="cal-legend">
-      <span class="leg-item"><span class="leg-dot dot-impegno"></span>Impegno</span>
-      <span class="leg-item"><span class="leg-dot dot-allenamento"></span>Allenamento</span>
-      <span class="leg-item"><span class="leg-dot dot-retest"></span>Retest</span>
-      <span class="leg-item"><span class="leg-dot dot-ans"></span>Percorso ANS</span>
+      <span class="leg-item"><span class="leg-dot dot-allenamento"></span>Appuntamento</span>
     </div>
     <div style="font-size:11.5px;color:var(--ink-mute);margin-top:4px;">Clicca su una lezione per i dettagli, o in un punto vuoto del calendario per richiedere un appuntamento in quell'orario.</div>
 
@@ -2263,7 +2257,7 @@ body[data-theme="light"] .paz-lk-list{background:#fff;border-color:#ccc;}
     <button class="btn-ghost" id="btnRichieste">Richieste <span class="rich-badge" id="richBadge" style="display:none;">0</span></button>
     <button class="btn-ghost" id="btnAvvisi">Avvisi <span class="rich-badge" id="avvisiBadge" style="display:none;">0</span></button>
     <button class="btn-ghost" id="btnSegnalazioni">Segnalazioni <span class="rich-badge" id="segnalazioniBadge" style="display:none;">0</span></button>
-    <button class="btn-ghost" id="btnNewImpegno">+ Nuovo impegno</button>
+    <button class="btn-ghost" id="btnNewImpegno">+ Nuovo appuntamento</button>
   </div>
 
   <div class="cal-settings" id="calSettings"></div>
@@ -2272,16 +2266,13 @@ body[data-theme="light"] .paz-lk-list{background:#fff;border-color:#ccc;}
   <div class="cal-info-pop" id="calInfoPop" style="display:none;">
     <div class="cal-info-t">Legenda</div>
     <div class="cal-legend" style="flex-direction:column;align-items:flex-start;gap:6px;">
-      <span class="leg-item"><span class="leg-dot dot-impegno"></span>Impegno</span>
-      <span class="leg-item"><span class="leg-dot dot-allenamento"></span>Allenamento</span>
-      <span class="leg-item"><span class="leg-dot dot-retest"></span>Retest</span>
-      <span class="leg-item"><span class="leg-dot dot-ans"></span>Percorso ANS</span>
+      <span class="leg-item"><span class="leg-dot dot-allenamento"></span>Appuntamento</span>
       <span class="leg-item"><span class="leg-dot dot-recv"></span>Orario di ricevimento</span>
       <span class="leg-item"><span class="leg-dot dot-nondisp"></span>Non disponibile</span>
       <span class="leg-item"><span class="leg-dot dot-free"></span>Finestra libera (clicca per inserire)</span>
     </div>
     <div class="cal-info-t" style="margin-top:12px;">Come si usa</div>
-    <div class="cal-info-txt">Clicca per aggiungere rapidamente un impegno, clicca e trascina per selezionare un intervallo (appuntamento, disponibilità o non disponibilità), trascina un appuntamento per spostarlo. Clicca su "Ricevi"/"Non disponibile" per modificarli.</div>
+    <div class="cal-info-txt">Clicca per aggiungere rapidamente un appuntamento, clicca e trascina per selezionare un intervallo (appuntamento, disponibilità o non disponibilità), trascina un appuntamento per spostarlo. Clicca su "Ricevi"/"Non disponibile" per modificarli.</div>
   </div>
 
   <div class="cal-grid-scroll" id="calWeekWrap">
@@ -2342,7 +2333,7 @@ body[data-theme="light"] .paz-lk-list{background:#fff;border-color:#ccc;}
 <div class="modal-bg" id="eventModal">
   <div class="modal">
     <button class="modal-close" id="closeEvent">×</button>
-    <h3 id="eventModalTitle">Nuovo evento</h3>
+    <h3 id="eventModalTitle">Nuovo appuntamento</h3>
     <div id="eventModalContent"></div>
   </div>
 </div>
@@ -11616,7 +11607,7 @@ function mondayOf(d){ const r=new Date(d); const day=r.getDay(); const diff=(day
 function addDays(d,n){ const r=new Date(d); r.setDate(r.getDate()+n); return r; }
 function fmtDateISO(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 function sameDate(a,b){ return a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate(); }
-function tipoLabel(t){ return t==='impegno'?'Impegno':t==='retest'?'Retest':t==='ans'?'Percorso ANS':'Allenamento'; }
+function tipoLabel(t){ return 'Appuntamento'; }
 
 function parseReviewWeeks(str){
   if(!str) return null;
@@ -12680,21 +12671,14 @@ function closeEventModal(){
 }
 function renderEventModal(){
   const ed = state.eventEditor;
-  document.getElementById('eventModalTitle').textContent = state.eventEditorIsEdit ? 'Modifica evento' : 'Nuovo evento';
+  document.getElementById('eventModalTitle').textContent = state.eventEditorIsEdit ? 'Modifica appuntamento' : 'Nuovo appuntamento';
   const box = document.getElementById('eventModalContent');
   const cliente = ed.clienteId ? state.clienti.find(c=>c.id===ed.clienteId) : null;
   const schedeOptions = cliente ? clientSchedeFlat(cliente) : [];
 
   let html = `
-    <div class="ev-type-toggle">
-      <div class="ev-type-opt ${ed.tipo==='impegno'?'active':''}" data-settipo="impegno">Impegno</div>
-      <div class="ev-type-opt ${ed.tipo==='allenamento'?'active':''}" data-settipo="allenamento">Allenamento</div>
-      <div class="ev-type-opt ${ed.tipo==='retest'?'active':''}" data-settipo="retest">Retest</div>
-      <div class="ev-type-opt ${ed.tipo==='ans'?'active':''}" data-settipo="ans">Percorso ANS</div>
-    </div>
-    <div class="ev-field"><label>Titolo / nota</label><input class="editable" id="evTitolo" value="${ed.titolo||''}" placeholder="es. Allenamento forza / Retest 1RM / Impegno personale"></div>
-    <div class="ev-field"><label>Cliente (opzionale)</label>
-      ${pazLookupHtml('evCliente', ed.clienteId, '— Nessuno / impegno personale —')}
+    <div class="ev-field"><label>Paziente</label>
+      ${pazLookupHtml('evCliente', ed.clienteId, '— Nessuno / appuntamento interno —')}
     </div>
     <div style="margin:-6px 0 12px;">
       <button type="button" class="btn-small" id="evNuovoPazBtn">${state.evNewPaz ? '× Annulla nuovo paziente' : '+ Nuovo paziente'}</button>
@@ -12713,7 +12697,7 @@ function renderEventModal(){
       const manageAll = canManageAll();
       const profOptions = manageAll ? state.professionisti : (cliente ? clienteProfIds(cliente).map(id=>state.professionisti.find(p=>p.id===id)).filter(Boolean) : []);
       if(!manageAll && profOptions.length<2) return '';
-      return `<div class="ev-field"><label>Professionista per questo appuntamento</label>
+      return `<div class="ev-field"><label>Operatore</label>
         <select id="evProf" class="editable">
           ${manageAll ? `<option value="">— Nessuno —</option>` : ''}
           ${profOptions.map(p=>`<option value="${p.id}" ${ed.professionistaId===p.id?'selected':''}>${p.nome}${p.area?' ('+p.area+')':''}</option>`).join('')}
@@ -12733,52 +12717,13 @@ function renderEventModal(){
     <div class="ev-row">
       <div class="ev-field"><label>Inizio</label><input class="editable" type="time" id="evStart" value="${ed.start}"></div>
       <div class="ev-field"><label>Fine</label><input class="editable" type="time" id="evEnd" value="${ed.end}"></div>
-    </div>
-    <div class="ev-field"><label>Colore</label>
-      <div class="color-swatches">
-        <div class="color-swatch none-swatch ${!ed.colore?'sel':''}" data-color="" title="Predefinito (in base al tipo)">—</div>
-        ${EVENT_COLORS.map(c=>`<div class="color-swatch ${ed.colore===c?'sel':''}" data-color="${c}" style="background:${c};"></div>`).join('')}
-      </div>
     </div>`;
 
   if(cliente){
-    html += `<div class="ev-field"><label>Scheda collegata (opzionale)</label>
-      <select id="evScheda" class="editable">
-        <option value="">— Nessuna —</option>
-        ${schedeOptions.map(s=>`<option value="${s.id}" ${ed.schedaId===s.id?'selected':''}>${s.label}</option>`).join('')}
-      </select>
-    </div>
-    <div class="ev-field"><label>Note sessione (post-lezione)</label><input class="editable" id="evNoteSessione" value="${ed.noteSessione||''}" placeholder="es. buona tenuta sul carico, dolore lieve al ginocchio"></div>
-    <div class="ev-field"><label>Prestazione (listino del professionista)</label><select class="editable" id="evPrest" style="max-width:100%;">${lstOptions(lstProfDelEvento(ed), ed.prestazioneId||'')}</select></div>
-    <div class="ev-field"><label>Costo prestazione (€, opzionale)</label><input class="editable" id="evImporto" style="max-width:140px;" value="${ed.importo!=null&&ed.importo!==''?escAttr(String(ed.importo).replace('.',',')):''}" placeholder="es. 60"></div>
-    <div class="ev-field"><label>Operatore (opzionale)</label><input class="editable" id="evOperatore" value="${ed.operatore||''}" placeholder="es. Ale"></div>`;
-
-    if(ed.tipo==='retest'){
-      const gateInfo = activeGateUscitaForClient(cliente);
-      if(gateInfo && gateInfo.criteri.length){
-        if(!ed.retestData) ed.retestData = { pianificati: gateInfo.criteri.map(g=>g.id), risultati: {} };
-        html += `<div class="ev-field retest-battery">
-          <label>Test da eseguire — gate di uscita "${escHtml(gateInfo.faseNome)}"</label>
-          <div class="retest-hint">Batteria proposta in automatico dai gate di uscita della fase corrente del blocco operativo. Deseleziona i test che non farai in questa sessione; per gli altri, quando li avrai svolti, inserisci qui il risultato: aggiornerà da solo i gate della fase.</div>
-          <div class="retest-test-list">
-            ${gateInfo.criteri.map(g=>{
-              const checked = ed.retestData.pianificati.includes(g.id);
-              const prev = gateInfo.gateValues[g.id] || {};
-              if(!ed.retestData.risultati[g.id]) ed.retestData.risultati[g.id] = { valore: prev.valore||'', raggiunto: !!prev.raggiunto };
-              const r = ed.retestData.risultati[g.id];
-              return `<div class="retest-test-row ${checked?'':'off'}">
-                <label class="retest-test-check"><input type="checkbox" data-retest-pian="${g.id}" ${checked?'checked':''}> <span>${escHtml(g.nome||'(senza nome)')}${g.target ? ` <span class="retest-target">— target: ${escHtml(g.target)}</span>` : ''}</span></label>
-                ${checked ? `<div class="retest-result-inputs">
-                  <input class="editable" placeholder="valore rilevato" data-retest-valore="${g.id}" value="${escAttr(r.valore)}">
-                  <label class="gate-check"><input type="checkbox" data-retest-raggiunto="${g.id}" ${r.raggiunto?'checked':''}> raggiunto</label>
-                </div>` : ''}
-              </div>`;
-            }).join('')}
-          </div>
-        </div>`;
-      }
-    }
+    html += `<div class="ev-field"><label>Prestazione (listino dell'operatore)</label><select class="editable" id="evPrest" style="max-width:100%;">${lstOptions(lstProfDelEvento(ed), ed.prestazioneId||'')}</select></div>
+    <div class="ev-field"><label>Costo prestazione (€)</label><input class="editable" id="evImporto" style="max-width:140px;" value="${ed.importo!=null&&ed.importo!==''?escAttr(String(ed.importo).replace('.',',')):''}" placeholder="es. 60"></div>`;
   }
+  html += `<div class="ev-field"><label>Nota (opzionale)</label><input class="editable" id="evTitolo" value="${escAttr(ed.titolo||'')}" placeholder="es. prima visita"></div>`;
 
   if(!state.eventEditorIsEdit){
     const startDow = new Date(ed.day + 'T00:00:00').getDay();
@@ -12919,15 +12864,16 @@ function saveEventEditor(){
   const origForNotif = state.eventEditorIsEdit ? { day: ed.day, start: ed.start, end: ed.end, clienteId: ed.clienteId, titolo: ed.titolo, tipo: ed.tipo } : null;
   ed.titolo = document.getElementById('evTitolo').value;
   ed.clienteId = document.getElementById('evCliente').value;
+  if(!state.eventEditorIsEdit) ed.tipo = ed.clienteId ? 'allenamento' : 'impegno';   // un solo tipo visibile: "Appuntamento"
   ed.day = document.getElementById('evDay').value;
   ed.start = document.getElementById('evStart').value;
   ed.end = document.getElementById('evEnd').value;
   const schedaSel = document.getElementById('evScheda');
   const noteSel = document.getElementById('evNoteSessione');
   const opSel = document.getElementById('evOperatore');
-  ed.schedaId = schedaSel ? schedaSel.value : '';
-  ed.noteSessione = noteSel ? noteSel.value : '';
-  ed.operatore = opSel ? opSel.value : '';
+  if(schedaSel) ed.schedaId = schedaSel.value;      // campi tolti dal modulo: i valori già presenti restano
+  if(noteSel) ed.noteSessione = noteSel.value;
+  if(opSel) ed.operatore = opSel.value;
   { const impEl = document.getElementById('evImporto'); if(impEl){ const v = payNum(impEl.value); ed.importo = v; if(v==null||v<=0){ ed.pagato=false; ed.pagatoIl=null; ed.pagatoModo=''; } } }
   if(!ed.day || !ed.start || !ed.end || ed.end<=ed.start){
     alert('Controlla data e orari: l\'orario di fine deve essere dopo quello di inizio.');
