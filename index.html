@@ -12719,7 +12719,7 @@ function renderEventModal(){
       <div class="ev-field"><label>Fine</label><input class="editable" type="time" id="evEnd" value="${ed.end}"></div>
     </div>`;
 
-  if(cliente){
+  {
     html += `<div class="ev-field"><label>Prestazione (listino dell'operatore)</label><select class="editable" id="evPrest" style="max-width:100%;">${lstOptions(lstProfDelEvento(ed), ed.prestazioneId||'')}</select></div>
     <div class="ev-field"><label>Costo prestazione (€)</label><input class="editable" id="evImporto" style="max-width:140px;" value="${ed.importo!=null&&ed.importo!==''?escAttr(String(ed.importo).replace('.',',')):''}" placeholder="es. 60"></div>`;
   }
