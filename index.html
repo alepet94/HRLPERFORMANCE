@@ -994,6 +994,15 @@ header.top{
 #calWeekWrap,#calMultiWrap{overflow:auto;}
 #calWeekWrap .cal-axis-head,#calMultiWrap .cal-axis-head{position:sticky;top:0;z-index:3;background:var(--navy-900);}
 .cal-multi-grid .cal-col-head{position:sticky;top:0;}
+.cal-multi-grid .cal-col-head{position:sticky;}
+.cal-colpick-btn{position:absolute;top:6px;right:6px;display:flex;gap:2px;padding:3px 5px;border:1px solid var(--line);border-radius:12px;background:var(--navy-850);cursor:pointer;}
+.cal-colpick-btn:hover{border-color:var(--gold);}
+.ccp-dot{width:9px;height:9px;border-radius:50%;display:block;}
+.cal-colpick{position:absolute;top:100%;right:4px;z-index:30;background:var(--navy-900);border:1px solid var(--line);border-radius:8px;padding:10px 12px;box-shadow:0 8px 24px rgba(0,0,0,.45);width:max-content;max-width:260px;text-align:left;}
+.cal-colpick .ccp-row{margin-bottom:8px;font-size:11px;color:var(--ink-mute);}
+.cal-colpick .ccp-row:last-child{margin-bottom:0;}
+.cal-colpick .color-swatches{gap:6px;margin-top:4px;}
+.cal-colpick .color-swatch{width:20px;height:20px;}
 .cal-multi-grid .cal-col-head .cch-sub{font-size:10px;color:var(--ink-mute);margin-top:1px;}
 .cal-multi-grid .cal-col-head.spazio-head{background:var(--gold-dim);}
 .cal-col-head{
@@ -12029,6 +12038,36 @@ function calLaneStyles(events){
   flush();
   return out;
 }
+// colori per professionista nel multicalendario: uno per gli allenamenti e uno per gli impegni
+// (salvati sul dispositivo di chi guarda il calendario)
+const CAL_COL_LS = 'hrl.calProfColori';
+function calProfColori(){
+  if(!state.calProfColori){
+    try{ state.calProfColori = JSON.parse(localStorage.getItem(CAL_COL_LS) || '{}') || {}; }catch(e){ state.calProfColori = {}; }
+  }
+  return state.calProfColori;
+}
+function calProfColoreSet(profId, tipo, colore){
+  const m = calProfColori();
+  m[profId] = m[profId] || {};
+  if(colore) m[profId][tipo] = colore; else delete m[profId][tipo];
+  if(!Object.keys(m[profId]).length) delete m[profId];
+  try{ localStorage.setItem(CAL_COL_LS, JSON.stringify(m)); }catch(e){}
+}
+function calProfColoreStyle(ev, profId){
+  if(ev.colore || !profId) return {box:'', txt:''};
+  const c = (calProfColori()[profId]||{})[ev.tipo];
+  return c ? {box:`border-color:${c};background:${c}33;`, txt:` style="color:${c};"`} : {box:'', txt:''};
+}
+function calColPickHTML(profId){
+  const cur = calProfColori()[profId] || {};
+  const row = (tipo, label)=>`<div class="ccp-row"><span>${label}</span><div class="color-swatches">
+      <div class="color-swatch none-swatch ${!cur[tipo]?'sel':''}" data-colpick-set="${profId}|${tipo}|" title="Predefinito">—</div>
+      ${EVENT_COLORS.map(c=>`<div class="color-swatch ${cur[tipo]===c?'sel':''}" data-colpick-set="${profId}|${tipo}|${c}" style="background:${c};"></div>`).join('')}
+    </div></div>`;
+  return `<div class="cal-colpick" data-colpick-pop>${row('allenamento','Allenamenti')}${row('impegno','Impegni')}</div>`;
+}
+
 function renderCalendarMulti(){
   if(!state.calMultiDay) state.calMultiDay = fmtDateISO(new Date());
   const cs = state.calSettings;
@@ -12061,9 +12100,13 @@ function renderCalendarMulti(){
 
   let html = `<div class="cal-axis-head"></div>`;
   cols.forEach(col=>{
+    const pc = col.kind==='prof' ? (calProfColori()[col.id]||{}) : {};
     html += `<div class="cal-col-head ${col.kind==='spazio'?'spazio-head':''}">
       <div class="dname">${escHtml(col.label)}</div>
       <div class="cch-sub">${escHtml(col.sub)}</div>
+      ${col.kind==='prof' ? `<button type="button" class="cal-colpick-btn" data-colpick-open="${col.id}" title="Colori di allenamenti e impegni">
+        <span class="ccp-dot" style="background:${pc.allenamento||'var(--gold)'};"></span><span class="ccp-dot" style="background:${pc.impegno||'#4A5878'};"></span></button>
+        ${state.calColPick===col.id ? calColPickHTML(col.id) : ''}` : ''}
     </div>`;
   });
 
@@ -12106,9 +12149,10 @@ function renderCalendarMulti(){
       const top = (s - calStartMin())*PX;
       const height = Math.max((e-s)*PX, 16);
       const evClient = ev.clienteId ? state.clienti.find(c=>c.id===ev.clienteId) : null;
-      const colorStyle = (ev.colore ? `border-color:${ev.colore};background:${ev.colore}22;` : '') + payStyle(ev);
+      const pcs = col.kind==='prof' ? calProfColoreStyle(ev, col.id) : {box:'',txt:''};
+      const colorStyle = (ev.colore ? `border-color:${ev.colore};background:${ev.colore}22;` : '') + payStyle(ev) + pcs.box;
       html += `<div class="cal-block movable tipo-${ev.tipo}" data-event-id="${ev.id}" style="top:${top}px;height:${height}px;${colorStyle}${colLanes[ev.id]||''}">
-        <div${ev.colore ? ` style="color:${ev.colore};"` : ''}>${escHtml(ev.titolo || tipoLabel(ev.tipo))}</div>
+        <div${ev.colore ? ` style="color:${ev.colore};"` : pcs.txt}>${escHtml(ev.titolo || tipoLabel(ev.tipo))}</div>
         ${evClient ? `<div class="cb-time">${escHtml(evClient.nome)}</div>` : ''}
         <div class="cb-time">${ev.start}–${ev.end}</div>${payTag(ev,false)}
       </div>`;
@@ -12119,6 +12163,12 @@ function renderCalendarMulti(){
   grid.innerHTML = html;
   grid.onclick = (e)=>{
     if(window.__calDragSuppressClick){ window.__calDragSuppressClick = false; return; }
+    const opn = e.target.closest('[data-colpick-open]');
+    if(opn){ state.calColPick = state.calColPick===opn.dataset.colpickOpen ? null : opn.dataset.colpickOpen; renderCalendarMulti(); return; }
+    const setc = e.target.closest('[data-colpick-set]');
+    if(setc){ const [pid,tipo,col] = setc.dataset.colpickSet.split('|'); calProfColoreSet(pid, tipo, col); renderCalendarMulti(); return; }
+    if(e.target.closest('[data-colpick-pop]')) return;
+    if(state.calColPick){ state.calColPick = null; renderCalendarMulti(); return; }
     const evEl = e.target.closest('[data-event-id]');
     if(evEl){
       const ev = state.appuntamenti.find(a=>a.id===evEl.dataset.eventId);
