@@ -995,14 +995,13 @@ header.top{
 #calWeekWrap .cal-axis-head,#calMultiWrap .cal-axis-head{position:sticky;top:0;z-index:3;background:var(--navy-900);}
 .cal-multi-grid .cal-col-head{position:sticky;top:0;}
 .cal-multi-grid .cal-col-head{position:sticky;}
-.cal-colpick-btn{position:absolute;top:6px;right:6px;display:flex;gap:2px;padding:3px 5px;border:1px solid var(--line);border-radius:12px;background:var(--navy-850);cursor:pointer;}
-.cal-colpick-btn:hover{border-color:var(--gold);}
-.ccp-dot{width:9px;height:9px;border-radius:50%;display:block;}
-.cal-colpick{position:absolute;top:100%;right:4px;z-index:30;background:var(--navy-900);border:1px solid var(--line);border-radius:8px;padding:10px 12px;box-shadow:0 8px 24px rgba(0,0,0,.45);width:max-content;max-width:260px;text-align:left;}
-.cal-colpick .ccp-row{margin-bottom:8px;font-size:11px;color:var(--ink-mute);}
-.cal-colpick .ccp-row:last-child{margin-bottom:0;}
-.cal-colpick .color-swatches{gap:6px;margin-top:4px;}
-.cal-colpick .color-swatch{width:20px;height:20px;}
+.cal-multi-grid .cal-col-head .dname{cursor:default;user-select:none;}
+.cal-colpick{position:absolute;top:100%;left:50%;transform:translateX(-50%);z-index:30;background:var(--navy-900);border:1px solid var(--line);border-radius:8px;padding:10px 12px;box-shadow:0 8px 24px rgba(0,0,0,.45);width:236px;text-align:left;}
+.cal-colpick .color-swatches,.prof-dropdown .color-swatches{gap:6px;}
+.cal-colpick .color-swatch,.prof-dropdown .color-swatch{width:22px;height:22px;}
+.color-swatch.used{opacity:.45;}
+.prof-col-dot{width:16px;height:16px;border-radius:50%;border:1px solid var(--line);cursor:pointer;flex:none;margin-right:6px;background:transparent;}
+.prof-col-dot:hover{border-color:var(--gold);}
 .cal-multi-grid .cal-col-head .cch-sub{font-size:10px;color:var(--ink-mute);margin-top:1px;}
 .cal-multi-grid .cal-col-head.spazio-head{background:var(--gold-dim);}
 .cal-col-head{
@@ -3908,7 +3907,7 @@ async function bootApp(){
   showDbBanner('', 'Caricamento dati da Supabase…');
   try{
     const profs = await sb.from('professionisti').select('*');
-    if(!profs.error) state.professionisti = profs.data.map(p=>({id:p.id, nome:p.nome, ruolo:p.ruolo, area:p.area||''}));
+    if(!profs.error) state.professionisti = profs.data.map(p=>({id:p.id, nome:p.nome, ruolo:p.ruolo, area:p.area||'', colore:p.colore||''}));
   } catch(ex){ console.error('load professionisti', ex); }
   const ok = await db.loadAll();
   if(ok){
@@ -12038,34 +12037,41 @@ function calLaneStyles(events){
   flush();
   return out;
 }
-// colori per professionista nel multicalendario: uno per gli allenamenti e uno per gli impegni
-// (salvati sul dispositivo di chi guarda il calendario)
-const CAL_COL_LS = 'hrl.calProfColori';
-function calProfColori(){
-  if(!state.calProfColori){
-    try{ state.calProfColori = JSON.parse(localStorage.getItem(CAL_COL_LS) || '{}') || {}; }catch(e){ state.calProfColori = {}; }
+// colore per professionista (lo imposta la segreteria una volta sola; condiviso via Supabase)
+const PROF_PALETTE = [
+  ['Blu elettrico','#2F5BFF'],['Giallo fluo','#E6F31A'],['Azzurro celeste','#5BC8F5'],['Verde bosco','#1F6B3A'],
+  ['Verde acqua','#2EC4B6'],['Rosa','#F59AC1'],['Verde oliva','#808C2B'],['Rosso','#E02B2B'],
+  ['Arancio','#FF8A1F'],['Lilla','#B79AE8'],['Verde salvia','#9CB89A'],['Verde lime','#8DE02B'],
+  ['Grigio','#8D939E'],['Salmone','#FA8E7A'],['Fucsia','#E0239A'],['Blu scuro','#1B2F7A'],
+  ['Viola','#7B3FC4'],['Turchese','#0E9AA7'],['Marrone','#8B5A2B'],['Oro','#C7A24C'],
+  ['Bordeaux','#8E1B3A'],['Corallo','#FF6F61'],['Senape','#C9A227'],['Ciano','#00B8D9']
+];
+function hexMix(hex, to, t){
+  const n = h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16));
+  const a = n(hex), b = n(to);
+  return '#' + a.map((v,i)=>Math.round(v+(b[i]-v)*t).toString(16).padStart(2,'0')).join('');
+}
+function profColoreStyle(ev, prof){
+  if(ev.colore || !prof || !prof.colore) return {box:'', txt:''};
+  const light = document.body.getAttribute('data-theme')==='light';
+  const txt = light ? hexMix(prof.colore,'#000000',.55) : hexMix(prof.colore,'#ffffff',.6);
+  return {box:`border-color:${prof.colore};background:${prof.colore}${light?'40':'38'};`, txt:` style="color:${txt};"`};
+}
+async function profColoreSet(profId, colore){
+  const p = state.professionisti.find(x=>x.id===profId); if(!p) return;
+  p.colore = colore || '';
+  if(dbEnabled && sb){
+    const { error } = await sb.rpc('imposta_colore_professionista', {p_id: profId, p_colore: colore || null});
+    if(error) alert('Colore non salvato: ' + error.message + ' (hai eseguito il nuovo blocco SQL?)');
   }
-  return state.calProfColori;
 }
-function calProfColoreSet(profId, tipo, colore){
-  const m = calProfColori();
-  m[profId] = m[profId] || {};
-  if(colore) m[profId][tipo] = colore; else delete m[profId][tipo];
-  if(!Object.keys(m[profId]).length) delete m[profId];
-  try{ localStorage.setItem(CAL_COL_LS, JSON.stringify(m)); }catch(e){}
-}
-function calProfColoreStyle(ev, profId){
-  if(ev.colore || !profId) return {box:'', txt:''};
-  const c = (calProfColori()[profId]||{})[ev.tipo];
-  return c ? {box:`border-color:${c};background:${c}33;`, txt:` style="color:${c};"`} : {box:'', txt:''};
-}
-function calColPickHTML(profId){
-  const cur = calProfColori()[profId] || {};
-  const row = (tipo, label)=>`<div class="ccp-row"><span>${label}</span><div class="color-swatches">
-      <div class="color-swatch none-swatch ${!cur[tipo]?'sel':''}" data-colpick-set="${profId}|${tipo}|" title="Predefinito">—</div>
-      ${EVENT_COLORS.map(c=>`<div class="color-swatch ${cur[tipo]===c?'sel':''}" data-colpick-set="${profId}|${tipo}|${c}" style="background:${c};"></div>`).join('')}
-    </div></div>`;
-  return `<div class="cal-colpick" data-colpick-pop>${row('allenamento','Allenamenti')}${row('impegno','Impegni')}</div>`;
+function profPaletteHTML(profId){
+  const p = state.professionisti.find(x=>x.id===profId); const cur = p ? p.colore : '';
+  const usedBy = {}; state.professionisti.forEach(x=>{ if(x.colore && x.id!==profId) usedBy[x.colore] = x.nome; });
+  return `<div class="color-swatches">
+    <div class="color-swatch none-swatch ${!cur?'sel':''}" data-prof-colore="${profId}|" title="Nessun colore">—</div>
+    ${PROF_PALETTE.map(([n,c])=>`<div class="color-swatch ${cur===c?'sel':''} ${usedBy[c]?'used':''}" data-prof-colore="${profId}|${c}" style="background:${c};" title="${n}${usedBy[c]?' — già usato da '+escHtml(usedBy[c]):''}"></div>`).join('')}
+  </div>`;
 }
 
 function renderCalendarMulti(){
@@ -12100,13 +12106,11 @@ function renderCalendarMulti(){
 
   let html = `<div class="cal-axis-head"></div>`;
   cols.forEach(col=>{
-    const pc = col.kind==='prof' ? (calProfColori()[col.id]||{}) : {};
-    html += `<div class="cal-col-head ${col.kind==='spazio'?'spazio-head':''}">
-      <div class="dname">${escHtml(col.label)}</div>
+    const pcol = col.kind==='prof' && col.obj.colore ? col.obj.colore : '';
+    html += `<div class="cal-col-head ${col.kind==='spazio'?'spazio-head':''}" ${pcol?`style="box-shadow:inset 0 3px 0 ${pcol};"`:''}>
+      <div class="dname" ${col.kind==='prof' && canManageAll() ? `data-colpick-open="${col.id}" title="Doppio clic per scegliere il colore"` : ''}>${escHtml(col.label)}</div>
       <div class="cch-sub">${escHtml(col.sub)}</div>
-      ${col.kind==='prof' ? `<button type="button" class="cal-colpick-btn" data-colpick-open="${col.id}" title="Colori di allenamenti e impegni">
-        <span class="ccp-dot" style="background:${pc.allenamento||'var(--gold)'};"></span><span class="ccp-dot" style="background:${pc.impegno||'#4A5878'};"></span></button>
-        ${state.calColPick===col.id ? calColPickHTML(col.id) : ''}` : ''}
+      ${col.kind==='prof' && canManageAll() && state.calColPick===col.id ? `<div class="cal-colpick" data-colpick-pop>${profPaletteHTML(col.id)}</div>` : ''}
     </div>`;
   });
 
@@ -12149,7 +12153,7 @@ function renderCalendarMulti(){
       const top = (s - calStartMin())*PX;
       const height = Math.max((e-s)*PX, 16);
       const evClient = ev.clienteId ? state.clienti.find(c=>c.id===ev.clienteId) : null;
-      const pcs = col.kind==='prof' ? calProfColoreStyle(ev, col.id) : {box:'',txt:''};
+      const pcs = col.kind==='prof' ? profColoreStyle(ev, col.obj) : {box:'',txt:''};
       const colorStyle = (ev.colore ? `border-color:${ev.colore};background:${ev.colore}22;` : '') + payStyle(ev) + pcs.box;
       html += `<div class="cal-block movable tipo-${ev.tipo}" data-event-id="${ev.id}" style="top:${top}px;height:${height}px;${colorStyle}${colLanes[ev.id]||''}">
         <div${ev.colore ? ` style="color:${ev.colore};"` : pcs.txt}>${escHtml(ev.titolo || tipoLabel(ev.tipo))}</div>
@@ -12161,14 +12165,17 @@ function renderCalendarMulti(){
   });
 
   grid.innerHTML = html;
+  grid.ondblclick = (e)=>{
+    const opn = e.target.closest('[data-colpick-open]');
+    if(opn){ state.calColPick = state.calColPick===opn.dataset.colpickOpen ? null : opn.dataset.colpickOpen; renderCalendarMulti(); }
+  };
   grid.onclick = (e)=>{
     if(window.__calDragSuppressClick){ window.__calDragSuppressClick = false; return; }
-    const opn = e.target.closest('[data-colpick-open]');
-    if(opn){ state.calColPick = state.calColPick===opn.dataset.colpickOpen ? null : opn.dataset.colpickOpen; renderCalendarMulti(); return; }
-    const setc = e.target.closest('[data-colpick-set]');
-    if(setc){ const [pid,tipo,col] = setc.dataset.colpickSet.split('|'); calProfColoreSet(pid, tipo, col); renderCalendarMulti(); return; }
+    const setc = e.target.closest('[data-prof-colore]');
+    if(setc){ const [pid,col] = setc.dataset.profColore.split('|'); state.calColPick = null; profColoreSet(pid, col).then(()=>renderCalendarMulti()); renderCalendarMulti(); return; }
     if(e.target.closest('[data-colpick-pop]')) return;
     if(state.calColPick){ state.calColPick = null; renderCalendarMulti(); return; }
+    if(e.target.closest('[data-colpick-open]')) return;
     const evEl = e.target.closest('[data-event-id]');
     if(evEl){
       const ev = state.appuntamenti.find(a=>a.id===evEl.dataset.eventId);
@@ -12219,10 +12226,18 @@ function renderCalMultiVisDropdown(){
     ...state.professionisti.map(p=>({key:multiColKey('prof',p.id), label:p.nome+(p.area?' ('+p.area+')':'')})),
     ...state.spazi.map(s=>({key:multiColKey('spazio',s.id), label:s.nome+' (spazio)'}))
   ];
+  const pid = it=> it.key.startsWith('prof:') ? it.key.slice(5) : '';
+  const pcolor = it=>{ const p = pid(it) ? state.professionisti.find(x=>x.id===pid(it)) : null; return p ? p.colore : ''; };
   dd.innerHTML = items.length ? items.map(it=>`
-    <label class="prof-dropdown-item" style="display:flex;align-items:center;gap:8px;">
-      <input type="checkbox" data-multivis="${it.key}" ${state.calMultiHidden.has(it.key)?'':'checked'}> ${escHtml(it.label)}
-    </label>`).join('') : `<div class="prof-dropdown-empty">Nessun professionista o spazio</div>`;
+    <div style="display:flex;align-items:center;gap:6px;">
+      <label class="prof-dropdown-item" style="display:flex;align-items:center;gap:8px;flex:1;">
+        <input type="checkbox" data-multivis="${it.key}" ${state.calMultiHidden.has(it.key)?'':'checked'}> ${escHtml(it.label)}
+      </label>
+      ${pid(it) && canManageAll() ? `<span class="prof-col-dot" data-dd-colore="${pid(it)}" title="Scegli il colore" style="${pcolor(it)?`background:${pcolor(it)};`:''}"></span>` : ''}
+    </div>
+    ${pid(it) && state.ddColPick===pid(it) ? `<div style="padding:4px 8px 8px;">${profPaletteHTML(pid(it))}</div>` : ''}`).join('') : `<div class="prof-dropdown-empty">Nessun professionista o spazio</div>`;
+  dd.querySelectorAll('[data-dd-colore]').forEach(d=> d.onclick = (e)=>{ e.stopPropagation(); state.ddColPick = state.ddColPick===d.dataset.ddColore ? null : d.dataset.ddColore; renderCalMultiVisDropdown(); });
+  dd.querySelectorAll('[data-prof-colore]').forEach(sw=> sw.onclick = async (e)=>{ e.stopPropagation(); const [p,c] = sw.dataset.profColore.split('|'); await profColoreSet(p,c); state.ddColPick = null; renderCalendarMulti(); });
   dd.querySelectorAll('[data-multivis]').forEach(chk=>{
     chk.onchange = ()=>{
       if(chk.checked) state.calMultiHidden.delete(chk.dataset.multivis);
@@ -12336,9 +12351,10 @@ function renderCalendarWeek(){
       const evClient = ev.clienteId ? state.clienti.find(c=>c.id===ev.clienteId) : null;
       const evProfId = ev.professionistaId || (evClient ? clienteProfIds(evClient)[0] : null);
       const evProf = (canManageAll() && !state.calFilterProfId && evProfId) ? state.professionisti.find(p=>p.id===evProfId) : null;
-      const colorStyle = (ev.colore ? `border-color:${ev.colore};background:${ev.colore}22;` : '') + payStyle(ev);
+      const pcs = evProf ? profColoreStyle(ev, evProf) : {box:'',txt:''};
+      const colorStyle = (ev.colore ? `border-color:${ev.colore};background:${ev.colore}22;` : '') + payStyle(ev) + pcs.box;
       html += `<div class="cal-block movable tipo-${ev.tipo}" data-event-id="${ev.id}" style="top:${top}px;height:${height}px;${colorStyle}${dayLanes[ev.id]||''}">
-        <div${ev.colore ? ` style="color:${ev.colore};"` : ''}>${ev.titolo || tipoLabel(ev.tipo)}</div>
+        <div${ev.colore ? ` style="color:${ev.colore};"` : pcs.txt}>${ev.titolo || tipoLabel(ev.tipo)}</div>
         ${evClient ? `<div class="cb-time">${evClient.nome}${evProf?' · '+evProf.nome:''}</div>` : ''}
         <div class="cb-time">${ev.start}–${ev.end}</div>${payTag(ev,false)}
       </div>`;
