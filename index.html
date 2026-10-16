@@ -5327,6 +5327,23 @@ const SISTEMA_TEST_CATALOG = [
   'Percorso ANS — biofeedback respiratorio',
   'Retest GHI di controllo'
 ];
+// Biofeedback respiratorio: tipi di respirazione (Breath Shape) selezionabili
+// quando nel Sistema è scelto il percorso ANS. Più tipi insieme sono ammessi.
+const ANS_TEST = 'Percorso ANS — biofeedback respiratorio';
+const BREATH_SHAPES = [
+  ['thm55','THM 5-5'],['vagal525','Vagal tone 5-2-5'],
+  ['b478','Breath 4-7-8'],['lb37','Long breath diet 3-7'],
+  ['thmco2p','THM CO₂+ 4-6'],['thmco2m','THM CO₂- 6-4'],
+  ['dig25','Digital 25'],['dig2030','Digital 20/30'],
+  ['tr2080','Training 20/80'],['tr1585','Training 15/85'],
+  ['manual','Manual']
+];
+function breathShapeSel(c){
+  const p = ensurePercorso(c);
+  if(!p.sistema) p.sistema = {attiva:false, professionistiIds:[]};
+  if(!Array.isArray(p.sistema.breathShape)) p.sistema.breathShape = [];
+  return p.sistema.breathShape;
+}
 // marcatori della tabella "Healthspan analysis" del referto Biotekna (GHI):
 // il PDF stesso assegna a ciascun marcatore un semaforo verde/rosso (icone
 // colorate accanto al valore) — non ricalcoliamo noi delle soglie, teniamo
@@ -6008,6 +6025,11 @@ function renderSistemaTab(){
 
     <div class="client-section-label-row" style="margin-top:30px;"><div class="client-section-label">Test / percorsi da svolgere</div></div>
     <div id="sistTestList" style="margin-bottom:18px;">${testHTML}</div>
+    ${c.sistemaTestSelezionati.has(ANS_TEST) ? `
+    <div class="client-section-label-row"><div class="client-section-label">Biofeedback respiratorio — Breath Shape</div></div>
+    <div id="breathShapeBox" style="display:grid;grid-template-columns:repeat(2,minmax(150px,1fr));gap:4px 18px;max-width:460px;margin:10px 0 20px;">
+      ${BREATH_SHAPES.map(([k,l])=>`<label class="sist-test-item"><input type="checkbox" data-breath="${k}" ${breathShapeSel(c).includes(k)?'checked':''}> ${l}</label>`).join('')}
+    </div>` : ''}
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:26px;">
       <button class="btn-ghost" id="btnPianificaRetest">Pianifica retest in calendario</button>
       <button class="btn-ghost" id="btnPianificaAns">Pianifica percorso ANS in calendario</button>
@@ -6076,6 +6098,14 @@ function renderSistemaTab(){
     chk.onchange = ()=>{
       const t = chk.dataset.sisttest;
       if(chk.checked) c.sistemaTestSelezionati.add(t); else c.sistemaTestSelezionati.delete(t);
+      db.saveCliente(c);
+      if(t===ANS_TEST) renderSistemaTab();
+    };
+  });
+  box.querySelectorAll('[data-breath]').forEach(chk=>{
+    chk.onchange = ()=>{
+      const sel = breathShapeSel(c), k = chk.dataset.breath, i = sel.indexOf(k);
+      if(chk.checked && i<0) sel.push(k); else if(!chk.checked && i>=0) sel.splice(i,1);
       db.saveCliente(c);
     };
   });
