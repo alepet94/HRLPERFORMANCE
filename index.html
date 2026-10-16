@@ -2029,7 +2029,7 @@ body[data-theme="light"] .paz-lk-list{background:#fff;border-color:#ccc;}
     <div class="cli-tab active" data-tab="valutazioni">Valutazione</div>
     <div class="cli-tab" data-tab="sistema">Sistema</div>
     <div class="cli-tab" data-tab="areaHuman">Area Human</div>
-    <div class="cli-tab" data-tab="fisioterapia">Area Fisioterapia</div>
+    <div class="cli-tab" data-tab="fisioterapia">Area acuti</div>
     <div class="cli-tab" data-tab="pathway">Area Performance</div>
     <div class="cli-tab" data-tab="storico">Storico</div>
     <div class="cli-tab" data-tab="calendario">Calendario cliente</div>
@@ -6032,7 +6032,6 @@ function renderSistemaTab(){
     </div>` : ''}
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:26px;">
       <button class="btn-ghost" id="btnPianificaRetest">Pianifica retest in calendario</button>
-      <button class="btn-ghost" id="btnPianificaAns">Pianifica percorso ANS in calendario</button>
     </div>
   `;
 
@@ -6111,9 +6110,6 @@ function renderSistemaTab(){
   });
   document.getElementById('btnPianificaRetest').onclick = ()=>{
     openEventEditor({day: fmtDateISO(new Date()), start:'09:00', end:'10:00', tipo:'retest', clienteId:c.id}, false);
-  };
-  document.getElementById('btnPianificaAns').onclick = ()=>{
-    openEventEditor({day: fmtDateISO(new Date()), start:'09:00', end:'10:00', tipo:'ans', clienteId:c.id}, false);
   };
 }
 
@@ -7730,7 +7726,7 @@ function storicoAreaOf(a){
   if(prof && (prof.area==='Osteopata' || prof.area==='Nutrizionista')) return 'areaHuman';
   return 'performance';
 }
-const STORICO_AREA_LBL = {performance:'Area Performance', sistema:'Sistema', fisioterapia:'Fisioterapia', areaHuman:'Area Human'};
+const STORICO_AREA_LBL = {performance:'Area Performance', sistema:'Sistema', fisioterapia:'Area acuti', areaHuman:'Area Human'};
 // storico (tutti i professionisti): diviso in "Trattamenti svolti" (appuntamenti
 // passati + schede trattamento come quelle di osteopatia, che sono sempre
 // relative a una seduta già avvenuta) e "Prossimi appuntamenti" (appuntamenti
@@ -7776,7 +7772,7 @@ function renderStoricoTab(){
         <option value="">Tutte le aree</option>
         <option value="performance">Area Performance</option>
         <option value="sistema">Lavoro Sistema</option>
-        <option value="fisioterapia">Fisioterapia</option>
+        <option value="fisioterapia">Area acuti</option>
         <option value="areaHuman">Area Human</option>
       </select>
       <select class="editable" id="stFiltroProf">
@@ -7848,7 +7844,7 @@ function renderStoricoTab(){
     return `<div class="upcoming-item tipo-border-retest">
       <div class="ui-info">
         <div class="uid"><span class="tipo-tag tipo-tag-retest">Valutazione fisioterapica</span> ${escHtml(v.motivo || 'Nessun motivo indicato')}</div>
-        <div class="uim">${v.data ? v.data.split('-').reverse().join('/') : '—'} · Area Fisioterapia${prof ? ' · '+escHtml(prof.nome) : ''}</div>
+        <div class="uim">${v.data ? v.data.split('-').reverse().join('/') : '—'} · Area acuti${prof ? ' · '+escHtml(prof.nome) : ''}</div>
       </div>
     </div>`;
   }
@@ -7878,7 +7874,7 @@ function renderStoricoTab(){
     return `<div class="upcoming-item tipo-border-allenamento">
       <div class="ui-info">
         <div class="uid"><span class="tipo-tag tipo-tag-allenamento">Fisioterapia</span> ${escHtml(tipiLbl)}</div>
-        <div class="uim">${s.data ? s.data.split('-').reverse().join('/') : '—'} · Area Fisioterapia${prof ? ' · '+escHtml(prof.nome) : ''}</div>
+        <div class="uim">${s.data ? s.data.split('-').reverse().join('/') : '—'} · Area acuti${prof ? ' · '+escHtml(prof.nome) : ''}</div>
         <div class="uim" style="margin-top:4px;">${dettaglioHTML}</div>
       </div>
       <div style="display:flex;align-items:center;">
