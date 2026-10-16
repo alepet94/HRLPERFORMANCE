@@ -1165,6 +1165,23 @@ header.top{
 }
 
 /* ---------- valutazioni (prima valutazione / follow-up) ---------- */
+
+.bm-card{border:1px solid var(--line);border-radius:10px;padding:14px;background:var(--navy-850);margin-bottom:6px;}
+.bm-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px 14px;}
+.bm-grid label,.bm-rl{display:flex;flex-direction:column;gap:4px;font-size:11.5px;color:var(--ink-mute);}
+.bm-rl{margin-bottom:10px;}
+.bm-proto{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:0 18px;}
+.bm-t{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px;}
+.bm-t th{text-align:left;font-size:11px;color:var(--ink-mute);font-weight:600;padding:4px 6px;border-bottom:1px solid var(--line);}
+.bm-t td{padding:4px 6px;border-bottom:1px solid var(--line);vertical-align:middle;}
+.bm-t td:first-child{white-space:nowrap;color:var(--ink-dim);}
+.bm-in{width:100%;min-width:60px;}
+.bm-calc{font-size:12.5px;color:var(--ink-dim);}
+.bm-warn{color:#ff7a6b;font-weight:700;}
+.bm-sub{margin:16px 0 0;font-size:12.5px;font-weight:700;color:var(--gold);}
+.bm-hint{font-size:11.5px;color:var(--ink-mute);margin-top:8px;line-height:1.5;}
+.btn-ghost.bm-on{border-color:var(--gold);color:var(--gold);}
+@media (max-width:700px){.bm-t{display:block;overflow-x:auto;}}
 .val-wrap{max-width:1100px;margin:0 auto;padding:26px 32px 64px;}
 .val-empty{color:var(--ink-mute);font-size:13px;padding:24px 0;}
 .val-card{
@@ -2031,6 +2048,7 @@ body[data-theme="light"] .paz-lk-list{background:#fff;border-color:#ccc;}
     <div class="cli-tab" data-tab="areaHuman">Area Human</div>
     <div class="cli-tab" data-tab="fisioterapia">Area acuti</div>
     <div class="cli-tab" data-tab="pathway">Area Performance</div>
+    <div class="cli-tab" data-tab="biomeccanica">Biomeccanica</div>
     <div class="cli-tab" data-tab="storico">Storico</div>
     <div class="cli-tab" data-tab="calendario">Calendario cliente</div>
   </div>
@@ -2130,6 +2148,10 @@ body[data-theme="light"] .paz-lk-list{background:#fff;border-color:#ccc;}
 
   <div class="val-wrap" id="areaHumanWrap" style="display:none;">
     <div id="areaHumanContent"></div>
+  </div>
+
+  <div class="val-wrap" id="biomeccanicaWrap" style="display:none;">
+    <div id="biomeccanicaContent"></div>
   </div>
 
   <div class="val-wrap" id="fisioterapiaWrap" style="display:none;">
@@ -2885,7 +2907,7 @@ function canManagePercorso(){
 function areaAccessForProfessionista(prof){
   if(!prof) return {tabs:[], ahSub:null, isAdmin:false, isSegreteria:false};
   if(prof.ruolo==='admin'){
-    return {tabs:['valutazioni','sistema','areaHuman','fisioterapia','pathway','storico','calendario'], ahSub:'all', isAdmin:true, isSegreteria:false};
+    return {tabs:['valutazioni','sistema','areaHuman','fisioterapia','pathway','biomeccanica','storico','calendario'], ahSub:'all', isAdmin:true, isSegreteria:false};
   }
   const area = prof.area || '';
   if(area==='Segreteria'){
@@ -2893,7 +2915,7 @@ function areaAccessForProfessionista(prof){
   }
   const tabs = ['valutazioni','sistema','storico','calendario'];
   let ahSub = null;
-  if(area==='Preparatore' || area==='Chinesiologo') tabs.push('pathway');
+  if(area==='Preparatore' || area==='Chinesiologo'){ tabs.push('pathway'); tabs.push('biomeccanica'); }
   else if(area==='Fisioterapista') tabs.push('fisioterapia');
   else if(area==='Osteopata'){ tabs.push('areaHuman'); ahSub = 'Osteopata'; }
   else if(area==='Nutrizionista'){ tabs.push('areaHuman'); ahSub = 'Nutrizionista'; }
@@ -4421,6 +4443,7 @@ function activateClientTab(tab){
   document.getElementById('sistemaWrap').style.display = tab==='sistema' ? 'block' : 'none';
   document.getElementById('areaHumanWrap').style.display = tab==='areaHuman' ? 'block' : 'none';
   document.getElementById('fisioterapiaWrap').style.display = tab==='fisioterapia' ? 'block' : 'none';
+  document.getElementById('biomeccanicaWrap').style.display = tab==='biomeccanica' ? 'block' : 'none';
   document.getElementById('storicoWrap').style.display = tab==='storico' ? 'block' : 'none';
   renderCliTabs();
   if(tab==='pathway') renderPathwayView();
@@ -4429,6 +4452,7 @@ function activateClientTab(tab){
   if(tab==='sistema') renderSistemaTab();
   if(tab==='areaHuman') renderAreaHumanTab();
   if(tab==='fisioterapia') renderFisioterapiaTab();
+  if(tab==='biomeccanica') renderBiomeccanicaTab();
   if(tab==='storico') renderStoricoTab();
 }
 
@@ -6705,6 +6729,362 @@ function renderAreaHumanEnergetica(box){
       if(s) apriReportEnergetica(c, s);
     };
   });
+}
+
+// ==================== VALUTAZIONE BIOMECCANICA (Area Performance) ====================
+// Raccolta dati secondo il modello "HRL Performance — Valutazione biomeccanica".
+// Le valutazioni stanno in c.percorso.performance.biomeccaniche (colonna jsonb già
+// esistente: nessuna migrazione SQL). Il report stampabile segue lo stile del
+// "Biomechanical Report"; la foto dell'atleta per ora è uno spazio vuoto.
+const BM_PROTOCOLLO = [
+  ['baro','Baropodometria'],['ktwt','KTWT'],['squat','Squat + trunk movement'],['oh','OH squat'],
+  ['sl','SL squat'],['yb','Y Balance anteriore'],['warm','Warm up'],['cmj','CMJ'],
+  ['slj','SLJ'],['dj','DJ'],['sldj','SLDJ'],['fwb','FW hop bipodalico'],
+  ['fwm','FW hop monopodalico'],['th','Triple jump monopodalico'],['fv','Loaded squat / curva F-V'],['mono','Monoarticolari']
+];
+// righe "Movimento": [chiave, test, lato/misura, protocollo che la attiva]
+const BM_MOV = [
+  ['baro','Baropodometria','Carico % SX / DX','baro'],
+  ['ktwt_sx','KTWT','SX','ktwt'],['ktwt_dx','KTWT','DX','ktwt'],
+  ['squat','Squat','—','squat'],['oh','OH squat','—','oh'],
+  ['sl_sx','SL squat','SX','sl'],['sl_dx','SL squat','DX','sl'],
+  ['yb_sx','Y Balance anteriore','SX','yb'],['yb_dx','Y Balance anteriore','DX','yb'],
+  ['bend','Bending Test','','squat'],['rot','Rotazioni Tronco','','squat']
+];
+const BM_STR = [
+  ['ext','Leg extension 60°'],['curl','Leg curl 30°'],['hq','Rapporto H:Q (curl / ext)'],
+  ['imtp','IMTP'],['sq3','Squat 3MN'],['alt1','Altro'],['alt2','Altro']
+];
+const BM_M4 = ['Jump Height (cm)','mRSI (JH / CT)','Peak Braking Power (W/kg)','Peak Force Asymmetry (%)'];
+const BM_MDJ = ['Jump Height (cm)','RSI','GCT (ms)','Peak Force Asymmetry (%)'];
+const BM_MFW = ['Distanza (cm)','Jump Height (cm)','RSI','GCT (ms)','Peak Force Asymmetry (%)'];
+const BM_JUMPS = [
+  ['cmj','CMJ','bi',BM_M4],['slj','SLJ — salto monopodalico','uni',BM_M4],
+  ['dj','DJ','bi',BM_MDJ],['sldj','SLDJ — drop jump monopodalico','uni',BM_MDJ],
+  ['fwb','FW HOP — bipodalico','bi',BM_MFW],['fwm','FW HOP — monopodalico','uni',BM_MFW],
+  ['th','TRIPLE HOP — monopodalico','uni',BM_MFW]
+];
+const BM_REPORT_CAMPI = [
+  ['obiettivi','Obiettivi'],['deficit','Deficit e asimmetrie (> 10 %)'],['priorita','Priorità di intervento'],
+  ['programma','Indicazioni per il programma'],['retest','Criteri per il retest / data']
+];
+function bmList(c){
+  const p = ensurePercorso(c);
+  if(!p.performance) p.performance = {attiva:false, professionistiIds:[], viaLibera:false};
+  if(!Array.isArray(p.performance.biomeccaniche)) p.performance.biomeccaniche = [];
+  return p.performance.biomeccaniche;
+}
+function bmNuova(c, tipo){
+  const lista = bmList(c).slice().sort((a,b)=>(b.data||'').localeCompare(a.data||''));
+  const prev = lista[0] || null;
+  const v = {
+    id:'bm_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),
+    data: fmtDateISO(new Date()), professionistaId: state.professionista ? state.professionista.id : null,
+    sport: prev ? prev.sport : '', lato: prev ? prev.lato : '', infortunio: prev ? prev.infortunio : '',
+    obiettivo: prev ? prev.obiettivo : '', tipo: tipo, retestN: tipo==='retest' ? (lista.filter(x=>x.tipo==='retest').length+1) : '',
+    protocollo: BM_PROTOCOLLO.map(x=>x[0]).filter(k=>k!=='warm'),
+    mov:{}, str:{}, jump:{}, fv:{rows:[{},{},{},{},{}]}, report:{}, strAltro:{alt1:'',alt2:''}
+  };
+  // retest: i valori dell'ultima valutazione diventano il "Precedente"
+  if(tipo==='retest' && prev){
+    BM_JUMPS.forEach(([k,,kind,mets])=>{
+      mets.forEach((_,i)=>{
+        const o = ((prev.jump||{})[k]||{})[i] || {};
+        if(kind==='bi' && o.v!==undefined && o.v!=='') { v.jump[k] = v.jump[k]||{}; v.jump[k][i] = {p:o.v}; }
+      });
+    });
+  }
+  return v;
+}
+function bmNum(x){ const n = parseFloat(String(x).replace(',','.')); return isNaN(n) ? null : n; }
+function bmAsimm(dx, sx){
+  const a = bmNum(dx), b = bmNum(sx);
+  if(a===null || b===null || Math.max(a,b)<=0) return null;
+  return Math.abs(a-b)/Math.max(a,b)*100;
+}
+function bmDelta(v, p){
+  const a = bmNum(v), b = bmNum(p);
+  if(a===null || b===null || b===0) return null;
+  return (a-b)/b*100;
+}
+const bmFmt = (n,d)=> n===null ? '—' : n.toFixed(d===undefined?1:d);
+function bmGet(v, path){ return path.split('.').reduce((o,k)=> (o==null?undefined:o[k]), v); }
+function bmSet(v, path, val){
+  const ks = path.split('.'); let o = v;
+  ks.slice(0,-1).forEach((k,i)=>{ if(o[k]==null || typeof o[k]!=='object') o[k] = /^\d+$/.test(ks[i+1]) ? [] : {}; o = o[k]; });
+  o[ks[ks.length-1]] = val;
+}
+// elenco di asimmetrie > 10 % (e Y Balance > 4 cm) calcolate dai dati inseriti
+function bmDeficit(v){
+  const out = [];
+  BM_STR.forEach(([k,l])=>{
+    if(k==='hq') return;
+    const o = (v.str||{})[k] || {}, a = bmAsimm(o.dx, o.sx);
+    const nome = (k==='alt1'||k==='alt2') ? ((v.strAltro||{})[k] || 'Altro') : l;
+    if(a!==null && a>10) out.push(`${nome}: asimmetria ${bmFmt(a)} % (DX ${o.dx} / SX ${o.sx})`);
+  });
+  BM_JUMPS.forEach(([k,l,kind,mets])=>{
+    if(kind!=='uni') return;
+    mets.forEach((m,i)=>{
+      if(/Asymmetry/.test(m)) return;
+      const o = (((v.jump||{})[k])||{})[i] || {}, a = bmAsimm(o.dx, o.sx);
+      if(a!==null && a>10) out.push(`${l.split(' — ')[0]} · ${m}: asimmetria ${bmFmt(a)} %`);
+    });
+  });
+  const yd = (()=>{ const a = bmNum(((v.mov||{}).yb_sx||{}).valore), b = bmNum(((v.mov||{}).yb_dx||{}).valore); return (a!==null&&b!==null) ? Math.abs(a-b) : null; })();
+  if(yd!==null && yd>4) out.push(`Y Balance anteriore: differenza ${bmFmt(yd)} cm tra i lati (> 4 cm)`);
+  return out;
+}
+
+function renderBiomeccanicaTab(){
+  const c = activeClient();
+  const box = document.getElementById('biomeccanicaContent');
+  if(!c || !box) return;
+  const lista = bmList(c).slice().sort((a,b)=>(b.data||'').localeCompare(a.data||''));
+  if(state.bmSel && !lista.some(x=>x.id===state.bmSel)) state.bmSel = null;
+  if(!state.bmSel && lista.length) state.bmSel = lista[0].id;
+  const sel = lista.find(x=>x.id===state.bmSel) || null;
+  const fd = d=> d ? d.split('-').reverse().join('/') : '—';
+  const head = `
+    <div class="client-section-label-row"><div class="client-section-label">Valutazione biomeccanica</div></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:12px 0 18px;">
+      ${lista.map(x=>`<button class="btn-ghost ${x.id===state.bmSel?'bm-on':''}" data-bmsel="${x.id}">${fd(x.data)} · ${x.tipo==='retest' ? 'Retest'+(x.retestN?' n° '+x.retestN:'') : 'Iniziale'}</button>`).join('')}
+      <button class="btn-gold" id="bmNuovaIniz">+ Nuova valutazione</button>
+      ${lista.length ? '<button class="btn-ghost" id="bmNuovaRetest">+ Retest</button>' : ''}
+    </div>`;
+  if(!sel){
+    box.innerHTML = head + `<div class="val-empty">Nessuna valutazione biomeccanica: creane una con “+ Nuova valutazione”.</div>`;
+    bmBindHead(c, box);
+    return;
+  }
+  const v = sel;
+  const has = k=> (v.protocollo||[]).includes(k);
+  const inp = (path, opts)=>{
+    opts = opts||{};
+    const val = bmGet(v, path);
+    return `<input class="editable bm-in" ${opts.type==='date'?'type="date"':''} data-bm="${path}" value="${escAttr(val==null?'':val)}" ${opts.ph?`placeholder="${escAttr(opts.ph)}"`:''}>`;
+  };
+  const dis = (id, txt)=> `<span class="bm-calc" id="${id}">${txt||'—'}</span>`;
+  const prof = state.professionisti.find(p=>p.id===v.professionistaId);
+  const secti = t=> `<div class="client-section-label-row" style="margin-top:26px;"><div class="client-section-label">${t}</div></div>`;
+
+  const movRows = BM_MOV.filter(r=>has(r[3])).map(([k,t,l])=>`
+    <tr><td>${t}</td><td>${l}</td><td>${inp('mov.'+k+'.valore')}</td><td>${inp('mov.'+k+'.note')}</td></tr>`).join('');
+  const movHtml = movRows ? `${secti('Movimento')}
+    <table class="bm-t"><thead><tr><th>Test</th><th>Lato / misura</th><th>Valore</th><th>Note / compensi osservati</th></tr></thead><tbody>${movRows}</tbody></table>
+    ${has('yb') ? `<div class="bm-hint">Y Balance: differenza anteriore tra i lati &gt; 4 cm = asimmetria da considerare. <b id="bmYb"></b></div>` : ''}` : '';
+
+  const strHtml = has('mono') ? `${secti('Strength — monoarticolari (Nm o kg)')}
+    <table class="bm-t"><thead><tr><th>Test</th><th>DX</th><th>SX</th><th>Asimm. %</th><th>Note</th></tr></thead><tbody>
+    ${BM_STR.map(([k,l])=> k==='hq'
+      ? `<tr><td>${l}</td><td>${dis('bmHqDx')}</td><td>${dis('bmHqSx')}</td><td></td><td></td></tr>`
+      : `<tr><td>${(k==='alt1'||k==='alt2') ? inp('strAltro.'+k,{ph:'Altro: …'}) : l}</td><td>${inp('str.'+k+'.dx')}</td><td>${inp('str.'+k+'.sx')}</td><td>${dis('bmSA_'+k)}</td><td>${inp('str.'+k+'.note')}</td></tr>`).join('')}
+    </tbody></table>` : '';
+
+  const jumpHtml = BM_JUMPS.filter(j=>has(j[0])).map(([k,l,kind,mets])=>{
+    const head2 = kind==='bi'
+      ? '<tr><th>Metrica</th><th>Valore</th><th>Precedente</th><th>Δ %</th><th>Note</th></tr>'
+      : '<tr><th>Metrica</th><th>DX</th><th>SX</th><th>Asimm. %</th><th>Note</th></tr>';
+    const rows = mets.map((m,i)=> kind==='bi'
+      ? `<tr><td>${m}</td><td>${inp(`jump.${k}.${i}.v`)}</td><td>${inp(`jump.${k}.${i}.p`)}</td><td>${dis(`bmD_${k}_${i}`)}</td><td>${inp(`jump.${k}.${i}.note`)}</td></tr>`
+      : `<tr><td>${m}</td><td>${inp(`jump.${k}.${i}.dx`)}</td><td>${inp(`jump.${k}.${i}.sx`)}</td><td>${dis(`bmA_${k}_${i}`)}</td><td>${inp(`jump.${k}.${i}.note`)}</td></tr>`).join('');
+    return `<div class="bm-sub">${l}</div><table class="bm-t"><thead>${head2}</thead><tbody>${rows}</tbody></table>`;
+  }).join('');
+  const jumpSec = jumpHtml ? secti('Performance — salti') + jumpHtml : '';
+
+  const fvHtml = has('fv') ? `${secti('Loaded squat · curva F-V')}
+    <table class="bm-t"><thead><tr><th>Carico (kg)</th><th>Vel. media (m/s)</th><th>Peak vel. (m/s)</th><th>Peak power (W)</th><th>Note</th></tr></thead><tbody>
+    ${[0,1,2,3,4].map(i=>`<tr>${['c','vm','pv','pp','note'].map(f=>`<td>${inp(`fv.rows.${i}.${f}`)}</td>`).join('')}</tr>`).join('')}
+    </tbody></table>
+    <table class="bm-t" style="margin-top:10px;"><thead><tr><th>1RM stimato (kg)</th><th>F0</th><th>V0</th><th>Pmax (W)</th><th>R² profilo</th></tr></thead><tbody>
+    <tr>${['rm','f0','v0','pmax','r2'].map(f=>`<td>${inp('fv.'+f)}</td>`).join('')}</tr></tbody></table>` : '';
+
+  box.innerHTML = head + `
+    <div class="bm-card">
+      <div class="bm-grid">
+        <label>Data${inp('data',{type:'date'})}</label>
+        <label>Professionista<span class="bm-calc" style="display:block;padding:9px 0;">${escHtml(prof ? prof.nome : '—')}</span></label>
+        <label>Sport / ruolo${inp('sport')}</label>
+        <label>Lato dominante<select class="editable bm-in" data-bm="lato"><option value=""></option><option value="SX" ${v.lato==='SX'?'selected':''}>SX</option><option value="DX" ${v.lato==='DX'?'selected':''}>DX</option></select></label>
+        <label>Infortunio / lato${inp('infortunio')}</label>
+        <label>Obiettivo della valutazione${inp('obiettivo')}</label>
+        <label>Valutazione<select class="editable bm-in" data-bm="tipo"><option value="iniziale" ${v.tipo!=='retest'?'selected':''}>Iniziale</option><option value="retest" ${v.tipo==='retest'?'selected':''}>Retest</option></select></label>
+        <label>Retest n°${inp('retestN')}</label>
+      </div>
+    </div>
+    ${secti('Protocollo — spunta i test eseguiti')}
+    <div class="bm-proto">${BM_PROTOCOLLO.map(([k,l],i)=>`<label class="sist-test-item"><input type="checkbox" data-bmproto="${k}" ${has(k)?'checked':''}> ${i+1}. ${l}</label>`).join('')}</div>
+    ${movHtml}${strHtml}${jumpSec}${fvHtml}
+    ${secti('Report')}
+    <div class="bm-card">
+      ${BM_REPORT_CAMPI.map(([k,l])=>`<label class="bm-rl">${l}<textarea class="editable bm-in" rows="${k==='programma'?4:3}" data-bm="report.${k}">${escHtml((v.report||{})[k]||'')}</textarea></label>`).join('')}
+      <div class="bm-hint" id="bmAutoDef"></div>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin:18px 0 6px;">
+      <button class="btn-gold" id="bmReportBtn">Report (stampa / PDF)</button>
+      <button class="btn-ghost" id="bmDelBtn" style="color:#e57373;">Elimina valutazione</button>
+    </div>
+    <div class="bm-hint">Asimmetria % = (lato migliore − lato peggiore) / lato migliore × 100 · Δ % = (valore attuale − precedente) / precedente × 100.</div>`;
+  bmBindHead(c, box);
+  const calc = ()=>{
+    const set = (id, t)=>{ const e = document.getElementById(id); if(e) e.textContent = t; };
+    BM_STR.forEach(([k])=>{ if(k==='hq') return; const o = (v.str||{})[k]||{}; const a = bmAsimm(o.dx,o.sx); set('bmSA_'+k, a===null?'—':bmFmt(a)+' %'); const e = document.getElementById('bmSA_'+k); if(e) e.classList.toggle('bm-warn', a!==null && a>10); });
+    const hq = s=>{ const cu = bmNum(((v.str||{}).curl||{})[s]), ex = bmNum(((v.str||{}).ext||{})[s]); return (cu!==null && ex) ? (cu/ex) : null; };
+    set('bmHqDx', bmFmt(hq('dx'),2)); set('bmHqSx', bmFmt(hq('sx'),2));
+    BM_JUMPS.forEach(([k,,kind,mets])=> mets.forEach((_,i)=>{
+      const o = (((v.jump||{})[k])||{})[i] || {};
+      if(kind==='bi'){ const d = bmDelta(o.v,o.p); set(`bmD_${k}_${i}`, d===null?'—':(d>0?'+':'')+bmFmt(d)+' %'); }
+      else { const a = bmAsimm(o.dx,o.sx); set(`bmA_${k}_${i}`, a===null?'—':bmFmt(a)+' %'); const e = document.getElementById(`bmA_${k}_${i}`); if(e) e.classList.toggle('bm-warn', a!==null && a>10); }
+    }));
+    const a = bmNum(((v.mov||{}).yb_sx||{}).valore), b = bmNum(((v.mov||{}).yb_dx||{}).valore);
+    const yb = document.getElementById('bmYb'); if(yb) yb.textContent = (a!==null&&b!==null) ? `Differenza attuale: ${bmFmt(Math.abs(a-b))} cm${Math.abs(a-b)>4?' ⚠':''}` : '';
+    const d = bmDeficit(v);
+    const ad = document.getElementById('bmAutoDef'); if(ad) ad.innerHTML = d.length ? '<b>Rilevato automaticamente (&gt; 10 %):</b><br>' + d.map(escHtml).join('<br>') : '';
+  };
+  calc();
+  let tmr = null;
+  box.querySelectorAll('[data-bm]').forEach(el=>{
+    const h = ()=>{
+      bmSet(v, el.dataset.bm, el.value);
+      calc();
+      clearTimeout(tmr); tmr = setTimeout(()=>db.saveCliente(c), 600);
+    };
+    el.addEventListener('input', h);
+    el.addEventListener('change', ()=>{ h(); if(el.dataset.bm==='tipo' || el.dataset.bm==='data') renderBiomeccanicaTab(); });
+  });
+  box.querySelectorAll('[data-bmproto]').forEach(chk=>{
+    chk.onchange = ()=>{
+      const s = new Set(v.protocollo||[]); if(chk.checked) s.add(chk.dataset.bmproto); else s.delete(chk.dataset.bmproto);
+      v.protocollo = BM_PROTOCOLLO.map(x=>x[0]).filter(k=>s.has(k));
+      db.saveCliente(c); renderBiomeccanicaTab();
+    };
+  });
+  document.getElementById('bmReportBtn').onclick = ()=> apriReportBiomeccanico(c, v);
+  document.getElementById('bmDelBtn').onclick = ()=>{
+    if(!confirm('Eliminare questa valutazione biomeccanica?')) return;
+    const p = ensurePercorso(c); p.performance.biomeccaniche = bmList(c).filter(x=>x.id!==v.id);
+    state.bmSel = null; db.saveCliente(c); renderBiomeccanicaTab();
+  };
+}
+function bmBindHead(c, box){
+  box.querySelectorAll('[data-bmsel]').forEach(b=> b.onclick = ()=>{ state.bmSel = b.dataset.bmsel; renderBiomeccanicaTab(); });
+  const n1 = document.getElementById('bmNuovaIniz'), n2 = document.getElementById('bmNuovaRetest');
+  const crea = t=>{ const v = bmNuova(c, t); bmList(c).push(v); state.bmSel = v.id; db.saveCliente(c); renderBiomeccanicaTab(); };
+  if(n1) n1.onclick = ()=> crea('iniziale');
+  if(n2) n2.onclick = ()=> crea('retest');
+}
+
+// report stampabile (nuova finestra → Stampa / Salva come PDF), stile "Biomechanical Report"
+function apriReportBiomeccanico(c, v){
+  const has = k=> (v.protocollo||[]).includes(k);
+  const logoSrc = (document.querySelector('.mark-logo') || document.querySelector('.auth-logo') || {}).src || '';
+  const prof = state.professionisti.find(p=>p.id===v.professionistaId);
+  const an = c.anagrafica || {};
+  const nomeBig = (an.cognome || (c.nome||'').split(' ').slice(-1)[0] || c.nome || '').toUpperCase();
+  const nomeSmall = an.nome || (c.nome||'').replace(new RegExp(nomeBig,'i'),'').trim();
+  const fd = d=> d ? d.split('-').reverse().join('/') : '—';
+  const jv = (k,i,f)=> ((((v.jump||{})[k])||{})[i]||{})[f];
+  const tile = (lab, val, unit, sub)=> (val!==undefined && val!=='' && val!==null) ? `<div class="tile"><div class="tl">${escHtml(lab)}</div><div class="tv">${escHtml(String(val))}${unit?` <span class="tu">${unit}</span>`:''}</div>${sub?`<div class="ts">${sub}</div>`:''}</div>` : '';
+  const dSub = (k,i)=>{ const d = bmDelta(jv(k,i,'v'), jv(k,i,'p')); return d===null ? '' : `${d>0?'+':''}${bmFmt(d)} % vs precedente`; };
+  const tiles = [
+    has('cmj') ? tile('CMJ Height', jv('cmj',0,'v'), 'cm', dSub('cmj',0)) : '',
+    has('cmj') ? tile('CMJ mRSI', jv('cmj',1,'v'), '', dSub('cmj',1)) : '',
+    has('cmj') ? tile('CMJ Peak Braking Power', jv('cmj',2,'v'), 'W/kg', dSub('cmj',2)) : '',
+    has('cmj') ? tile('CMJ Peak Force Asymmetry', jv('cmj',3,'v'), '%', dSub('cmj',3)) : '',
+    has('mono') ? tile('IMTP', (()=>{ const o=((v.str||{}).imtp)||{}; return (o.dx||o.sx) ? (o.dx||'—')+' / '+(o.sx||'—') : ''; })(), 'DX / SX') : '',
+    has('dj') ? tile('DJ RSI', jv('dj',1,'v'), '', dSub('dj',1)) : '',
+    has('dj') ? tile('DJ GCT', jv('dj',2,'v'), 'ms', dSub('dj',2)) : '',
+    has('fv') && v.fv && v.fv.rm ? tile('1RM stimato', v.fv.rm, 'kg') : '',
+    has('fv') && v.fv && v.fv.pmax ? tile('Pmax', v.fv.pmax, 'W') : ''
+  ].join('');
+  // osservazione cinematica: coppie SX/DX
+  const mv = k=> ((v.mov||{})[k]||{}).valore || '';
+  const mn = k=> ((v.mov||{})[k]||{}).note || '';
+  const obs = [];
+  if(has('baro') && (mv('baro')||mn('baro'))) obs.push(['Baropodometria (carico % SX / DX)', mv('baro'), '', mn('baro'), true]);
+  if(has('ktwt')) obs.push(['KTWT', mv('ktwt_sx'), mv('ktwt_dx'), [mn('ktwt_sx'),mn('ktwt_dx')].filter(Boolean).join(' · ')]);
+  if(has('squat')){ obs.push(['Squat', mv('squat'), '', mn('squat'), true]); obs.push(['Bending test', mv('bend'), '', mn('bend'), true]); obs.push(['Rotazioni tronco', mv('rot'), '', mn('rot'), true]); }
+  if(has('oh')) obs.push(['OH squat', mv('oh'), '', mn('oh'), true]);
+  if(has('sl')) obs.push(['SL squat', mv('sl_sx'), mv('sl_dx'), [mn('sl_sx'),mn('sl_dx')].filter(Boolean).join(' · ')]);
+  if(has('yb')) obs.push(['Y Balance anteriore (cm)', mv('yb_sx'), mv('yb_dx'), [mn('yb_sx'),mn('yb_dx')].filter(Boolean).join(' · ')]);
+  const obsRows = obs.filter(o=>o[1]||o[2]||o[3]).map(o=> o[4]
+    ? `<tr><td>${escHtml(o[0])}</td><td colspan="2" class="c">${escHtml(o[1])}</td><td>${escHtml(o[3])}</td></tr>`
+    : `<tr><td>${escHtml(o[0])}</td><td class="c">${escHtml(o[1])}</td><td class="c">${escHtml(o[2])}</td><td>${escHtml(o[3])}</td></tr>`).join('');
+  // tabelle forza e salti
+  const strRows = has('mono') ? BM_STR.filter(r=>r[0]!=='hq').map(([k,l])=>{
+    const o = (v.str||{})[k]||{}; if(!o.dx && !o.sx) return '';
+    const a = bmAsimm(o.dx,o.sx), nome = (k==='alt1'||k==='alt2') ? ((v.strAltro||{})[k]||'Altro') : l;
+    return `<tr><td>${escHtml(nome)}</td><td class="c">${escHtml(o.dx||'')}</td><td class="c">${escHtml(o.sx||'')}</td><td class="c ${a!==null&&a>10?'bad':''}">${a===null?'':bmFmt(a)+' %'}</td></tr>`;
+  }).join('') : '';
+  const jmpBlocks = BM_JUMPS.filter(j=>has(j[0])).map(([k,l,kind,mets])=>{
+    const rows = mets.map((m,i)=>{
+      const o = ((v.jump||{})[k]||{})[i]||{};
+      if(kind==='bi'){ if(!o.v && !o.p) return ''; const d = bmDelta(o.v,o.p); return `<tr><td>${m}</td><td class="c">${escHtml(o.v||'')}</td><td class="c">${escHtml(o.p||'')}</td><td class="c">${d===null?'':(d>0?'+':'')+bmFmt(d)+' %'}</td></tr>`; }
+      if(!o.dx && !o.sx) return ''; const a = bmAsimm(o.dx,o.sx);
+      return `<tr><td>${m}</td><td class="c">${escHtml(o.dx||'')}</td><td class="c">${escHtml(o.sx||'')}</td><td class="c ${a!==null&&a>10?'bad':''}">${a===null?'':bmFmt(a)+' %'}</td></tr>`;
+    }).join('');
+    if(!rows) return '';
+    return `<div class="jb"><div class="jt">${escHtml(l)}</div><table><thead><tr><th></th>${kind==='bi'?'<th>Valore</th><th>Prec.</th><th>Δ %</th>':'<th>DX</th><th>SX</th><th>Asimm.</th>'}</tr></thead><tbody>${rows}</tbody></table></div>`;
+  }).join('');
+  const fvRows = has('fv') ? (v.fv.rows||[]).filter(r=>r.c||r.vm||r.pv||r.pp).map(r=>`<tr><td class="c">${escHtml(r.c||'')}</td><td class="c">${escHtml(r.vm||'')}</td><td class="c">${escHtml(r.pv||'')}</td><td class="c">${escHtml(r.pp||'')}</td></tr>`).join('') : '';
+  const fvBlock = fvRows ? `<div class="jb"><div class="jt">LOADED SQUAT · CURVA F-V</div><table><thead><tr><th>Carico (kg)</th><th>Vel. media</th><th>Peak vel.</th><th>Peak power</th></tr></thead><tbody>${fvRows}</tbody></table>${(v.fv.f0||v.fv.v0||v.fv.r2)?`<div class="ts" style="margin-top:4px;">F0 ${escHtml(v.fv.f0||'—')} · V0 ${escHtml(v.fv.v0||'—')} · R² ${escHtml(v.fv.r2||'—')}</div>`:''}</div>` : '';
+  const strBlock = strRows ? `<div class="jb"><div class="jt">STRENGTH — monoarticolari</div><table><thead><tr><th></th><th>DX</th><th>SX</th><th>Asimm.</th></tr></thead><tbody>${strRows}</tbody></table></div>` : '';
+  const li = t=> String(t||'').split(/\n+/).map(x=>x.trim()).filter(Boolean);
+  const auto = bmDeficit(v);
+  const kp = [...li((v.report||{}).deficit), ...li((v.report||{}).priorita)];
+  const kpAuto = auto.filter(a=> !kp.length);   // se non c'è testo manuale, mostra le asimmetrie rilevate
+  const keyPoints = [...kp, ...kpAuto].map(t=>`<div class="kp"><span>✓</span>${escHtml(t)}</div>`).join('') || '<div class="kp" style="opacity:.5">—</div>';
+  const comm = [(v.report||{}).obiettivi ? 'Obiettivi: '+v.report.obiettivi : '', (v.report||{}).programma, (v.report||{}).retest ? 'Retest: '+v.report.retest : ''].filter(Boolean).join('\n\n');
+  const html = `<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8"><title>Biomechanical Report — ${escHtml(c.nome||'')}</title>
+  <style>
+  @page{size:A4 landscape;margin:8mm}
+  *{box-sizing:border-box}
+  html,body{margin:0;background:#1a1b1d;color:#e9e9e9;font-family:Helvetica,Arial,sans-serif;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .pg{padding:18px 22px}
+  .hd{display:grid;grid-template-columns:1fr 2fr 1fr;align-items:center;gap:12px}
+  .hd img{height:46px}
+  .hd h1{margin:0;text-align:center;font-size:22px;letter-spacing:.06em;line-height:1.15}
+  .nm{font-size:44px;font-weight:900;color:#EE7A3C;letter-spacing:.02em;margin:6px 0 0;line-height:1}
+  .nm small{display:block;font-size:13px;font-weight:600;color:#bbb;letter-spacing:.04em;margin-top:6px}
+  .top{display:grid;grid-template-columns:3fr 1fr;gap:14px;margin-top:10px}
+  .box{border:1px solid #3a3c40;border-radius:8px;background:#222427;padding:10px 14px}
+  .bt{color:#EE7A3C;font-weight:800;font-size:13px;letter-spacing:.06em;text-transform:uppercase;margin:0 0 8px}
+  .tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:10px 16px}
+  .tl{font-size:9.5px;color:#aaa;font-weight:700;text-transform:uppercase;letter-spacing:.05em}
+  .tv{font-size:19px;font-weight:700}.tu{font-size:11px;font-weight:600;color:#bbb}
+  .ts{font-size:10px;color:#9a9a9a}
+  .foto{display:flex;align-items:center;justify-content:center;text-align:center;color:#6d6f73;font-size:11px;border:1px dashed #4a4d52;border-radius:8px;min-height:150px}
+  .mid{display:grid;grid-template-columns:3fr 2fr;gap:14px;margin-top:12px}
+  table{width:100%;border-collapse:collapse;font-size:11px}
+  th{text-align:left;color:#9a9a9a;font-size:9.5px;text-transform:uppercase;letter-spacing:.05em;padding:3px 6px;border-bottom:1px solid #3a3c40}
+  td{padding:3px 6px;border-bottom:1px solid #2c2e32}
+  .c{text-align:center}.bad{color:#ff6b5b;font-weight:700}
+  .kp{display:flex;gap:8px;font-size:11.5px;margin:0 0 7px;line-height:1.35}.kp span{color:#4cc27a;font-weight:800}
+  .comm{white-space:pre-wrap;font-style:italic;font-size:12px;line-height:1.45;color:#dcdcdc}
+  .jgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px 14px}
+  .jb{break-inside:avoid}.jt{font-size:10.5px;font-weight:800;color:#EE7A3C;margin-bottom:3px}
+  .meta{font-size:10.5px;color:#9a9a9a;margin-top:10px;display:flex;justify-content:space-between}
+  .pbtn{position:fixed;right:14px;bottom:14px;background:#EE7A3C;color:#111;border:0;border-radius:8px;padding:10px 16px;font-weight:700;cursor:pointer}
+  @media print{.pbtn{display:none}}
+  </style></head><body><div class="pg">
+  <div class="hd"><div>${logoSrc?`<img src="${logoSrc}" alt="HRL">`:''}</div><h1>BIOMECHANICAL<br>REPORT</h1><div></div></div>
+  <div class="top">
+    <div><div class="nm">${escHtml(nomeBig)}<small>${escHtml(nomeSmall)}${v.sport?' · '+escHtml(v.sport):''} · ${fd(v.data)} · ${v.tipo==='retest'?'Retest'+(v.retestN?' n° '+escHtml(String(v.retestN)):''):'Valutazione iniziale'}</small></div>
+      <div class="box" style="margin-top:10px"><div class="bt">Kinetic data</div><div class="tiles">${tiles || '<div class="ts">Nessun dato cinetico inserito.</div>'}</div></div></div>
+    <div class="foto">Spazio foto atleta</div>
+  </div>
+  <div class="mid">
+    <div class="box"><div class="bt">Kinematic observation</div>
+      ${obsRows ? `<table><thead><tr><th>Parameter</th><th class="c">L / SX</th><th class="c">R / DX</th><th>Note</th></tr></thead><tbody>${obsRows}</tbody></table>` : '<div class="ts">Nessuna osservazione inserita.</div>'}</div>
+    <div class="box"><div class="bt">Key points</div>${keyPoints}</div>
+  </div>
+  ${(jmpBlocks||strBlock||fvBlock) ? `<div class="box" style="margin-top:12px"><div class="bt">Performance data</div><div class="jgrid">${strBlock}${jmpBlocks}${fvBlock}</div></div>` : ''}
+  <div class="box" style="margin-top:12px"><div class="bt">Comment · program indications</div><div class="comm">${escHtml(comm) || '—'}</div></div>
+  <div class="meta"><span>HRL Performance Pathways${prof?' · '+escHtml(prof.nome):''}</span><span>Asimm. % = (migliore − peggiore) / migliore × 100 · Δ % = (attuale − precedente) / precedente × 100</span></div>
+  </div><button class="pbtn" onclick="window.print()">Stampa / Salva come PDF</button></body></html>`;
+  const win = window.open('', '_blank');
+  if(!win){ alert('Il browser ha bloccato l\'apertura della finestra di report. Consenti i popup per questo sito e riprova.'); return; }
+  win.document.open(); win.document.write(html); win.document.close();
 }
 
 // ==================== AREA FISIOTERAPIA ====================
