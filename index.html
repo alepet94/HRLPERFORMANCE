@@ -3404,6 +3404,18 @@ function dbSaveOk(){
 }
 
 // ---------------- livello di persistenza (best-effort, non bloccante) ----------------
+// PostgREST restituisce al massimo 1000 righe per richiesta: con migliaia di pazienti si legge a pagine
+async function selAll(mk){
+  let out = [];
+  for(let i=0; ; i+=1000){
+    const r = await mk(i, i+999);
+    if(r.error) return {data:null, error:r.error};
+    const d = r.data || [];
+    out = out.concat(d);
+    if(d.length < 1000) break;
+  }
+  return {data:out, error:null};
+}
 const db = {
   lastError: null,
   async loadAll(){
@@ -3412,8 +3424,8 @@ const db = {
     let results;
     try{
       results = await Promise.all([
-        sb.from('clienti').select('*'),
-        sb.from('appuntamenti').select('*'),
+        selAll((a,b)=>sb.from('clienti').select('*').order('id').range(a,b)),
+        selAll((a,b)=>sb.from('appuntamenti').select('*').order('id').range(a,b)),
         sb.from('richieste').select('*'),
         sb.from('fasce_disponibili').select('*'),
         sb.from('cal_settings').select('*').eq('id',1).maybeSingle(),
@@ -3429,15 +3441,16 @@ const db = {
         sb.from('dati_fiscali_clienti').select('*'),
         sb.from('fatturazione_impostazioni').select('*').eq('id',1).maybeSingle(),
         sb.from('pacchetti').select('*'),
-        sb.from('consensi').select('id,cliente_id,tipo,data,revocato,creato_da'),
-        sb.from('pagamento_info').select('*').eq('id',1).maybeSingle()
+        selAll((a,b)=>sb.from('consensi').select('id,cliente_id,tipo,data,revocato,creato_da').order('id').range(a,b)),
+        sb.from('pagamento_info').select('*').eq('id',1).maybeSingle(),
+        state.clientAuthMode ? Promise.resolve({data:[],error:null}) : selAll((a,b)=>sb.rpc('clienti_elenco').range(a,b))
       ]);
     } catch(ex){
       console.error('Supabase load exception', ex);
       db.lastError = (ex && ex.message) ? ex.message : String(ex);
       return false;
     }
-    const [c,a,r,f,cs,t,ex,dr,nc,bop,seg,spz,fat,lst,dfi,fimp,pkq,csq,pgi] = results;
+    const [c,a,r,f,cs,t,ex,dr,nc,bop,seg,spz,fat,lst,dfi,fimp,pkq,csq,pgi,elq] = results;
     // "segnalazioni" e "spazi" sono tabelle nuove: se Ale non ha ancora
     // eseguito le relative migrazioni su Supabase, la select fallisce
     // (tabella inesistente) — non deve bloccare il caricamento di tutto il
@@ -3452,6 +3465,17 @@ const db = {
       return false;
     }
     state.clienti = (c.data || []).map(rowToCliente);
+    // elenco condiviso: gli altri pazienti dello studio compaiono come "schede non seguite" (solo nome/categoria)
+    if(elq && elq.error) console.error('Supabase clienti_elenco (probabile migrazione mancante)', elq.error);
+    if(elq && !elq.error && elq.data){
+      const have = new Set(state.clienti.map(x=>x.id));
+      elq.data.forEach(e=>{
+        if(have.has(e.id)) return;
+        const st = rowToCliente({id:e.id, nome:e.nome, categoria:e.categoria, data_nascita:e.data_nascita, eta:e.eta, professionista_ids:e.professionista_ids});
+        st.stub = true;
+        state.clienti.push(st);
+      });
+    }
     state.appuntamenti = (a.data || []).map(rowToAppuntamento);
     state.richieste = (r.data || []).map(rowToRichiesta);
     state.fasceDisponibili = (f.data || []).map(rowToFascia);
@@ -3483,7 +3507,7 @@ const db = {
   },
   // salvataggi in coda per cliente (mai due scritture sovrapposte della stessa riga)
   saveCliente(c){
-    if(!dbEnabled || !sb) return Promise.resolve();
+    if(!dbEnabled || !sb || c.stub) return Promise.resolve();
     c._q = (c._q || Promise.resolve()).then(()=> db._saveClienteNow(c)).catch(ex=> dbSaveFail(ex));
     return c._q;
   },
@@ -3539,6 +3563,7 @@ const db = {
       }
       const fresh = rowToCliente(data);
       Object.keys(fresh).forEach(k=>{ c[k] = fresh[k]; });
+      delete c.stub;
       c._base = cliRowJson(c);
     }catch(ex){ console.error('refreshCliente', ex); }
   },
@@ -3806,9 +3831,10 @@ function renderAuthSetup(isFirst){
     const ruolo = isFirst ? 'admin' : 'operatore';
     const area = document.getElementById('authArea').value || null;
     const { data:userData } = await sb.auth.getUser();
-    const { error } = await sb.from('professionisti').insert({id:userData.user.id, nome, ruolo, area});
-    if(error){ alert('Errore nella creazione del profilo: ' + error.message); return; }
-    state.professionista = {id:userData.user.id, nome, ruolo, area};
+    if(!isFirst){ alert('Per entrare come professionista serve un invito da un amministratore.'); return; }
+    const { error } = await sb.rpc('avvia_studio', {p_nome: nome});
+    if(error){ alert('Errore nella creazione del profilo: ' + error.message + '\n(Controlla di aver confermato l\'email dal link ricevuto.)'); return; }
+    state.professionista = {id:userData.user.id, nome, ruolo:'admin', area:null};
     await bootApp();
   };
 }
@@ -3856,12 +3882,13 @@ async function afterLogin(session){
   // primo accesso di un cliente: prova a collegarlo tramite email
   const email = (session.user.email||'').trim().toLowerCase();
   if(email){
-    const { data:matchRow, error:matchErr } = await sb.from('clienti').select('*').ilike('email', email).is('auth_user_id', null).maybeSingle();
-    if(!matchErr && matchRow){
-      const { error:linkErr } = await sb.from('clienti').update({auth_user_id: session.user.id}).eq('id', matchRow.id);
-      if(!linkErr){
+    // il collegamento avviene lato server e solo se l'email è stata verificata
+    const { data:linkedId, error:linkErr } = await sb.rpc('link_cliente_email');
+    if(!linkErr && linkedId){
+      const { data:matchRow } = await sb.from('clienti').select('*').eq('id', linkedId).maybeSingle();
+      if(matchRow){
         state.clientAuthMode = true;
-        await bootClientApp(rowToCliente({...matchRow, auth_user_id: session.user.id}));
+        await bootClientApp(rowToCliente(matchRow));
         return;
       }
     }
@@ -3869,10 +3896,9 @@ async function afterLogin(session){
 
   // primo accesso di un professionista invitato da un admin
   if(email){
-    const { data:invito, error:invitoErr } = await sb.from('professionisti_inviti').select('*').ilike('email', email).maybeSingle();
-    if(!invitoErr && invito){
-      const { error:provErr } = await sb.from('professionisti').insert({id:session.user.id, nome:invito.nome, ruolo:invito.ruolo, area:invito.area||null});
-      if(!provErr){
+    const { data:invito, error:provErr } = await sb.rpc('crea_professionista_da_invito');
+    {
+      if(!provErr && invito){
         state.professionista = {id:session.user.id, nome:invito.nome, ruolo:invito.ruolo, area:invito.area||''};
         state.clientAuthMode = false;
         await bootApp();
@@ -4246,6 +4272,7 @@ function syncClientFromState(){
 function loadClientIntoWorkspace(id){
   const c = state.clienti.find(x=>x.id===id);
   if(!c) return;
+  if(c.stub){ openClientForRole(id); return; }
   if(dbEnabled && !c._base){ try{ c._base = cliRowJson(c); }catch(ex){} }
   state.clienteAttivoId = c.id;
   state.profilo = c.profilo;
@@ -4274,9 +4301,37 @@ function loadClientIntoWorkspace(id){
 // calendari di tutti, ma non le schede cliniche né il lavoro dei
 // professionisti, per questione di privacy; chiunque altro apre il normale
 // spazio di lavoro clinico
+// "Segui" un paziente: lo si aggiunge ai propri; da quel momento la scheda completa è visibile
+async function seguiPaziente(id, profId){
+  const c = state.clienti.find(x=>x.id===id); if(!c) return false;
+  const pid = profId || (state.professionista && state.professionista.id);
+  if(!pid) return false;
+  if(dbEnabled && sb){
+    const {error} = await sb.rpc('segui_cliente', {p_cliente:id, p_prof:pid});
+    if(error){ alert('Non è stato possibile seguire il paziente: ' + error.message); return false; }
+  }
+  if(!clienteHasProf(c, pid)) c.professionistiIds = clienteProfIds(c).concat([pid]);
+  if(c.stub){
+    if(dbEnabled && sb) await db.refreshCliente(id);
+    else delete c.stub;
+  }
+  return !c.stub;
+}
+function autoSeguiPaziente(cid, pid){
+  if(!cid || !pid) return;
+  const c = state.clienti.find(x=>x.id===cid), p = state.professionisti.find(x=>x.id===pid);
+  if(!c || !p || p.area==='Segreteria' || clienteHasProf(c, pid)) return;
+  const me = state.professionista && state.professionista.id;
+  seguiPaziente(cid, pid).then(()=>{ if(pid===me) renderClientiList(document.getElementById('cliSearchInput').value); });
+}
 function openClientForRole(id){
   const c = state.clienti.find(x=>x.id===id);
   if(!c) return;
+  if(c.stub){
+    if(!confirm(c.nome + ' non è tra i tuoi pazienti.\n\nVuoi seguirlo? Da quel momento potrai aprire la sua scheda e comparirà nel filtro "Seguiti da me".')) return;
+    seguiPaziente(id).then(ok=>{ if(ok) openClientForRole(id); });
+    return;
+  }
   const go = ()=>{
     loadClientIntoWorkspace(id);
     showView('pathway');
@@ -9132,7 +9187,7 @@ function renderRichBadge(){
 
 function clientiDaProgrammare(){
   const ag = cliAgenda();
-  return state.clienti.filter(c=>!c.eliminato && !(ag[c.id] && ag[c.id].prossimo));
+  return state.clienti.filter(c=>!c.eliminato && !c.stub && !(ag[c.id] && ag[c.id].prossimo));
 }
 function getReadinessAlerts(){
   if(isSegreteriaOnly()) return [];
@@ -10058,6 +10113,7 @@ function cliAgenda(){
 const AVV_FILTRI = [['senzaApp','Senza appuntamenti futuri'],['senzaRetest','Senza retest in programma'],['senzaPiano','Senza piano (pathway)'],['pacchetto','Pacchetto in scadenza/esaurito'],['consensi','Consensi mancanti']];
 function avvMatch(c, ag, f){
   if(!f) return true;
+  if(c.stub) return false;
   const o = ag[c.id] || {};
   if(f==='senzaApp') return !o.prossimo;
   if(f==='senzaRetest') return !o.retest;
@@ -10083,6 +10139,7 @@ function avvAgendaHtml(c, ag){
 function cliRenderFiltriPop(baseList, ag, f){
   const pop = document.getElementById('cliFiltriPop');
   if(!pop) return;
+  const meId = state.professionista ? state.professionista.id : null;
   const catBase = baseList;
   const cc = catConteggi(catBase);
   const lstCat = baseList.filter(c=>catMatch(c, state.cliFilterCat||''));
@@ -10091,7 +10148,9 @@ function cliRenderFiltriPop(baseList, ag, f){
   const avv = AVV_FILTRI.filter(([k])=> !(k==='senzaPiano' && isSegreteriaOnly()));
   const row = (attr,v,l,n,on)=>`<div class="cli-pop-row ${on?'on':''}" data-${attr}="${escAttr(v)}"><span>${escHtml(l)}</span><span class="n">${n!=null ? n.toLocaleString('it-IT') : ''}</span></div>`;
   pop.innerHTML = `<div class="cli-pop-t">Categoria</div>${cats.map(([v,l])=>row('fcat',v,l,cc[v],(state.cliFilterCat||'')===v)).join('')}
+    <div class="cli-pop-t">Pazienti</div>${row('fseg','','Tutti',baseList.length,!state.cliSoloSeguiti)}${row('fseg','1','Seguiti da me',baseList.filter(c=>clienteHasProf(c,meId)).length,!!state.cliSoloSeguiti)}
     <div class="cli-pop-t">Da controllare</div>${row('favv','','Tutti',null,!state.cliFilterAvv)}${avv.map(([k,l])=>row('favv',k,l,ac[k],state.cliFilterAvv===k)).join('')}`;
+  pop.querySelectorAll('[data-fseg]').forEach(r=> r.onclick = ()=>{ state.cliSoloSeguiti = r.dataset.fseg==='1'; renderClientiList(document.getElementById('cliSearchInput').value); });
   pop.querySelectorAll('[data-fcat]').forEach(r=> r.onclick = ()=>{ state.cliFilterCat = r.dataset.fcat; renderClientiList(document.getElementById('cliSearchInput').value); });
   pop.querySelectorAll('[data-favv]').forEach(r=> r.onclick = ()=>{ state.cliFilterAvv = r.dataset.favv; renderClientiList(document.getElementById('cliSearchInput').value); });
 }
@@ -10099,11 +10158,12 @@ function cliRenderFiltriAttivi(){
   const box = document.getElementById('cliFiltriAttivi'), btn = document.getElementById('btnCliFiltri');
   if(!box) return;
   const out = [];
+  if(state.cliSoloSeguiti) out.push(['seg','Seguiti da me']);
   if(state.cliFilterCat){ const c = CATEGORIE.find(x=>x.id===state.cliFilterCat); out.push(['cat', state.cliFilterCat==='none' ? 'Da assegnare' : (c ? c.name : '')]); }
   if(state.cliFilterAvv){ const a = AVV_FILTRI.find(x=>x[0]===state.cliFilterAvv); if(a) out.push(['avv', a[1]]); }
   box.innerHTML = out.map(([k,l])=>`<span class="cli-fchip">${escHtml(l)}<button data-fclear="${k}" title="Togli filtro">×</button></span>`).join('');
   box.style.display = out.length ? 'flex' : 'none';
-  box.querySelectorAll('[data-fclear]').forEach(b=> b.onclick = ()=>{ if(b.dataset.fclear==='cat') state.cliFilterCat = ''; else state.cliFilterAvv = ''; renderClientiList(document.getElementById('cliSearchInput').value); });
+  box.querySelectorAll('[data-fclear]').forEach(b=> b.onclick = ()=>{ if(b.dataset.fclear==='cat') state.cliFilterCat = ''; else if(b.dataset.fclear==='seg') state.cliSoloSeguiti = false; else state.cliFilterAvv = ''; renderClientiList(document.getElementById('cliSearchInput').value); });
   if(btn) btn.textContent = out.length ? `Filtri (${out.length}) ▾` : 'Filtri ▾';
 }
 function cliChiudiPopup(){
@@ -10144,7 +10204,9 @@ function renderClientiList(filter){
     btnCestino.style.display = isAdminForCestino ? 'inline-flex' : 'none';
     btnCestino.textContent = nEliminati ? `🗑 Cestino (${nEliminati})` : '🗑 Cestino';
   }
-  let list = state.clienti.filter(c=> !c.eliminato && (!f || pazMatch(c,f)));
+  const meId = state.professionista ? state.professionista.id : null;
+  const segOk = c=> !state.cliSoloSeguiti || clienteHasProf(c, meId);
+  let list = state.clienti.filter(c=> !c.eliminato && (!f || pazMatch(c,f)) && segOk(c));
   list.sort(cliCmp);
   if(canManageAll() && state.calFilterProfId){
     list = list.filter(c=>clienteHasProf(c,state.calFilterProfId));
@@ -10167,7 +10229,7 @@ function renderClientiList(filter){
   const showProf = canManageAll() && !state.calFilterProfId;
   const isAdmin = !!(state.professionista && state.professionista.ruolo==='admin');
   // con migliaia di clienti si mostrano a blocchi: i filtri/la ricerca azzerano il blocco
-  const limKey = [f, state.cliFilterCat||'', state.cliFilterAvv||'', state.calFilterProfId||''].join('|');
+  const limKey = [f, state.cliSoloSeguiti?'1':'', state.cliFilterCat||'', state.cliFilterAvv||'', state.calFilterProfId||''].join('|');
   if(state.cliLimKey!==limKey){ state.cliLimKey = limKey; state.cliLimit = 60; }
   const totale = list.length;
   const cnt = document.getElementById('cliCount');
@@ -10180,6 +10242,16 @@ function renderClientiList(filter){
     const summary = (c.pathway && catDef && catDef.profilo===c.profilo) ? c.pathway : clientPathwaySummary(c);
     const schedeCount = Object.values(c.schede||{}).reduce((tot,arr)=>tot+arr.length,0);
     const profNames = showProf ? clienteProfIds(c).map(id=>state.professionisti.find(p=>p.id===id)).filter(Boolean).map(p=>p.nome).join(', ') : '';
+    if(c.stub){
+      const seg = clienteProfIds(c).map(id=>state.professionisti.find(p=>p.id===id)).filter(Boolean).map(p=>p.nome).join(', ');
+      return `<div class="cli-card" data-open-cliente="${c.id}" style="opacity:.82;">
+      <div class="cli-name">${escHtml(c.nome)}</div>
+      <div style="font-size:11.5px;color:var(--ink-mute);margin:-2px 0 4px;">${c.categoria ? escHtml(catLabel(c.categoria)) : 'Categoria da assegnare'}</div>
+      <div class="cli-status empty">Non seguito da te</div>
+      <div class="cli-meta">${clienteEtaAnni(c) ? clienteEtaAnni(c) + ' anni · ' : ''}${seg ? 'Seguito da ' + escHtml(seg) : 'Nessun professionista lo segue'}</div>
+      <div style="font-size:12px;margin-top:6px;"><a href="#" style="color:var(--gold,#EE7A3C);text-decoration:none;font-weight:600;">+ Segui</a></div>
+    </div>`;
+    }
     return `<div class="cli-card" data-open-cliente="${c.id}">
       ${canManageAll() ? `<button class="cli-edit" data-edit-anag="${c.id}" title="Modifica anagrafica" style="right:${isAdmin?40:12}px;">✎</button>` : ''}
       ${isAdmin ? `<button class="cli-del" data-del-cliente="${c.id}" title="Elimina cliente">×</button>` : ''}
@@ -12779,7 +12851,7 @@ function renderEventModal(){
   bindPazLookup('evCliente','— Nessuno / impegno personale —',(v)=>{
     ed.clienteId = v;
     const newClient = ed.clienteId ? state.clienti.find(c=>c.id===ed.clienteId) : null;
-    ed.professionistaId = newClient ? (clienteProfIds(newClient)[0] || null) : (state.professionista ? state.professionista.id : null);
+    ed.professionistaId = ed.professionistaId || (newClient && !newClient.stub && clienteProfIds(newClient)[0]) || (state.professionista ? state.professionista.id : null);
     renderEventModal();
   }, ed.clienteId);
   const evProfSel = document.getElementById('evProf');
@@ -12907,6 +12979,7 @@ function saveEventEditor(){
     const conflict = checkDispConflict(ed, ed.day, timeToMinutes(ed.start), timeToMinutes(ed.end));
     if(conflict && !confirm(conflict + '\n\nSalvare comunque l\'appuntamento?')) return;
   }
+  autoSeguiPaziente(ed.clienteId, ed.professionistaId);
   if(!state.eventEditorIsEdit && recurToggle && recurToggle.checked){
     const weeks = Math.max(1, parseInt(document.getElementById('evRecurWeeks').value,10) || 6);
     const days = (state.eventEditorRecurDays && state.eventEditorRecurDays.length) ? state.eventEditorRecurDays : [new Date(ed.day+'T00:00:00').getDay()];
