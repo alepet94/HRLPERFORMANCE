@@ -1182,6 +1182,29 @@ header.top{
 .bm-hint{font-size:11.5px;color:var(--ink-mute);margin-top:8px;line-height:1.5;}
 .btn-ghost.bm-on{border-color:var(--gold);color:var(--gold);}
 @media (max-width:700px){.bm-t{display:block;overflow-x:auto;}}
+
+.prg-bar{display:flex;height:30px;border-radius:8px;overflow:hidden;margin:14px 0 6px;}
+.prg-seg{display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#141516;white-space:nowrap;overflow:hidden;}
+.prg-fase{background:var(--navy-850);border-radius:8px;padding:12px 14px;margin:10px 0;}
+.prg-ft{font-weight:700;font-size:14px;}.prg-ft span{font-weight:400;font-size:12px;color:var(--ink-mute);margin-left:8px;}
+.prg-cols{display:grid;grid-template-columns:1fr 1.5fr;gap:16px;font-size:12.5px;}.prg-cols ul{margin:4px 0;padding-left:18px;color:var(--ink-dim);}
+.prg-note{margin-top:8px;font-size:12px;color:var(--ink-dim);line-height:1.5;}
+.prg-warn{background:#4a2b1b;border:1px solid var(--gold-line);color:#ffd9c4;padding:8px 12px;border-radius:8px;margin:10px 0;font-size:12.5px;}
+.prg-why{margin:8px 0;padding-left:18px;font-size:13px;color:var(--ink-dim);line-height:1.55;}
+.prg-ind{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-top:10px;}
+.prg-ind>div{background:var(--navy-850);border:1px solid var(--line);border-radius:8px;padding:10px 12px;}
+.prg-ind span{display:block;font-size:10.5px;color:var(--ink-mute);text-transform:uppercase;letter-spacing:.06em;}
+.prg-ind b{font-size:20px;display:block;margin:2px 0;}.prg-ind i{font-size:11.5px;color:var(--ink-mute);font-style:normal;}
+.prg-ind .bad{border-color:#ff7a6b;}.prg-ind .bad b{color:#ff7a6b;}
+.prg-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-top:10px;}
+.prg-card{position:relative;background:var(--navy-850);border:1px solid var(--line);border-radius:10px;padding:14px;cursor:pointer;display:flex;flex-direction:column;gap:6px;}
+.prg-card.on{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold);}
+.prg-card b{font-size:14px;}.prg-card span{font-size:12px;color:var(--gold);}.prg-card small{font-size:11.5px;color:var(--ink-mute);line-height:1.4;}
+.prg-badge{position:absolute;top:-9px;right:10px;background:var(--gold);color:#141516;font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:10px;}
+.prg-mini{display:flex;height:8px;border-radius:4px;overflow:hidden;}
+.prg-saved{display:flex;justify-content:space-between;gap:10px;align-items:center;border-bottom:1px solid var(--line);padding:8px 0;font-size:13px;flex-wrap:wrap;}
+.prg-dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;}
+@media (max-width:700px){.prg-cols{grid-template-columns:1fr;}}
 .val-wrap{max-width:1100px;margin:0 auto;padding:26px 32px 64px;}
 .val-empty{color:var(--ink-mute);font-size:13px;padding:24px 0;}
 .val-card{
@@ -2048,6 +2071,7 @@ body[data-theme="light"] .paz-lk-list{background:#fff;border-color:#ccc;}
     <div class="cli-tab" data-tab="areaHuman">Area Human</div>
     <div class="cli-tab" data-tab="fisioterapia">Area acuti</div>
     <div class="cli-tab" data-tab="biomeccanica">Biomeccanica</div>
+    <div class="cli-tab" data-tab="programmazione">Programmazione</div>
     <div class="cli-tab" data-tab="pathway">Area Performance</div>
     <div class="cli-tab" data-tab="storico">Storico</div>
     <div class="cli-tab" data-tab="calendario">Calendario cliente</div>
@@ -2152,6 +2176,10 @@ body[data-theme="light"] .paz-lk-list{background:#fff;border-color:#ccc;}
 
   <div class="val-wrap" id="biomeccanicaWrap" style="display:none;">
     <div id="biomeccanicaContent"></div>
+  </div>
+
+  <div class="val-wrap" id="programmazioneWrap" style="display:none;">
+    <div id="programmazioneContent"></div>
   </div>
 
   <div class="val-wrap" id="fisioterapiaWrap" style="display:none;">
@@ -2907,7 +2935,7 @@ function canManagePercorso(){
 function areaAccessForProfessionista(prof){
   if(!prof) return {tabs:[], ahSub:null, isAdmin:false, isSegreteria:false};
   if(prof.ruolo==='admin'){
-    return {tabs:['valutazioni','sistema','areaHuman','fisioterapia','pathway','biomeccanica','storico','calendario'], ahSub:'all', isAdmin:true, isSegreteria:false};
+    return {tabs:['valutazioni','sistema','areaHuman','fisioterapia','pathway','biomeccanica','programmazione','storico','calendario'], ahSub:'all', isAdmin:true, isSegreteria:false};
   }
   const area = prof.area || '';
   if(area==='Segreteria'){
@@ -2915,7 +2943,7 @@ function areaAccessForProfessionista(prof){
   }
   const tabs = ['valutazioni','sistema','storico','calendario'];
   let ahSub = null;
-  if(area==='Preparatore' || area==='Chinesiologo'){ tabs.push('pathway'); tabs.push('biomeccanica'); }
+  if(area==='Preparatore' || area==='Chinesiologo'){ tabs.push('pathway'); tabs.push('biomeccanica'); tabs.push('programmazione'); }
   else if(area==='Fisioterapista') tabs.push('fisioterapia');
   else if(area==='Osteopata'){ tabs.push('areaHuman'); ahSub = 'Osteopata'; }
   else if(area==='Nutrizionista'){ tabs.push('areaHuman'); ahSub = 'Nutrizionista'; }
@@ -4444,6 +4472,7 @@ function activateClientTab(tab){
   document.getElementById('areaHumanWrap').style.display = tab==='areaHuman' ? 'block' : 'none';
   document.getElementById('fisioterapiaWrap').style.display = tab==='fisioterapia' ? 'block' : 'none';
   document.getElementById('biomeccanicaWrap').style.display = tab==='biomeccanica' ? 'block' : 'none';
+  document.getElementById('programmazioneWrap').style.display = tab==='programmazione' ? 'block' : 'none';
   document.getElementById('storicoWrap').style.display = tab==='storico' ? 'block' : 'none';
   renderCliTabs();
   if(tab==='pathway') renderPathwayView();
@@ -4453,6 +4482,7 @@ function activateClientTab(tab){
   if(tab==='areaHuman') renderAreaHumanTab();
   if(tab==='fisioterapia') renderFisioterapiaTab();
   if(tab==='biomeccanica') renderBiomeccanicaTab();
+  if(tab==='programmazione') renderProgrammazioneTab();
   if(tab==='storico') renderStoricoTab();
 }
 
@@ -7104,6 +7134,316 @@ function apriReportBiomeccanico(c, v){
   <div class="box" style="margin-top:12px"><div class="bt">Comment · program indications</div><div class="comm">${escHtml(comm) || '—'}</div></div>
   <div class="meta"><span>HRL Performance Pathways${prof?' · '+escHtml(prof.nome):''}</span><span>Asimm. % = (migliore − peggiore) / migliore × 100 · Δ % = (attuale − precedente) / precedente × 100</span></div>
   </div><button class="pbtn" onclick="window.print()">Stampa / Salva come PDF</button></body></html>`;
+  const win = window.open('', '_blank');
+  if(!win){ alert('Il browser ha bloccato l\'apertura della finestra di report. Consenti i popup per questo sito e riprova.'); return; }
+  win.document.open(); win.document.write(html); win.document.close();
+}
+
+// ==================== PROGRAMMAZIONE (periodizzazione suggerita dai dati biomeccanici) ====================
+// Regole basate su Bompa & Buzzichelli, "Periodization Training for Sports" (3ª ed., 2015):
+// fasi della forza (AA → Ipertrofia → Forza massima → Conversione → Mantenimento), durate, macrocicli 3+1 / 2+1,
+// parametri dei metodi (tab. 11.1, 12.1, 13.1–13.2, 14.2–14.10, 15.1) e livelli di intensità pliometrica (tab. 14.5).
+// I dati biomeccanici dell'atleta (DSI, asimmetrie, rapporto H:Q, Y Balance) scelgono e modificano il percorso.
+// Le regole NON tratte dal libro sono marcate "criterio HRL". Salvataggio: c.percorso.performance.programmi (jsonb, nessun SQL).
+// [id, etichetta, MxS%, Potenza%, Pot.resistente%, Resistenza muscolare%, tipo di ME] — tab. 15.1
+const PRG_SPORT = [
+  ['basket','Basket',20,60,20,0,''],['calcio','Calcio (giocatore di movimento)',30,50,20,0,''],['calcio_p','Calcio (portiere)',40,60,0,0,''],
+  ['volley','Pallavolo',40,50,10,0,''],['rugby','Rugby',30,40,30,0,''],['tennis','Tennis',10,50,30,10,'short'],
+  ['hockey_g','Hockey su ghiaccio',20,40,30,10,'short'],['hockey_p','Hockey su prato',0,40,20,40,'medium'],['pallanuoto','Pallanuoto',10,20,20,50,'medium'],
+  ['atl_sprint','Atletica · velocità',40,40,20,0,''],['atl_salti','Atletica · salti',30,70,0,0,''],['atl_lanci','Atletica · lanci',50,50,0,0,''],
+  ['nuoto_s','Nuoto · velocità',40,40,20,0,''],['nuoto_m','Nuoto · mezzofondo',10,10,20,60,'medium'],['nuoto_f','Nuoto · fondo',0,0,20,80,'long'],
+  ['canoa500','Canoa 500 m',40,30,20,10,'short'],['canoa1000','Canoa 1000 m',20,20,20,40,'medium'],['canottaggio','Canottaggio',20,0,20,60,'medium'],
+  ['boxe','Boxe',20,20,30,30,'short'],['lotta','Lotta',20,20,20,40,'short'],['arti_m','Arti marziali',0,60,30,10,'short'],['scherma','Scherma',20,50,30,0,''],
+  ['sci_alp','Sci alpino',40,30,30,0,''],['sci_nord','Sci nordico',0,0,20,80,'long'],['pat_art','Pattinaggio artistico',40,40,20,0,''],
+  ['pat_vel_s','Pattinaggio velocità · sprint',30,50,20,0,''],['pat_vel_f','Pattinaggio velocità · distanza',0,10,20,70,'long'],
+  ['ciclismo_p','Ciclismo su pista 200 m',40,40,20,0,''],['generico','Altro / sport di potenza generico',30,50,20,0,'']
+];
+const PRG_COL = {gen:'#7b7f86', aa:'#5B8DEF', hyp:'#9B7BE0', mxs:'#FD7023', conv:'#E5B93C', comp:'#4cc27a'};
+const PRG_MXS_OK = [4,6,7,8,9,10,11,12,13,14];
+// tabelle dei carichi di forza massima (figg. 10.5–10.8); un numero = % 1RM, "U" = scarico (70 %/50 % + test 1RM)
+const PRG_MXS_TAB = {
+  7:[[75,77.5,80,'U'],[85,90,'U']],
+  8:[[75,77.5,80,'U'],[82.5,85,90,'U']],
+  11:[[70,72.5,75,'U'],[75,77.5,80,'U'],[85,90,'U']],
+  14:[[70,72.5,75,'U'],[75,77.5,80,'U'],[82.5,85,'U'],[87.5,90,'U']]
+};
+function prgMxsMacro(n, tetto){
+  let m = PRG_MXS_TAB[n];
+  if(!m){
+    // altre durate: macrocicli 3+1 (4 sett.) e 2+1 (3 sett.), carichi interpolati da 70/75 % a 90 %
+    const len = []; let r = n;
+    while(r>0){ if(r===6 || r===3){ len.push(3); r-=3; } else if(r>=4 && r!==5){ len.push(4); r-=4; } else { len.push(r); r=0; } }
+    const nl = len.reduce((a,l)=>a+l-1,0), start = n>=10 ? 70 : 75; let k = 0;
+    m = len.map(l=>{ const w = []; for(let i=0;i<l-1;i++){ const v = nl>1 ? start+(90-start)*k/(nl-1) : start; w.push(Math.round(v/2.5)*2.5); k++; } w.push('U'); return w; });
+  }
+  if(tetto) m = m.map(mc=> mc.map(x=> typeof x==='number' ? Math.min(x,tetto) : x));
+  return m;
+}
+// dati biomeccanici → indicatori usati dalle regole
+function prgIndicatori(v){
+  if(!v) return null;
+  const out = {dsi:null, asim:[], hq:null, yb:null, data:v.data};
+  const d = bmDsi(v); if(d) out.dsi = d;
+  BM_STR.forEach(([k,l])=>{
+    if(k==='hq') return;
+    const o = (v.str||{})[k]||{}, a = bmAsimm(o.dx,o.sx);
+    if(a!==null) out.asim.push({nome:(k==='alt1'||k==='alt2') ? ((v.strAltro||{})[k]||'Altro') : l, val:a});
+  });
+  BM_JUMPS.forEach(([k,l,kind,mets])=>{
+    if(kind!=='uni') return;
+    mets.forEach((m,i)=>{ if(/Asymmetry/.test(m)) return; const o = (((v.jump||{})[k])||{})[i]||{}, a = bmAsimm(o.dx,o.sx); if(a!==null) out.asim.push({nome:l.split(' — ')[0]+' · '+m, val:a}); });
+  });
+  const hq = s=>{ const cu = bmNum(((v.str||{}).curl||{})[s]), ex = bmNum(((v.str||{}).ext||{})[s]); return (cu!==null && ex) ? cu/ex : null; };
+  const hd = hq('dx'), hs = hq('sx'); if(hd!==null || hs!==null) out.hq = {dx:hd, sx:hs};
+  const a = bmNum(((v.mov||{}).yb_sx||{}).valore), b = bmNum(((v.mov||{}).yb_dx||{}).valore); if(a!==null && b!==null) out.yb = Math.abs(a-b);
+  out.asimAlte = out.asim.filter(x=>x.val>10);
+  out.hqBasso = !!(out.hq && [out.hq.dx,out.hq.sx].some(x=>x!==null && x<0.60));
+  out.ybAlto = out.yb!==null && out.yb>4;
+  return out;
+}
+const PRG_VARIANTI = {
+  forza:{nome:'Forza massimale → potenza', corto:'Priorità forza massimale', mxs:11, convExtra:0, plyoPresto:false,
+    desc:'Costruisce una base di forza lunga (due macrocicli 3+1 e uno 2+1) prima di convertirla in potenza.'},
+  misto:{nome:'Forza e potenza concorrenti', corto:'Equilibrato', mxs:8, convExtra:0, plyoPresto:false,
+    desc:'Percorso standard di Bompa: forza massimale di durata media, poi conversione specifica.'},
+  balistico:{nome:'Balistico / potenza prima', corto:'Priorità forza balistica', mxs:6, convExtra:1, plyoPresto:true,
+    desc:'Forza massimale più breve, esercizi balistici e pliometria a basso impatto fin dall\'inizio, conversione più lunga.'}
+};
+function prgDsiVariante(ind){
+  if(!ind || !ind.dsi) return 'misto';
+  return ind.dsi.dsi<0.60 ? 'balistico' : (ind.dsi.dsi<=0.80 ? 'misto' : 'forza');
+}
+function prgSport(id){ return PRG_SPORT.find(s=>s[0]===id) || PRG_SPORT[PRG_SPORT.length-1]; }
+function prgConversione(sp){
+  const [,, mx, p, pe, me, tipoME] = sp, top = Math.max(p,pe,me);
+  if(top===me && me>0) return tipoME==='long' ? {tipo:'me_long', nome:'Resistenza muscolare lunga', sett:[8,12], base:10}
+    : tipoME==='medium' ? {tipo:'me_med', nome:'Resistenza muscolare media', sett:[8,10], base:9} : {tipo:'me_short', nome:'Resistenza muscolare breve', sett:[4,6], base:5};
+  if(top===pe && pe>p) return {tipo:'pe', nome:'Potenza resistente', sett:[4,6], base:5};
+  return {tipo:'pot', nome:'Potenza', sett:[4,6], base:5};
+}
+// costruisce un percorso completo
+function prgGenera(ctx, ind, vid){
+  const V = PRG_VARIANTI[vid], sp = prgSport(ctx.sport), cv = prgConversione(sp);
+  const eta = ctx.anniForza || 'int';   // nov | int | esp
+  const W = Math.max(0, parseInt(ctx.settimane,10) || 0);
+  const perche = [], avvisi = [], mod = [];
+  const asimm = ind && ind.asimAlte.length, hqb = ind && ind.hqBasso, yb = ind && ind.ybAlto;
+  // --- durate di partenza
+  let aa = eta==='nov' ? 8 : eta==='int' ? 5 : 3;
+  const aaMin = eta==='nov' ? 4 : 2, aaMax = eta==='nov' ? 10 : 6;
+  if(asimm || hqb || yb){ aa = Math.min(aaMax, aa+1); }
+  let hyp = ctx.massa ? 6 : 0;
+  let mxs = V.mxs; if(ctx.giovane) mxs = Math.min(mxs,8);
+  let conv = Math.min(cv.sett[1], cv.base + V.convExtra); const convMin = cv.sett[0];
+  const sum = ()=> aa+hyp+mxs+conv;
+  if(W>0){
+    if(sum()>W && hyp){ hyp = 0; }
+    while(sum()>W && aa>aaMin) aa--;
+    while(sum()>W && mxs>4){ mxs = PRG_MXS_OK.filter(x=>x<mxs).pop() || 4; }
+    while(sum()>W && conv>convMin) conv--;
+  }
+  mxs = PRG_MXS_OK.filter(x=>x<=mxs).pop() || 4;
+  const minimo = aaMin+4+convMin;
+  let gen = 0;
+  if(W>0 && sum()>W) avvisi.push(`Con ${W} settimane il percorso non entra nemmeno nelle durate minime (servono almeno ${minimo}): le fasi sono mostrate comunque al minimo e vanno accorciate o sovrapposte dal professionista.`);
+  if(W>0 && sum()<W){
+    let extra = W - sum();
+    while(extra>0 && aa<aaMax){ aa++; extra--; }
+    gen = extra;
+  }
+  // --- fasi e settimane
+  const fasi = [], sett = [];
+  const addFase = (key, nome, n, obiettivo, metodi, parametri, note)=>{ if(n<=0) return; fasi.push({key, nome, settimane:n, obiettivo, metodi, parametri, note:note||[]}); };
+  const wk = (fase, macro, carico, nota)=>{ sett.push({n:sett.length+1, fase, macro, carico, nota:nota||''}); };
+  if(gen>0){
+    addFase('gen','Preparazione generale',gen,'Settimane in più rispetto alla sequenza standard: condizionamento generale e tecnica, nessun carico specifico.',['Condizionamento generale','Mobilità e tecnica'],[['Intensità','bassa'],['Frequenza forza','2 a settimana']]);
+    for(let i=0;i<gen;i++) wk('gen','—','Basso','Condizionamento generale');
+  }
+  // AA
+  const repStart = eta==='nov' ? 20 : 15;
+  const aaNote = ['Coinvolgere tutti i gruppi muscolari, con core e stabilizzatori (Bompa, cap. 10–11).','Bilanciare agonisti/antagonisti e i due lati del corpo.'];
+  if(asimm) aaNote.push('Asimmetrie > 10 % nei dati: priorità a esercizi monolaterali e a pareggiare il lato più debole (dati biomeccanici + Bompa: bilanciare i due lati).');
+  if(hqb) aaNote.push('Rapporto H:Q < 0,60 (Bompa, tab. 10.1: estensori:flessori del ginocchio ≈ 3:2): inserire lavoro dedicato ai flessori (ischiocrurali, Nordic/RDL).');
+  if(yb) aaNote.push('Y Balance anteriore con differenza > 4 cm: lavoro di stabilità/controllo monopodalico e core.');
+  if(V.plyoPresto) aaNote.push('Pliometria a basso impatto (livelli 5–4) dalla 3ª settimana.'); else aaNote.push('Pliometria introdotta gradualmente dopo 2–3 settimane, solo bassa intensità (livelli 5–4).');
+  addFase('aa','Adattamento anatomico (AA)',aa,'Preparare muscoli, tendini e articolazioni ai carichi pesanti; equilibrare agonisti/antagonisti e i due lati.',
+    ['Circuit training','Allenamento standard orizzontale (9–12 esercizi)','Pliometria livelli 5–4 (graduale)'],
+    [['Carico', eta==='nov' ? '20 ripetizioni scendendo a 8' : '12–15 ripetizioni scendendo a 8'],['Stazioni/esercizi', eta==='nov' ? '10–15' : '6–9'],['Circuiti per seduta', eta==='nov' ? '2–3' : '3–4'],['Recupero tra esercizi','30–90 s'],['Frequenza', eta==='nov' ? '2–3 / sett.' : '3–4 / sett.']], aaNote);
+  for(let i=0;i<aa;i++){ const r = Math.max(8, Math.round(repStart - (repStart-8)*(aa>1 ? i/(aa-1) : 1))); wk('aa','AA',r+' rip.','Circuit / standard · '+(i<3 && !V.plyoPresto ? 'senza pliometria' : 'pliometria bassa intensità')); }
+  // ipertrofia
+  if(hyp){
+    addFase('hyp','Ipertrofia',hyp,'Aumentare la massa dei muscoli motori primari e preparare la forza massimale (richiesta: serve più massa).',
+      ['Ipertrofia I (15–10RM, recuperi brevi)','Ipertrofia II (8–5RM)'],
+      [['Durata','6–8 settimane'],['Carico','60–80 % 1RM'],['Esercizi','6–9'],['Ripetizioni','12 → 6'],['Serie per seduta','10–12 (split) o 18–24 (full body)'],['Recupero','2–5 min (60–90 s all\'inizio)'],['Esecuzione','eccentrica lenta 3–5 s, concentrica esplosiva'],['Frequenza','2–4 / sett.']],
+      ['Per sport di velocità/potenza evitare concentriche lente oltre 6 settimane (Bompa, cap. 12).']);
+    for(let i=0;i<hyp;i++) wk('hyp','Ipertrofia', Math.round(60+20*(hyp>1?i/(hyp-1):1))+' %', i<Math.ceil(hyp/2) ? 'Ipertrofia I · 15–10RM, rec. 60–90 s' : 'Ipertrofia II · 8–5RM, rec. 90–120 s');
+  }
+  // forza massima
+  const tetto = ctx.giovane ? 80 : 0;
+  const macro = prgMxsMacro(mxs, tetto), nInter = Math.ceil(macro.length/2);
+  const mxsNote = ['Macrocicli 3+1 (forza intermuscolare, carichi fino all\'80 %) poi 2+1 (intramuscolare, 80–90 %); a fine macrociclo scarico 70 %/50 % e test 1RM.'];
+  if(ctx.giovane) mxsNote.push('Atleta giovane: solo carichi fino all\'80 % (forza intermuscolare), come indicato da Bompa.');
+  if(vid==='balistico') mxsNote.push('DSI < 0,60: fase più breve; inserire 1 seduta/sett. di esercizi balistici o salti (carichi leggeri).');
+  if(vid==='forza') mxsNote.push('DSI > 0,80: la forza massimale è il fattore limitante → fase lunga con tre-quattro macrocicli.');
+  addFase('mxs','Forza massimale',mxs,'Sviluppare il massimo livello di forza: base su cui convertire potenza o resistenza muscolare.',
+    ['Metodo del carico submassimale (MxS-I, 70–80 %)','Metodo del carico massimale (MxS-II, 80–90 %)'],
+    [['Esercizi','2–5 fondamentali + 1–2 accessori'],['Ripetizioni','2–6 (MxS-I) · 1–3 (MxS-II)'],['Serie per esercizio','3–8'],['Recupero','2–3 min (MxS-I) · 3–5 min (MxS-II)'],['Serie totali per seduta','16–24'],['Frequenza','2–4 / sett.'],['Progressione','+2–5 % a microciclo']], mxsNote);
+  macro.forEach((mc,mi)=>{
+    const tipo = mc.length===4 ? '3+1' : mc.length===3 ? '2+1' : (mc.length-1)+'+1';
+    const lab = (mi<nInter ? 'MxS-I' : 'MxS-II')+' · '+tipo;
+    mc.forEach(x=> typeof x==='number' ? wk('mxs',lab,x+' %', 'Forza massimale') : wk('mxs',lab,'70 % / 50 %','Scarico + test 1RM (T)'));
+  });
+  // conversione
+  const convMetodi = cv.tipo==='pot' ? ['Metodo isotonico esplosivo','Metodo balistico','Pliometria (livelli 3→2, solo se senza asimmetrie > 10 %)','Metodo power-resisting']
+    : cv.tipo==='pe' ? ['Potenza resistente (serie di serie)','Pliometria'] : ['Resistenza muscolare specifica (serie di serie)'];
+  const convPar = cv.tipo==='pot' ? [['Durata','3–6 settimane (conversione a potenza 4–5)'],['Isotonico','30–50 % (ciclici) · 50–80 % (aciclici), esecuzione esplosiva'],['Balistico','carico che permette il lancio · 2–6 serie × 5–6 rip., rec. 2–3 min'],['Frequenza','2–4 / sett.']]
+    : cv.tipo==='pe' ? [['Durata','4–6 settimane'],['Carico','30–50 % 1RM'],['Ripetizioni','5–6 (breve) · 12–30 (lunga)'],['Frequenza','2–3 / sett.']]
+    : cv.tipo==='me_short' ? [['Durata','4–6 settimane'],['Carico','40–60 % 1RM'],['Durata serie','15–60 s'],['Frequenza','2 / sett.']]
+    : cv.tipo==='me_med' ? [['Durata','8–10 settimane'],['Carico','30–50 % 1RM'],['Durata serie','1–4 min'],['Frequenza','2 / sett.']]
+    : [['Durata','8–12 settimane'],['Carico','30–50 % 1RM'],['Durata serie','oltre 4 min (specifica)'],['Frequenza','2 / sett.']];
+  const convNote = ['Mantenere un livello di forza massimale (1 seduta ogni 1–2 sett.) per non perdere potenza a fine stagione (Bompa, cap. 14).'];
+  if(sp[0]!=='generico') convNote.push('Per '+sp[1]+': conversione a '+cv.nome.toLowerCase()+' (proporzioni di stagione: forza max '+sp[2]+' %, potenza '+sp[3]+' %, pot. resistente '+sp[4]+' %, res. muscolare '+sp[5]+' %).');
+  if(asimm) convNote.push('Pliometria ad alta intensità (livelli 1–2) solo dopo il retest che porta le asimmetrie sotto il 10 % (criterio HRL).');
+  if(ctx.giovane) convNote.push('Atleta giovane: pliometria solo a bassa intensità (livelli 5–4).');
+  addFase('conv','Conversione a '+cv.nome.toLowerCase(),conv,'Convertire la forza massimale in forza specifica dello sport.',convMetodi,convPar,convNote);
+  const plyoLiv = (i)=> ctx.giovane ? '5–4' : (asimm ? (i<conv/2 ? '4' : '3') : (i<Math.ceil(conv/3) ? '4' : (i<Math.ceil(2*conv/3) ? '3' : '3–2')));
+  for(let i=0;i<conv;i++) wk('conv','Conversione', cv.tipo==='pot' ? 'Carichi leggeri-medi' : 'Specifico', cv.tipo==='pot' ? 'Balistico/isotonico + pliometria livello '+plyoLiv(i) : cv.nome);
+  // competitiva
+  const sc = ctx.stagione==='squadra';
+  const comp = {nome:'Fase competitiva · mantenimento', proporzioni:{mxs:sp[2],pot:sp[3],pe:sp[4],me:sp[5]},
+    indicazioni:[
+      sc ? 'Sport di squadra con gare ogni settimana: 1–2 sedute brevi (20–30 min), 2–4 esercizi per i motori primari, 1–4 serie, recuperi lunghi.' : '1–3 sedute a settimana di 20–30 min secondo il calendario gare.',
+      'Seduta pesante: 70–80 % 1RM, 1–3 rip. (buffer 15–20 %), 2–4 serie, rec. 2–3 min · media: 70 %, 3–5 rip. esplosive · leggera: 60–70 %, buffer 20–30 %.',
+      'Mantenere almeno il 25 % del lavoro come forza massimale se la stagione dura oltre 5 mesi.',
+      'Taper pre-gara: massimo 3 settimane, volume fino a −60 %, intensità poco ridotta.']};
+  // retest
+  const retest = []; let acc = 0;
+  fasi.forEach(f=>{ acc += f.settimane; if(['aa','mxs','conv'].includes(f.key)) retest.push({sett:acc, dopo:f.nome}); });
+  // motivazioni
+  if(ind && ind.dsi){
+    perche.push(`DSI ${ind.dsi.dsi.toFixed(2)} (CMJ/IMTP del ${ind.data ? ind.data.split('-').reverse().join('/') : '—'}): ${ind.dsi.it}.`);
+    if(vid!==prgDsiVariante(ind)) perche.push('Alternativa rispetto al suggerimento dei dati: '+PRG_VARIANTI[prgDsiVariante(ind)].corto.toLowerCase()+' è la più coerente col DSI.');
+  } else perche.push('DSI non disponibile (servono Peak Force CMJ e IMTP nella stessa unità): assunto il percorso equilibrato standard.');
+  perche.push(`Esperienza di forza ${eta==='nov'?'< 1 anno':eta==='int'?'1–3 anni':'oltre 4 anni'} → adattamento anatomico di ${aa} settimane (Bompa: 8–10 settimane per principianti, 2–3 per atleti esperti).`);
+  if(asimm) perche.push('Asimmetrie > 10 %: '+ind.asimAlte.map(x=>x.nome+' '+x.val.toFixed(1)+' %').join('; ')+'.');
+  if(hqb) perche.push('Rapporto H:Q basso ('+['dx','sx'].map(s=>ind.hq[s]!==null?s.toUpperCase()+' '+ind.hq[s].toFixed(2):'').filter(Boolean).join(', ')+').');
+  if(yb) perche.push('Y Balance: differenza '+ind.yb.toFixed(1)+' cm tra i lati.');
+  if(!ind) avvisi.push('Nessuna valutazione biomeccanica: il percorso usa solo i dati di contesto. Compila una valutazione nella scheda Biomeccanica per personalizzarlo.');
+  return {id:'prg_'+Date.now()+'_'+Math.random().toString(36).slice(2,5), variante:vid, nome:V.nome, desc:V.desc, corto:V.corto, conv:cv.nome, sport:sp[1], totale:sett.length, perche, avvisi, fasi, sett, comp, retest};
+}
+function prgCtxDefault(c){ return {sport:'basket', anniForza:'int', massa:false, giovane:false, stagione:'individuale', dataInizio:fmtDateISO(new Date()), settimane:16, evId:''}; }
+function prgStore(c){
+  const p = ensurePercorso(c);
+  if(!p.performance) p.performance = {attiva:false, professionistiIds:[], viaLibera:false};
+  if(!p.performance.programmazione) p.performance.programmazione = {ctx:prgCtxDefault(c), piani:[]};
+  const pr = p.performance.programmazione; if(!pr.ctx) pr.ctx = prgCtxDefault(c); if(!Array.isArray(pr.piani)) pr.piani = [];
+  return pr;
+}
+function prgDataSett(ctx, n){ if(!ctx.dataInizio) return ''; const d = new Date(ctx.dataInizio+'T00:00:00'); d.setDate(d.getDate()+(n-1)*7); return d.toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit'}); }
+function prgPianoHtml(p, ctx){
+  const tot = p.totale || 1;
+  const bar = p.fasi.map(f=>`<div class="prg-seg" style="flex:${f.settimane};background:${PRG_COL[f.key]||'#888'};" title="${escAttr(f.nome)} · ${f.settimane} sett.">${f.settimane>=3?escHtml(f.nome.split(' (')[0].replace('Preparazione generale','Gen.').replace('Adattamento anatomico','AA').replace('Forza massimale','Forza max').replace(/^Conversione a /,'Conv. ')):''} ${f.settimane}</div>`).join('');
+  const fasiHtml = p.fasi.map(f=>`
+    <div class="prg-fase" style="border-left:4px solid ${PRG_COL[f.key]||'#888'};">
+      <div class="prg-ft">${escHtml(f.nome)} <span>${f.settimane} settimane</span></div>
+      <div class="bm-hint" style="margin:2px 0 8px;">${escHtml(f.obiettivo)}</div>
+      <div class="prg-cols"><div><b>Metodi</b><ul>${f.metodi.map(m=>`<li>${escHtml(m)}</li>`).join('')}</ul></div>
+      <div><b>Parametri</b><table class="bm-t" style="margin:4px 0 0;"><tbody>${f.parametri.map(([k,v])=>`<tr><td>${escHtml(k)}</td><td style="white-space:normal;">${escHtml(v)}</td></tr>`).join('')}</tbody></table></div></div>
+      ${f.note.length ? `<div class="prg-note">${f.note.map(n=>`<div>• ${escHtml(n)}</div>`).join('')}</div>` : ''}
+    </div>`).join('');
+  const rows = p.sett.map(s=>`<tr><td>${s.n}</td><td>${prgDataSett(ctx,s.n)}</td><td><span class="prg-dot" style="background:${PRG_COL[s.fase]||'#888'}"></span>${escHtml(s.macro)}</td><td>${escHtml(s.carico)}</td><td style="white-space:normal;">${escHtml(s.nota)}</td></tr>`).join('');
+  return `<div class="prg-bar">${bar}</div>
+    ${p.avvisi.length ? `<div class="prg-warn">${p.avvisi.map(a=>`<div>⚠ ${escHtml(a)}</div>`).join('')}</div>` : ''}
+    <div class="client-section-label-row" style="margin-top:18px;"><div class="client-section-label">Perché questo percorso</div></div>
+    <ul class="prg-why">${p.perche.map(x=>`<li>${escHtml(x)}</li>`).join('')}</ul>
+    <div class="client-section-label-row" style="margin-top:18px;"><div class="client-section-label">Fasi</div></div>${fasiHtml}
+    <div class="prg-fase" style="border-left:4px solid ${PRG_COL.comp};"><div class="prg-ft">${escHtml(p.comp.nome)} <span>dopo la preparazione</span></div>
+      <div class="prg-note">${p.comp.indicazioni.map(n=>`<div>• ${escHtml(n)}</div>`).join('')}<div>• Proporzioni di forza da mantenere per ${escHtml(p.sport)}: forza massimale ${p.comp.proporzioni.mxs} % · potenza ${p.comp.proporzioni.pot} % · potenza resistente ${p.comp.proporzioni.pe} % · resistenza muscolare ${p.comp.proporzioni.me} % (Bompa, tab. 15.1).</div></div></div>
+    <div class="client-section-label-row" style="margin-top:18px;"><div class="client-section-label">Retest biomeccanici consigliati</div></div>
+    <div class="bm-hint">${p.retest.map(r=>`Settimana ${r.sett} (fine ${escHtml(r.dopo.toLowerCase())})`).join(' · ')}</div>
+    <div class="client-section-label-row" style="margin-top:18px;"><div class="client-section-label">Settimana per settimana</div></div>
+    <table class="bm-t"><thead><tr><th>#</th><th>Dal</th><th>Fase / macrociclo</th><th>Carico</th><th>Indicazione</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+function renderProgrammazioneTab(){
+  const c = activeClient(), box = document.getElementById('programmazioneContent');
+  if(!c || !box) return;
+  const pr = prgStore(c), ctx = pr.ctx;
+  const evs = bmList(c).slice().sort((a,b)=>(b.data||'').localeCompare(a.data||''));
+  const ev = evs.find(x=>x.id===ctx.evId) || evs[0] || null;
+  const ind = prgIndicatori(ev);
+  const rec = prgDsiVariante(ind);
+  if(!state.prgVar) state.prgVar = rec;
+  const opt = (v,l,cur)=>`<option value="${v}" ${String(cur)===String(v)?'selected':''}>${escHtml(l)}</option>`;
+  const fd = d=> d ? d.split('-').reverse().join('/') : '—';
+  const indHtml = ind ? `
+    <div class="prg-ind">
+      <div><span>DSI</span><b>${ind.dsi ? ind.dsi.dsi.toFixed(2) : '—'}</b><i>${ind.dsi ? escHtml(ind.dsi.profilo) : 'serve CMJ + IMTP Peak Force'}</i></div>
+      <div class="${ind.asimAlte.length?'bad':''}"><span>Asimmetrie &gt; 10 %</span><b>${ind.asimAlte.length}</b><i>${ind.asimAlte.slice(0,2).map(x=>escHtml(x.nome)).join(', ') || 'nessuna'}</i></div>
+      <div class="${ind.hqBasso?'bad':''}"><span>H:Q</span><b>${ind.hq ? [ind.hq.dx,ind.hq.sx].filter(x=>x!==null).map(x=>x.toFixed(2)).join(' / ') : '—'}</b><i>${ind.hqBasso?'sotto 0,60':'ok / n.d.'}</i></div>
+      <div class="${ind.ybAlto?'bad':''}"><span>Y Balance</span><b>${ind.yb!==null ? ind.yb.toFixed(1)+' cm' : '—'}</b><i>${ind.ybAlto?'differenza > 4 cm':'ok / n.d.'}</i></div>
+    </div>` : `<div class="val-empty">Nessuna valutazione biomeccanica per questo atleta: compilane una nella scheda “Biomeccanica” per ottenere un percorso personalizzato.</div>`;
+  const plans = Object.keys(PRG_VARIANTI).map(k=>prgGenera(ctx, ind, k));
+  const sel = plans.find(p=>p.variante===state.prgVar) || plans[0];
+  const salvati = pr.piani.slice().sort((a,b)=>(b.creato||'').localeCompare(a.creato||''));
+  box.innerHTML = `
+    <div class="client-section-label-row"><div class="client-section-label">Programmazione — periodizzazione suggerita</div></div>
+    <div class="bm-hint" style="margin-top:8px;">Percorsi costruiti dai dati biomeccanici e dal contesto dell'atleta, secondo il modello di periodizzazione della forza di Bompa &amp; Buzzichelli. Sono proposte da rivedere: modifica i dati di contesto per vedere come cambiano.</div>
+    <div class="bm-card" style="margin-top:12px;"><div class="bm-grid">
+      <label>Sport<select class="editable" data-prg="sport">${PRG_SPORT.map(s=>opt(s[0],s[1],ctx.sport)).join('')}</select></label>
+      <label>Esperienza di forza<select class="editable" data-prg="anniForza">${opt('nov','Meno di 1 anno',ctx.anniForza)}${opt('int','1–3 anni',ctx.anniForza)}${opt('esp','4 anni o più',ctx.anniForza)}</select></label>
+      <label>Inizio preparazione<input class="editable" type="date" data-prg="dataInizio" value="${escAttr(ctx.dataInizio)}"></label>
+      <label>Settimane fino alla prima gara<input class="editable" type="number" min="4" max="52" data-prg="settimane" value="${escAttr(ctx.settimane)}"></label>
+      <label>Tipo di stagione<select class="editable" data-prg="stagione">${opt('individuale','Gare distanziate (picco)',ctx.stagione)}${opt('squadra','Sport di squadra (gare settimanali)',ctx.stagione)}</select></label>
+      <label>Valutazione usata<select class="editable" data-prg="evId">${evs.length ? evs.map(e=>opt(e.id,fd(e.data)+' · '+(e.tipo==='retest'?'Retest':'Iniziale'),ev&&ev.id)).join('') : '<option value="">—</option>'}</select></label>
+      <label class="sist-test-item" style="padding-top:20px;"><input type="checkbox" data-prgck="massa" ${ctx.massa?'checked':''}> Serve aumentare la massa (ipertrofia)</label>
+      <label class="sist-test-item" style="padding-top:20px;"><input type="checkbox" data-prgck="giovane" ${ctx.giovane?'checked':''}> Atleta giovane (&lt; 16 anni)</label>
+    </div></div>
+    <div class="client-section-label-row" style="margin-top:22px;"><div class="client-section-label">Dati biomeccanici usati</div></div>${indHtml}
+    <div class="client-section-label-row" style="margin-top:22px;"><div class="client-section-label">Percorsi suggeriti</div></div>
+    <div class="prg-cards">${plans.map(p=>`<div class="prg-card ${p.variante===state.prgVar?'on':''}" data-prgvar="${p.variante}">
+      ${p.variante===rec ? `<div class="prg-badge">${ind&&ind.dsi?'Consigliato dai dati':'Standard'}</div>` : ''}
+      <b>${escHtml(p.nome)}</b><span>${escHtml(p.corto)}</span>
+      <div class="prg-mini">${p.fasi.map(f=>`<div style="flex:${f.settimane};background:${PRG_COL[f.key]};"></div>`).join('')}</div>
+      <small>${p.totale} settimane · ${p.fasi.map(f=>f.nome.split(' (')[0].replace('Adattamento anatomico','AA').replace('Forza massimale','Forza max').replace(/^Conversione a .*/,'Conversione')+' '+f.settimane).join(' → ')}</small>
+      <small style="opacity:.8">${escHtml(p.desc)}</small></div>`).join('')}</div>
+    <div class="client-section-label-row" style="margin-top:22px;"><div class="client-section-label">${escHtml(sel.nome)}</div></div>
+    ${prgPianoHtml(sel, ctx)}
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin:20px 0 8px;"><button class="btn-gold" id="prgSave">Salva questo programma</button><button class="btn-ghost" id="prgPrint">Stampa / PDF</button></div>
+    ${salvati.length ? `<div class="client-section-label-row" style="margin-top:26px;"><div class="client-section-label">Programmi salvati</div></div>
+      ${salvati.map(s=>`<div class="prg-saved"><span><b>${escHtml(s.plan.nome)}</b> · ${escHtml(s.plan.sport)} · ${s.plan.totale} sett. · dal ${fd(s.ctx.dataInizio)} <i>(salvato il ${fd((s.creato||'').slice(0,10))})</i></span><span><button class="btn-ghost" data-prgopen="${s.id}">Apri</button> <button class="btn-ghost" data-prgdel="${s.id}" style="color:#e57373;">Elimina</button></span></div>`).join('')}` : ''}
+    <div class="bm-hint" style="margin-top:18px;">Fonte delle regole: T. Bompa, C. Buzzichelli, <i>Periodization Training for Sports</i>, 3ª ed., Human Kinetics 2015; DSI secondo Sheppard et al. 2011. Le regole marcate “criterio HRL” non sono tratte dal libro.</div>`;
+  box.querySelectorAll('[data-prg]').forEach(el=> el.onchange = ()=>{ ctx[el.dataset.prg] = el.type==='number' ? parseInt(el.value,10)||0 : el.value; if(el.dataset.prg==='evId') state.prgVar = null; db.saveCliente(c); renderProgrammazioneTab(); });
+  box.querySelectorAll('[data-prgck]').forEach(el=> el.onchange = ()=>{ ctx[el.dataset.prgck] = el.checked; db.saveCliente(c); renderProgrammazioneTab(); });
+  box.querySelectorAll('[data-prgvar]').forEach(el=> el.onclick = ()=>{ state.prgVar = el.dataset.prgvar; renderProgrammazioneTab(); });
+  document.getElementById('prgSave').onclick = ()=>{ pr.piani.push({id:sel.id, creato:new Date().toISOString(), ctx:JSON.parse(JSON.stringify(ctx)), plan:sel}); db.saveCliente(c); renderProgrammazioneTab(); };
+  document.getElementById('prgPrint').onclick = ()=> apriReportProgramma(c, sel, ctx);
+  box.querySelectorAll('[data-prgopen]').forEach(b=> b.onclick = ()=>{ const s = pr.piani.find(x=>x.id===b.dataset.prgopen); if(s) apriReportProgramma(c, s.plan, s.ctx); });
+  box.querySelectorAll('[data-prgdel]').forEach(b=> b.onclick = ()=>{ if(!confirm('Eliminare questo programma salvato?')) return; pr.piani = pr.piani.filter(x=>x.id!==b.dataset.prgdel); db.saveCliente(c); renderProgrammazioneTab(); });
+}
+function apriReportProgramma(c, p, ctx){
+  const logoSrc = (document.querySelector('.mark-logo') || document.querySelector('.auth-logo') || {}).src || '';
+  const prof = state.professionista ? state.professionista.nome : '';
+  const fasi = p.fasi.map(f=>`<div class="f" style="border-left:5px solid ${PRG_COL[f.key]||'#888'}"><h3>${escHtml(f.nome)} <small>${f.settimane} settimane</small></h3><p>${escHtml(f.obiettivo)}</p>
+    <div class="c2"><div><b>Metodi</b><ul>${f.metodi.map(m=>`<li>${escHtml(m)}</li>`).join('')}</ul></div><div><b>Parametri</b><table>${f.parametri.map(([k,v])=>`<tr><td>${escHtml(k)}</td><td>${escHtml(v)}</td></tr>`).join('')}</table></div></div>
+    ${f.note.map(n=>`<p class="n">• ${escHtml(n)}</p>`).join('')}</div>`).join('');
+  const rows = p.sett.map(s=>`<tr><td>${s.n}</td><td>${prgDataSett(ctx,s.n)}</td><td>${escHtml(s.macro)}</td><td>${escHtml(s.carico)}</td><td>${escHtml(s.nota)}</td></tr>`).join('');
+  const html = `<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8"><title>Programma — ${escHtml(c.nome||'')}</title><style>
+  @page{size:A4;margin:12mm}body{font-family:Helvetica,Arial,sans-serif;color:#1c1c1c;font-size:12px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .hd{display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #FD7023;padding-bottom:8px;margin-bottom:12px}.hd img{height:42px}h1{font-size:20px;margin:0}h2{font-size:14px;color:#FD7023;text-transform:uppercase;margin:18px 0 6px}
+  .bar{display:flex;height:22px;border-radius:5px;overflow:hidden;margin:8px 0}.bar div{display:flex;align-items:center;justify-content:center;font-size:10px;color:#111}
+  .f{padding:6px 12px;margin:8px 0;background:#f6f6f4;break-inside:avoid}.f h3{margin:0 0 3px;font-size:13px}.f h3 small{font-weight:400;color:#777}.c2{display:grid;grid-template-columns:1fr 1.4fr;gap:12px}
+  ul{margin:3px 0;padding-left:16px}table{border-collapse:collapse;width:100%}td,th{border-bottom:1px solid #ddd;padding:3px 5px;text-align:left;font-size:11px}th{color:#777}.n{margin:2px 0;color:#444}.w{background:#fff3e8;border:1px solid #f0b98d;padding:6px 10px;margin:8px 0}
+  .pbtn{position:fixed;right:14px;bottom:14px;background:#FD7023;border:0;border-radius:8px;padding:10px 16px;font-weight:700;cursor:pointer}@media print{.pbtn{display:none}}</style></head><body>
+  <div class="hd"><div><h1>${escHtml(p.nome)}</h1><div>${escHtml(c.nome||'')} · ${escHtml(p.sport)} · ${p.totale} settimane dal ${ctx.dataInizio ? ctx.dataInizio.split('-').reverse().join('/') : '—'}</div></div>${logoSrc?`<img src="${logoSrc}">`:''}</div>
+  <div class="bar">${p.fasi.map(f=>`<div style="flex:${f.settimane};background:${PRG_COL[f.key]||'#888'}">${f.settimane>=3?f.settimane:''}</div>`).join('')}</div>
+  ${p.avvisi.map(a=>`<div class="w">⚠ ${escHtml(a)}</div>`).join('')}
+  <h2>Perché questo percorso</h2><ul>${p.perche.map(x=>`<li>${escHtml(x)}</li>`).join('')}</ul>
+  <h2>Fasi</h2>${fasi}
+  <div class="f" style="border-left:5px solid ${PRG_COL.comp}"><h3>${escHtml(p.comp.nome)}</h3>${p.comp.indicazioni.map(n=>`<p class="n">• ${escHtml(n)}</p>`).join('')}<p class="n">• Proporzioni da mantenere: forza massimale ${p.comp.proporzioni.mxs} % · potenza ${p.comp.proporzioni.pot} % · pot. resistente ${p.comp.proporzioni.pe} % · res. muscolare ${p.comp.proporzioni.me} %.</p></div>
+  <h2>Retest consigliati</h2><p>${p.retest.map(r=>`Settimana ${r.sett} (fine ${escHtml(r.dopo.toLowerCase())})`).join(' · ')}</p>
+  <h2>Settimana per settimana</h2><table><thead><tr><th>#</th><th>Dal</th><th>Fase / macrociclo</th><th>Carico</th><th>Indicazione</th></tr></thead><tbody>${rows}</tbody></table>
+  <p style="margin-top:14px;color:#777;font-size:10px">HRL Performance Pathways${prof?' · '+escHtml(prof):''} · Regole: Bompa &amp; Buzzichelli, Periodization Training for Sports (2015); DSI: Sheppard et al. 2011. Proposta da validare dal professionista.</p>
+  <button class="pbtn" onclick="window.print()">Stampa / Salva come PDF</button></body></html>`;
   const win = window.open('', '_blank');
   if(!win){ alert('Il browser ha bloccato l\'apertura della finestra di report. Consenti i popup per questo sito e riprova.'); return; }
   win.document.open(); win.document.write(html); win.document.close();
