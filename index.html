@@ -6894,6 +6894,7 @@ function renderBiomeccanicaTab(){
       ${lista.map(x=>`<button class="btn-ghost ${x.id===state.bmSel?'bm-on':''}" data-bmsel="${x.id}">${fd(x.data)} · ${x.tipo==='retest' ? 'Retest'+(x.retestN?' n° '+x.retestN:'') : 'Iniziale'}</button>`).join('')}
       <button class="btn-gold" id="bmNuovaIniz">+ Nuova valutazione</button>
       ${lista.length ? '<button class="btn-ghost" id="bmNuovaRetest">+ Retest</button>' : ''}
+      <label class="btn-ghost" style="cursor:pointer;" title="Importa i dati da un file CSV (formato: test;metrica;lato;valore;precedente;note)">Importa CSV<input type="file" id="bmCsvIn" accept=".csv,text/csv,text/plain" style="display:none"></label>
     </div>`;
   if(!sel){
     box.innerHTML = head + `<div class="val-empty">Nessuna valutazione biomeccanica: creane una con “+ Nuova valutazione”.</div>`;
@@ -6970,6 +6971,7 @@ function renderBiomeccanicaTab(){
     </div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin:18px 0 6px;">
       <button class="btn-gold" id="bmReportBtn">Report (stampa / PDF)</button>
+      <button class="btn-ghost" id="bmCsvExp" title="Scarica il CSV (modello già compilato con i dati inseriti)">Esporta CSV</button>
       <button class="btn-ghost" id="bmDelBtn" style="color:#e57373;">Elimina valutazione</button>
     </div>
     <div class="bm-hint">Asimmetria % = (lato migliore − lato peggiore) / lato migliore × 100 · Δ % = (valore attuale − precedente) / precedente × 100.</div>`;
@@ -7010,6 +7012,7 @@ function renderBiomeccanicaTab(){
     };
   });
   document.getElementById('bmReportBtn').onclick = ()=> apriReportBiomeccanico(c, v);
+  document.getElementById('bmCsvExp').onclick = ()=> bmCsvScarica(v, c);
   document.getElementById('bmDelBtn').onclick = ()=>{
     if(!confirm('Eliminare questa valutazione biomeccanica?')) return;
     const p = ensurePercorso(c); p.performance.biomeccaniche = bmList(c).filter(x=>x.id!==v.id);
@@ -7022,6 +7025,22 @@ function bmBindHead(c, box){
   const crea = t=>{ const v = bmNuova(c, t); bmList(c).push(v); state.bmSel = v.id; db.saveCliente(c); renderBiomeccanicaTab(); };
   if(n1) n1.onclick = ()=> crea('iniziale');
   if(n2) n2.onclick = ()=> crea('retest');
+  const fi = document.getElementById('bmCsvIn');
+  if(fi) fi.onchange = e=>{
+    const f = e.target.files[0]; if(!f) return;
+    const r = new FileReader();
+    r.onload = ()=>{
+      let v = bmList(c).find(x=>x.id===state.bmSel), nuova = false;
+      if(!v){ v = bmNuova(c,'iniziale'); nuova = true; }
+      else if(!confirm('Importare i dati del CSV nella valutazione del '+(v.data ? v.data.split('-').reverse().join('/') : '')+'? I valori già presenti con lo stesso nome verranno sovrascritti.')){ e.target.value=''; return; }
+      const res = bmCsvImporta(v, r.result);
+      if(res.errore){ alert('Importazione non riuscita: '+res.errore); e.target.value=''; return; }
+      if(nuova){ bmList(c).push(v); state.bmSel = v.id; }
+      db.saveCliente(c); renderBiomeccanicaTab();
+      alert('Importati '+res.ok+' valori.'+(res.ignorate.length ? '\n\nRighe non riconosciute ('+res.ignorate.length+'):\n'+res.ignorate.slice(0,15).join('\n')+(res.ignorate.length>15?'\n…':'') : ''));
+    };
+    r.readAsText(f);
+  };
 }
 
 // report stampabile (nuova finestra → Stampa / Salva come PDF), stile "Biomechanical Report"
@@ -7137,6 +7156,104 @@ function apriReportBiomeccanico(c, v){
   const win = window.open('', '_blank');
   if(!win){ alert('Il browser ha bloccato l\'apertura della finestra di report. Consenti i popup per questo sito e riprova.'); return; }
   win.document.open(); win.document.write(html); win.document.close();
+}
+
+// ---- import / esportazione CSV della valutazione biomeccanica ----
+// Formato "lungo": una riga per misura → test;metrica;lato;valore;precedente;note (separatore ; o , o tab, decimali con , o .).
+// "Esporta CSV" produce il modello già compilato con i dati presenti; "Importa CSV" legge lo stesso formato.
+function bmNormTxt(x){ return String(x==null?'':x).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\([^)]*\)/g,'').replace(/[^a-z0-9]+/g,''); }
+function bmNormLato(x){ const t = bmNormTxt(x); if(['sx','sinistra','sinistro','l','left'].includes(t)) return 'sx'; if(['dx','destra','destro','r','right'].includes(t)) return 'dx'; return ''; }
+// elenco di tutte le misure raccolte: {t,m,l,path,pathP,pathN,proto,tipo:'mov'|'str'|...}
+function bmCsvTargets(v){
+  const T = [], has = k=> (v.protocollo||[]).includes(k);
+  [['Dati','Data','', 'data'],['Dati','Sport / ruolo','','sport'],['Dati','Lato dominante','','lato'],['Dati','Infortunio / lato','','infortunio'],['Dati','Obiettivo della valutazione','','obiettivo']]
+    .forEach(([t,m,l,p])=> T.push({t,m,l,path:p,proto:null}));
+  BM_MOV.forEach(([k,t,l,pr])=>{ if(has(pr)) T.push({t,m:'',l:(l==='SX'||l==='DX')?l:'',path:'mov.'+k+'.valore',pathN:'mov.'+k+'.note',proto:pr}); });
+  if(has('mono')) BM_STR.filter(r=>r[0]!=='hq').forEach(([k,nm])=>{
+    const t = (k==='alt1'||k==='alt2') ? ((v.strAltro||{})[k]||'Altro '+(k==='alt1'?1:2)) : nm;
+    T.push({t,m:'',l:'DX',path:'str.'+k+'.dx',pathN:'str.'+k+'.note',proto:'mono',strAltro:(k==='alt1'||k==='alt2')?k:''});
+    T.push({t,m:'',l:'SX',path:'str.'+k+'.sx',proto:'mono',strAltro:(k==='alt1'||k==='alt2')?k:''});
+  });
+  if(has('imtp')) T.push({t:'IMTP',m:'Peak Force (N/kg)',l:'',path:'imtp.v',pathP:'imtp.p',pathN:'imtp.note',proto:'imtp'});
+  BM_JUMPS.forEach(([k,nm,kind,mets])=>{ if(!has(k)) return;
+    mets.forEach((m,i)=>{
+      if(kind==='bi') T.push({t:nm,m,l:'',path:`jump.${k}.${i}.v`,pathP:`jump.${k}.${i}.p`,pathN:`jump.${k}.${i}.note`,proto:k});
+      else { T.push({t:nm,m,l:'DX',path:`jump.${k}.${i}.dx`,pathN:`jump.${k}.${i}.note`,proto:k}); T.push({t:nm,m,l:'SX',path:`jump.${k}.${i}.sx`,proto:k}); }
+    });
+  });
+  if(has('fv')){
+    [['1RM stimato (kg)','rm'],['F0','f0'],['V0','v0'],['Pmax (W)','pmax'],['R2 profilo','r2']].forEach(([m,f])=> T.push({t:'Loaded squat',m,l:'',path:'fv.'+f,proto:'fv'}));
+    for(let i=0;i<5;i++) [['Carico (kg)','c'],['Vel. media (m/s)','vm'],['Peak vel. (m/s)','pv'],['Peak power (W)','pp']].forEach(([m,f])=> T.push({t:'Loaded squat',m:'Riga '+(i+1)+' '+m,l:'',path:`fv.rows.${i}.${f}`,proto:'fv'}));
+  }
+  return T;
+}
+function bmCsvEsporta(v){
+  const q = x=>{ x = x==null ? '' : String(x); return /[;"\n\r]/.test(x) ? '"'+x.replace(/"/g,'""')+'"' : x; };
+  const rows = [['test','metrica','lato','valore','precedente','note']];
+  bmCsvTargets(v).forEach(t=> rows.push([t.t,t.m,t.l,bmGet(v,t.path),t.pathP?bmGet(v,t.pathP):'',t.pathN?bmGet(v,t.pathN):'']));
+  return '﻿' + rows.map(r=>r.map(q).join(';')).join('\r\n');
+}
+function bmCsvParse(text){
+  text = String(text).replace(/^﻿/,'');
+  const first = text.split(/\r?\n/)[0] || '';
+  const cnt = ch=> (first.match(new RegExp(ch==='\t'?'\\t':'\\'+ch,'g'))||[]).length;
+  const sep = cnt(';')>=cnt(',') && cnt(';')>=cnt('\t') ? ';' : (cnt('\t')>cnt(',') ? '\t' : ',');
+  const out = []; let row = [], cur = '', inq = false;
+  for(let i=0;i<text.length;i++){
+    const ch = text[i];
+    if(inq){ if(ch==='"'){ if(text[i+1]==='"'){ cur+='"'; i++; } else inq = false; } else cur += ch; }
+    else if(ch==='"') inq = true;
+    else if(ch===sep){ row.push(cur); cur=''; }
+    else if(ch==='\n' || ch==='\r'){ if(ch==='\r' && text[i+1]==='\n') i++; row.push(cur); cur=''; if(row.some(x=>x.trim()!=='')) out.push(row); row=[]; }
+    else cur += ch;
+  }
+  row.push(cur); if(row.some(x=>x.trim()!=='')) out.push(row);
+  return out;
+}
+function bmCsvValore(x){ x = String(x==null?'':x).trim(); return /^-?\d+,\d+$/.test(x) ? x.replace(',','.') : x; }
+// applica un CSV alla valutazione v; restituisce {ok, ignorate:[...]}
+function bmCsvImporta(v, text){
+  const righe = bmCsvParse(text);
+  if(righe.length<2) return {ok:0, ignorate:[], errore:'il file è vuoto o non ha righe di dati'};
+  const head = righe[0].map(bmNormTxt);
+  const col = nome=> head.indexOf(nome);
+  const ct = col('test'), cm = col('metrica'), cl = col('lato'), cv = col('valore'), cp = col('precedente'), cn = col('note');
+  if(ct<0 || cv<0) return {ok:0, ignorate:[], errore:'intestazione non riconosciuta: servono almeno le colonne "test" e "valore" (usa "Esporta CSV" per avere il modello)'};
+  // tutti i possibili bersagli, con protocollo completo, indicizzati per test|metrica|lato
+  const full = Object.assign({}, v, {protocollo: BM_PROTOCOLLO.map(x=>x[0])});
+  const idx = {};
+  bmCsvTargets(full).forEach(t=>{
+    const tests = [bmNormTxt(t.t)]; const sp = String(t.t).split(' — ')[0]; if(sp!==t.t) tests.push(bmNormTxt(sp));
+    tests.forEach(tt=>{ const key = tt+'|'+bmNormTxt(t.m)+'|'+bmNormLato(t.l); if(!idx[key]) idx[key] = t; });
+  });
+  // alias di comodo
+  const alias = {'cmj|jumpheight':'cmj|jumpheight','imtp|peakforce':'imtp|peakforce'};
+  let ok = 0; const ignorate = []; const proto = new Set(v.protocollo||[]);
+  righe.slice(1).forEach((r,i)=>{
+    const test = r[ct]||'', metrica = cm>=0 ? (r[cm]||'') : '', lato = cl>=0 ? (r[cl]||'') : '';
+    const val = bmCsvValore(r[cv]), prec = cp>=0 ? bmCsvValore(r[cp]) : '', nota = cn>=0 ? (r[cn]||'').trim() : '';
+    if(!String(test).trim()) return;
+    if(val==='' && prec==='' && nota==='') return;
+    const L = bmNormLato(lato), key = bmNormTxt(test)+'|'+bmNormTxt(metrica)+'|'+L;
+    let t = idx[key] || (L ? null : idx[bmNormTxt(test)+'|'+bmNormTxt(metrica)+'|']);
+    if(!t && !metrica) t = idx[bmNormTxt(test)+'|'+bmNormTxt(test)+'|'+L];
+    if(!t && !metrica && bmNormTxt(test)==='imtp') t = idx['imtp|peakforce|'];
+    if(!t){ ignorate.push('riga '+(i+2)+': '+test+(metrica?' · '+metrica:'')+(lato?' · '+lato:'')); return; }
+    if(t.strAltro && t.t && !(v.strAltro||{})[t.strAltro]){ /* nome "Altro" del file */ }
+    if(val!=='') bmSet(v, t.path, t.path==='data' ? (/^\d{2}\/\d{2}\/\d{4}$/.test(val) ? val.split('/').reverse().join('-') : val) : val);
+    if(prec!=='' && t.pathP) bmSet(v, t.pathP, prec);
+    if(nota!=='' && t.pathN) bmSet(v, t.pathN, nota);
+    if(t.proto) proto.add(t.proto);
+    ok++;
+  });
+  v.protocollo = BM_PROTOCOLLO.map(x=>x[0]).filter(k=>proto.has(k));
+  return {ok, ignorate};
+}
+function bmCsvScarica(v, c){
+  const blob = new Blob([bmCsvEsporta(v)], {type:'text/csv;charset=utf-8'});
+  const u = URL.createObjectURL(blob), a = document.createElement('a');
+  const nome = (c && (c.cognome||c.nome) ? String(((c.cognome||'')+'-'+(c.nome||'')).replace(/[^A-Za-z0-9]+/g,'-')) : 'atleta').replace(/^-|-$/g,'');
+  a.href = u; a.download = 'biomeccanica-'+nome+'-'+(v.data||'')+'.csv'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(u),2000);
 }
 
 // ==================== PROGRAMMAZIONE (periodizzazione suggerita dai dati biomeccanici) ====================
