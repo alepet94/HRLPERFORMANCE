@@ -4444,7 +4444,7 @@ function clientSchedeFlat(c){
     const pathway = key.split('::')[1] || key;
     (arr||[]).forEach(s=> out.push({id:s.id, label:`${s.nome || '(senza nome)'} — ${pathway}`}));
   });
-  (c.schedeFisioterapia||[]).forEach(s=> out.push({id:s.id, label:`${s.nome || '(senza nome)'} — Fisioterapia`}));
+  (c.schedeFisioterapia||[]).forEach(s=> out.push({id:s.id, label:`${s.nome || '(senza nome)'} — Area acuti`}));
   return out;
 }
 
@@ -13679,6 +13679,14 @@ function renderEventModal(){
       <div class="ev-field"><label>Fine</label><input class="editable" type="time" id="evEnd" value="${ed.end}"></div>
     </div>`;
 
+  if(cliente && !cliente.stub){
+    html += `<div class="ev-field"><label>Scheda collegata (opzionale)</label>
+      <select id="evScheda" class="editable">
+        <option value="">— Nessuna —</option>
+        ${schedeOptions.map(s=>`<option value="${s.id}" ${ed.schedaId===s.id?'selected':''}>${escHtml(s.label)}</option>`).join('')}
+      </select>
+    </div>`;
+  }
   {
     html += `<div class="ev-field"><label>Prestazione (listino dell'operatore)</label><select class="editable" id="evPrest" style="max-width:100%;">${lstOptions(lstProfDelEvento(ed), ed.prestazioneId||'')}</select></div>
     <div class="ev-field"><label>Costo prestazione (€)</label><input class="editable" id="evImporto" style="max-width:140px;" value="${ed.importo!=null&&ed.importo!==''?escAttr(String(ed.importo).replace('.',',')):''}" placeholder="es. 60"></div>`;
