@@ -1153,6 +1153,7 @@ header.top{
 }
 .cli-tab.active{color:var(--gold-bright);border-bottom-color:var(--gold);}
 
+.perf-subbar{max-width:1320px;margin:0 auto;padding:14px 32px 0;gap:6px;flex-wrap:wrap;}
 .cli-area-badge-row{max-width:1320px;margin:0 auto;padding:12px 32px 0;display:flex;gap:8px;flex-wrap:wrap;}
 .cli-area-badge{
   font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px;
@@ -2070,13 +2071,12 @@ body[data-theme="light"] .paz-lk-list{background:#fff;border-color:#ccc;}
     <div class="cli-tab" data-tab="sistema">Sistema</div>
     <div class="cli-tab" data-tab="areaHuman">Area Human</div>
     <div class="cli-tab" data-tab="fisioterapia">Area acuti</div>
-    <div class="cli-tab" data-tab="biomeccanica">Biomeccanica</div>
-    <div class="cli-tab" data-tab="programmazione">Programmazione</div>
     <div class="cli-tab" data-tab="pathway">Area Performance</div>
     <div class="cli-tab" data-tab="storico">Storico</div>
     <div class="cli-tab" data-tab="calendario">Calendario cliente</div>
   </div>
   <div class="cli-area-badge-row" id="cliAreaBadgeRow"></div>
+  <div class="perf-subbar" id="perfSubBar" style="display:none;"></div>
   <div class="wrap" id="pathwayWrap">
 
 
@@ -4461,10 +4461,23 @@ function findSchedaById(c, schedaId){
 // chiamando il render della tab appena attivata: unico punto usato sia dal
 // click sulle tab, sia dall'apertura di un cliente dalla lista, sia dalla
 // creazione di un nuovo cliente, così restano sempre coerenti
+// Area Performance = una sola tab con 3 sotto-tab (il flusso: valutazione → programmazione → pathway e schede)
+const PERF_GROUP = ['biomeccanica','programmazione','pathway'];
+const PERF_LABELS = {biomeccanica:'Valutazione biomeccanica', programmazione:'Programmazione', pathway:'Pathway e schede'};
+function renderPerfSubBar(){
+  const bar = document.getElementById('perfSubBar'); if(!bar) return;
+  const access = areaAccessForProfessionista(state.professionista);
+  const subs = PERF_GROUP.filter(t=>access.tabs.includes(t));
+  if(!PERF_GROUP.includes(state.clientTab) || subs.length<2){ bar.style.display='none'; bar.innerHTML=''; return; }
+  bar.style.display = 'flex';
+  bar.innerHTML = subs.map(t=>`<div class="cal-mode-opt ${state.clientTab===t?'active':''}" data-perfsub="${t}">${PERF_LABELS[t]}</div>`).join('');
+  bar.querySelectorAll('[data-perfsub]').forEach(b=>{ b.onclick = ()=> activateClientTab(b.dataset.perfsub); });
+}
 function activateClientTab(tab){
   const access = areaAccessForProfessionista(state.professionista);
   if(!access.tabs.includes(tab)) tab = access.tabs[0] || 'valutazioni';
   state.clientTab = tab;
+  if(PERF_GROUP.includes(tab)) state.perfSub = tab;
   document.getElementById('pathwayWrap').style.display = tab==='pathway' ? 'grid' : 'none';
   document.getElementById('clientCalWrap').style.display = tab==='calendario' ? 'grid' : 'none';
   document.getElementById('valutazioniWrap').style.display = tab==='valutazioni' ? 'block' : 'none';
@@ -4475,6 +4488,7 @@ function activateClientTab(tab){
   document.getElementById('programmazioneWrap').style.display = tab==='programmazione' ? 'block' : 'none';
   document.getElementById('storicoWrap').style.display = tab==='storico' ? 'block' : 'none';
   renderCliTabs();
+  renderPerfSubBar();
   if(tab==='pathway') renderPathwayView();
   if(tab==='calendario') renderClientCalendar();
   if(tab==='valutazioni') renderValutazioni();
@@ -4497,8 +4511,15 @@ function renderCliTabs(){
     const visible = access.tabs.includes(t.dataset.tab);
     t.style.display = visible ? '' : 'none';
     t.style.order = access.isSegreteria ? (t.dataset.tab==='calendario' ? '-1' : '0') : '';
-    t.classList.toggle('active', t.dataset.tab===state.clientTab);
-    t.onclick = ()=> activateClientTab(t.dataset.tab);
+    t.classList.toggle('active', t.dataset.tab===state.clientTab || (t.dataset.tab==='pathway' && PERF_GROUP.includes(state.clientTab)));
+    t.onclick = ()=>{
+      if(t.dataset.tab==='pathway'){
+        if(PERF_GROUP.includes(state.clientTab)) return;
+        const last = access.tabs.includes(state.perfSub) ? state.perfSub : 'biomeccanica';
+        return activateClientTab(access.tabs.includes(last) ? last : 'pathway');
+      }
+      activateClientTab(t.dataset.tab);
+    };
   });
   renderCliAreaBadgeRow();
 }
