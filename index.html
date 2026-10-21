@@ -6107,15 +6107,13 @@ function renderSistemaTab(){
     ${c.sistemaTestSelezionati.has(ANS_TEST) ? (()=>{
       const pi = ansPiano(c);
       const evs = pi ? (pi.evIds||[]).map(id=>state.appuntamenti.find(a=>a.id===id)).filter(Boolean) : [];
+      const pn = id=>{ const q = state.professionisti.find(x=>x.id===id); return q ? q.nome : ''; };
       return `<div class="ghi-draft-box" style="margin-bottom:18px;">
-        <div class="client-section-label" style="margin-bottom:8px;">Routine ANS e controlli automatici</div>
-        ${evs.length ? evs.map(a=>`<div style="font-size:13px;margin:3px 0;">✓ ${escHtml(a.titolo||'')} — <strong>${a.day.split('-').reverse().join('/')}</strong> ${escHtml(a.start||'')}</div>`).join('') + `<div style="font-size:11.5px;color:var(--ink-mute);margin-top:6px;">Inseriti in automatico in calendario: puoi spostarli da lì.</div>` : `<div style="font-size:12.5px;color:var(--ink-mute);">Nessun controllo in calendario.</div><button class="btn-ghost" id="btnAnsPianifica" style="margin-top:8px;">Inserisci controlli (2 settimane + 1 mese)</button>`}
-        <div style="margin-top:12px;"><button class="btn-gold" id="btnRefertoRoutine">Referto routine (precompilato + preventivo)</button></div>
-      </div>`;
+        <div class="client-section-label" style="margin-bottom:8px;">Controlli automatici del percorso ANS</div>
+        ${evs.length ? evs.map(a=>`<div style="font-size:13px;margin:5px 0;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">✓ ${escHtml(a.titolo||'')} — <strong>${a.day.split('-').reverse().join('/')} ${escHtml(a.start||'')}</strong>${a.professionistaId?` · ${escHtml(pn(a.professionistaId))}`:''} <button type="button" class="btn-small" data-ansedit="${a.id}">Cambia orario</button></div>`).join('') + `<div style="font-size:11.5px;color:var(--ink-mute);margin-top:6px;">Proposti nel primo orario libero dell'operatore, dopo 2 settimane e 1 mese.</div>` : `<div style="font-size:12.5px;color:var(--ink-mute);">Nessun controllo in calendario.</div><button class="btn-ghost" id="btnAnsPianifica" style="margin-top:8px;">Inserisci controlli (2 settimane + 1 mese)</button>`}
+      </div>
+      ${rtEditorHTML(c)}`;
     })() : ''}
-    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:26px;">
-      <button class="btn-ghost" id="btnPianificaRetest">Pianifica retest in calendario</button>
-    </div>
   `;
 
   bindPercorsoSection();
@@ -6195,10 +6193,8 @@ function renderSistemaTab(){
     };
   });
   const bAnsP = document.getElementById('btnAnsPianifica'); if(bAnsP) bAnsP.onclick = ()=>{ ansPianifica(c); renderSistemaTab(); };
-  const bRef = document.getElementById('btnRefertoRoutine'); if(bRef) bRef.onclick = ()=> apriRefertoRoutine(c);
-  document.getElementById('btnPianificaRetest').onclick = ()=>{
-    openEventEditor({day: fmtDateISO(new Date()), start:'09:00', end:'10:00', tipo:'retest', clienteId:c.id}, false);
-  };
+  box.querySelectorAll('[data-ansedit]').forEach(b=>{ b.onclick = ()=>{ const a = state.appuntamenti.find(x=>x.id===b.dataset.ansedit); if(a) openEventEditor(a, true); }; });
+  if(c.sistemaTestSelezionati.has(ANS_TEST)) rtBind(c, box);
 }
 
 // ---- Percorso ANS: routine + scadenze automatiche (controllo SN a 2 settimane, retest GHI a 1 mese) ----
@@ -6207,14 +6203,19 @@ function ansPiano(c){ const sis = ensurePercorso(c).sistema; if(!sis.ansPiano) s
 function ansPianifica(c){
   const sis = ensurePercorso(c).sistema;
   if(sis.ansPiano && sis.ansPiano.evIds && sis.ansPiano.evIds.some(id=>state.appuntamenti.some(a=>a.id===id))) return;   // già pianificato
-  const base = new Date(); const me = state.professionista;
-  const mk = (n, giorni, tipo, titolo)=>{
-    const g = fmtDateISO(ansFeriale(addDays(base, giorni)));
-    return { id:'ev_ans_'+Date.now()+'_'+n+'_'+Math.random().toString(36).slice(2,5), clienteId:c.id, day:g, start:'09:00', end: tipo==='retest' ? '10:00' : '09:45',
+  const base = new Date(); const me = state.professionista; const pid = me ? me.id : null;
+  // primo orario libero dell'operatore che esegue il test di sistema, a partire da 14 / 30 giorni dopo
+  const mk = (n, giorni, tipo, titolo, dur)=>{
+    let day = fmtDateISO(addDays(base, giorni)), start = '09:00', end = minutesToTime(540+dur);
+    if(pid){
+      const f = segFindFirstFree([pid], dur, day, 540, null);
+      if(f){ day = f.day; start = minutesToTime(f.start); end = minutesToTime(f.end); }
+    }
+    return { id:'ev_ans_'+Date.now()+'_'+n+'_'+Math.random().toString(36).slice(2,5), clienteId:c.id, day, start, end,
       tipo, titolo, schedaId:'', noteSessione:'', operatore:'', seriesId:null, colore:null, esecuzione:null,
-      professionistaId: me ? me.id : null, retestData:null, spazioId:null };
+      professionistaId: pid, retestData:null, spazioId:null };
   };
-  const ev = [ mk(1, 14, 'ans', 'Controllo sistema nervoso (2 settimane)'), mk(2, 30, 'retest', 'Retest GHI (1 mese)') ];
+  const ev = [ mk(1, 14, 'ans', 'Controllo sistema nervoso (2 settimane)', 45), mk(2, 30, 'retest', 'Retest GHI (1 mese)', 60) ];
   ev.forEach(a=>{ state.appuntamenti.push(a); db.saveAppuntamento(a); });
   sis.ansPiano = { inizio: fmtDateISO(base), evIds: ev.map(a=>a.id) };
   db.saveCliente(c);
@@ -6233,46 +6234,120 @@ function ansPrevListino(){
   const lst = (state.listino && state.listino.length) ? state.listino : FATT_LISTINO_HRL;
   return lst.find(l=>/ANS Control/i.test(l.descrizione||'')) || null;
 }
-function apriRefertoRoutine(c){
+// ---- Routine quotidiana (stile "ROUTINE QUOTIDIANE"): fasce fisse + voci aggiungibili con un tocco ----
+const RT_SLOTS = [['mattina','Mattina'],['meta','Metà giornata'],['pomeriggio','Pomeriggio'],['sera','Sera']];
+const RT_ANS_DESC = "In un ambiente silenzioso, seduto in posizione attiva sulla sedia senza appoggiare la schiena, evitare qualsiasi tipo di movimento, seguo con lo sguardo la pallina, ascolto l’audio del video, porgo attenzione all’aria che entra dal naso ed esce dalla bocca e mantengo le mani ferme sulle cosce, senza muoverle.";
+const RT_PRESETS = {
+  freddo:{label:"Stimolo freddo", titolo:"STIMOLO FREDDO 1’ circa", desc:"(bagno viso e polsi con acqua fredda o doccia fredda)"},
+  ans:{label:"Training sistema nervoso", titolo:"ESEGUO TRAINING SISTEMA NERVOSO AUTONOMO", desc:"", resp:true},
+  colazione:{label:"Colazione", titolo:"COLAZIONE", desc:""},
+  pranzo:{label:"Pranzo", titolo:"PRANZO", desc:""},
+  cena:{label:"Cena", titolo:"CENA", desc:""},
+  riposino:{label:"Riposino", titolo:"RIPOSINO POMERIDIANO", desc:"15/20 minuti o 90 se ti è necessario."},
+  relax:{label:"Attività rilassanti", titolo:"ATTIVITÀ RILASSANTI", desc:"camminata tranquilla all’aperto, doccia calda, lettura libro"},
+  luce:{label:"Luce naturale", titolo:"LUCE NATURALE", desc:"10 minuti all’aperto entro un’ora dal risveglio."},
+  nodev:{label:"Niente schermi", titolo:"NIENTE SCHERMI", desc:"evitare telefono e TV nell’ora prima di dormire."},
+  libero:{label:"+ Voce libera", titolo:"", desc:""}
+};
+function rtNewItem(preset, slot, c){
+  const pr = RT_PRESETS[preset] || RT_PRESETS.libero;
+  const sel = breathShapeSel(c)||[]; const lab = sel.length ? (BREATH_SHAPES.find(b=>b[0]===sel[0])||[,''])[1] : '';
+  return { id:'rt_'+Date.now()+'_'+Math.random().toString(36).slice(2,6), preset, titolo:pr.titolo, desc: (preset==='ans' && slot==='mattina') ? RT_ANS_DESC : pr.desc,
+    resp: pr.resp ? lab : '', quando:'' };
+}
+function rtGet(c){
   const sis = ensurePercorso(c).sistema;
-  const piano = sis.ansPiano;
+  if(!sis.routine){
+    const r = { sveglia:'07:00', letto:'23:00', note:"Per un riposo migliore, ti consigliamo di evitare attività stimolanti (usare il telefono, guardare la tv, fare attività sportiva) nelle 2 ore prima di andare a dormire.", preventivo:false, slots:{mattina:[],meta:[],pomeriggio:[],sera:[]} };
+    sis.routine = r;
+    const add=(slot,pre,q)=>{ const it = rtNewItem(pre,slot,c); if(q) it.quando=q; r.slots[slot].push(it); };
+    add('mattina','freddo'); add('mattina','ans'); add('mattina','colazione');
+    add('meta','ans','prima di pranzo'); add('meta','pranzo');
+    add('pomeriggio','riposino'); add('pomeriggio','ans','da fare prima cena');
+    add('sera','cena'); add('sera','relax');
+  }
+  return sis.routine;
+}
+function rtEditorHTML(c){
+  const r = rtGet(c);
+  const respOpts = (cur)=> '<option value=""></option>' + BREATH_SHAPES.map(b=>`<option ${b[1]===cur?'selected':''}>${escHtml(b[1])}</option>`).join('');
+  return `<div class="ghi-draft-box" style="margin-bottom:18px;">
+    <div class="client-section-label" style="margin-bottom:10px;">Routine quotidiana (da dare al cliente)</div>
+    <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:10px;">
+      <label style="font-size:12px;color:var(--ink-mute);">Sveglia ore <input class="editable" type="time" id="rtSveglia" value="${escAttr(r.sveglia||'')}" style="max-width:120px;"></label>
+      <label style="font-size:12px;color:var(--ink-mute);">Letto ore <input class="editable" type="time" id="rtLetto" value="${escAttr(r.letto||'')}" style="max-width:120px;"></label>
+    </div>
+    ${RT_SLOTS.map(([k,l])=>`
+      <div style="border-top:1px solid var(--line);padding:10px 0;">
+        <div style="font-weight:700;font-size:12.5px;letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px;">${l}</div>
+        ${(r.slots[k]||[]).map(it=>`
+          <div style="border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:6px;">
+            <div style="display:flex;gap:8px;align-items:center;">
+              <input class="editable" data-rt="${k}|${it.id}|titolo" value="${escAttr(it.titolo)}" placeholder="Titolo" style="flex:1;font-weight:600;">
+              <button type="button" class="val-card-del" data-rtdel="${k}|${it.id}" title="Rimuovi">×</button>
+            </div>
+            <textarea class="editable" data-rt="${k}|${it.id}|desc" rows="${it.desc && it.desc.length>90?3:1}" placeholder="Descrizione (opzionale)" style="width:100%;margin-top:6px;">${escHtml(it.desc||'')}</textarea>
+            <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;">
+              ${RT_PRESETS[it.preset] && RT_PRESETS[it.preset].resp ? `<select class="editable" data-rt="${k}|${it.id}|resp" style="max-width:200px;">${respOpts(it.resp)}</select>` : ''}
+              <input class="editable" data-rt="${k}|${it.id}|quando" value="${escAttr(it.quando||'')}" placeholder="Quando (es. prima di pranzo)" style="flex:1;min-width:160px;">
+            </div>
+          </div>`).join('')}
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          ${Object.entries(RT_PRESETS).map(([pk,pv])=>`<button type="button" class="btn-small" data-rtadd="${k}|${pk}">${pk==='libero'?pv.label:'+ '+pv.label}</button>`).join('')}
+        </div>
+      </div>`).join('')}
+    <div class="ev-field" style="margin-top:8px;"><label>Note finali</label><textarea class="editable" id="rtNote" rows="3" style="width:100%;">${escHtml(r.note||'')}</textarea></div>
+    <label style="font-size:12.5px;display:flex;gap:6px;align-items:center;margin:8px 0 12px;"><input type="checkbox" id="rtPrev" ${r.preventivo?'checked':''}> Includi il preventivo nel PDF</label>
+    <button class="btn-gold" id="btnRefertoRoutine">Esporta routine (PDF)</button>
+  </div>`;
+}
+function rtBind(c, box){
+  const r = rtGet(c);
+  const itemOf = (k,id)=> (r.slots[k]||[]).find(x=>x.id===id);
+  box.querySelectorAll('[data-rt]').forEach(el=>{
+    const [k,id,f] = el.dataset.rt.split('|');
+    el.oninput = el.onchange = ()=>{ const it = itemOf(k,id); if(it){ it[f] = el.value; db.saveCliente(c); } };
+  });
+  box.querySelectorAll('[data-rtdel]').forEach(b=>{ b.onclick = ()=>{ const [k,id]=b.dataset.rtdel.split('|'); r.slots[k] = r.slots[k].filter(x=>x.id!==id); db.saveCliente(c); renderSistemaTab(); }; });
+  box.querySelectorAll('[data-rtadd]').forEach(b=>{ b.onclick = ()=>{ const [k,pk]=b.dataset.rtadd.split('|'); r.slots[k].push(rtNewItem(pk,k,c)); db.saveCliente(c); renderSistemaTab(); }; });
+  const sv = box.querySelector('#rtSveglia'); if(sv) sv.onchange = ()=>{ r.sveglia = sv.value; db.saveCliente(c); };
+  const lt = box.querySelector('#rtLetto'); if(lt) lt.onchange = ()=>{ r.letto = lt.value; db.saveCliente(c); };
+  const nt = box.querySelector('#rtNote'); if(nt) nt.oninput = ()=>{ r.note = nt.value; db.saveCliente(c); };
+  const pv = box.querySelector('#rtPrev'); if(pv) pv.onchange = ()=>{ r.preventivo = pv.checked; db.saveCliente(c); };
+  const bRef = box.querySelector('#btnRefertoRoutine'); if(bRef) bRef.onclick = ()=> apriRefertoRoutine(c);
+}
+function apriRefertoRoutine(c){
+  const r = rtGet(c);
   const logoSrc = (document.querySelector('.mark-logo') || document.querySelector('.auth-logo') || {}).src || '';
-  const fd = d=> d ? d.split('-').reverse().join('/') : '—';
-  const evs = piano ? (piano.evIds||[]).map(id=>state.appuntamenti.find(a=>a.id===id)).filter(Boolean) : [];
-  const shapes = (breathShapeSel(c)||[]).map(k=>(BREATH_SHAPES.find(b=>b[0]===k)||[,k])[1]);
-  const flags = Array.from(c.sistemaTestSelezionati||[]);
+  const fd = d=> d ? d.split('-').reverse().join('/') : '';
+  const oggi = fd(fmtDateISO(new Date()));
   const prest = ansPrevListino();
   const prezzo = prest ? fattLordo(prest.prezzo, prest.aliquota) : null;
   const eur = n=> (n==null||n==='') ? '' : '€ ' + Number(n).toFixed(2).replace('.',',');
-  const prof = state.professionista;
-  const css = `*{box-sizing:border-box}body{font-family:Arial,Helvetica,sans-serif;margin:0;padding:26px 30px;color:#1a1a1a;font-size:12.5px}
-  h1{font-size:20px;margin:0}h2{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#2E6B9E;border-bottom:1px solid #c9d6e2;padding-bottom:4px;margin:20px 0 8px}
-  .top{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #1F3A5F;padding-bottom:10px}.top img{height:46px}
-  .sub{color:#666;font-size:12px;margin-top:3px}table{width:100%;border-collapse:collapse}td,th{border:1px solid #ccd;padding:7px 8px;text-align:left;vertical-align:top}th{background:#eef3f8;font-size:11.5px}
-  .fill{min-height:54px;border:1px dashed #9ab;padding:8px;border-radius:4px}[contenteditable]:hover{background:#fffbe6}
-  .tot td{font-weight:bold;background:#f6f8fb}ul{margin:4px 0 0 18px;padding:0}.pbtn{position:fixed;right:18px;bottom:18px;padding:10px 16px;background:#1F3A5F;color:#fff;border:0;border-radius:6px;cursor:pointer}
-  .meta{margin-top:22px;font-size:10.5px;color:#777;display:flex;justify-content:space-between}
-  @media print{.pbtn{display:none}body{padding:0}[contenteditable]:hover{background:none}}`;
-  const html = `<!doctype html><html lang="it"><head><meta charset="utf-8"><title>Referto routine – ${escHtml(c.nome)}</title><style>${css}</style></head><body>
-  <div class="top"><div><h1>Referto routine · Percorso ANS</h1><div class="sub">${escHtml(c.nome)} · ${fd(piano ? piano.inizio : fmtDateISO(new Date()))}${prof?' · '+escHtml(prof.nome):''}</div></div>${logoSrc?`<img src="${escAttr(logoSrc)}" alt="HRL">`:''}</div>
-  <h2>Valutazione di partenza</h2>
-  <div>${flags.length ? '<ul>'+flags.map(f=>`<li>${escHtml(f)}</li>`).join('')+'</ul>' : '<span style="color:#888">Nessun test selezionato.</span>'}</div>
-  <h2>Routine proposta</h2>
-  <table><tr><th style="width:32%">Respirazioni (Breath Shape)</th><td>${shapes.length ? shapes.map(escHtml).join(' · ') : '<span contenteditable>da definire</span>'}</td></tr>
-  <tr><th>Frequenza e durata</th><td contenteditable>es. 2 volte al giorno, 10 minuti</td></tr>
-  <tr><th>Momento della giornata</th><td contenteditable>es. mattina a digiuno e sera prima di dormire</td></tr></table>
-  <h2>Obiettivi e indicazioni</h2><div class="fill" contenteditable></div>
-  <h2>Controlli programmati</h2>
-  <table><thead><tr><th>Controllo</th><th style="width:22%">Data</th></tr></thead><tbody>
-  ${evs.length ? evs.map(a=>`<tr><td>${escHtml(a.titolo||'')}</td><td>${fd(a.day)} ${escHtml(a.start||'')}</td></tr>`).join('') : '<tr><td contenteditable>Controllo sistema nervoso (2 settimane)</td><td contenteditable>__/__/____</td></tr><tr><td contenteditable>Retest GHI (1 mese)</td><td contenteditable>__/__/____</td></tr>'}
-  </tbody></table>
-  <h2>Preventivo</h2>
-  <table><thead><tr><th>Prestazione</th><th style="width:12%">Q.tà</th><th style="width:18%">Importo</th></tr></thead><tbody>
-  <tr><td contenteditable>${prest ? escHtml(prest.descrizione) : 'Percorso ANS (controlli e retest inclusi)'}</td><td contenteditable>1</td><td contenteditable>${prezzo!=null?eur(prezzo):''}</td></tr>
-  <tr><td contenteditable>&nbsp;</td><td contenteditable></td><td contenteditable></td></tr>
-  <tr class="tot"><td colspan="2" style="text-align:right">Totale</td><td contenteditable>${prezzo!=null?eur(prezzo):''}</td></tr></tbody></table>
-  <div style="font-size:11px;color:#777;margin-top:6px">Pagamento: in segreteria, PayPal, Satispay o bonifico. Il preventivo è indicativo e modificabile prima della stampa (clic sul testo).</div>
-  <div class="meta"><span>HRL Performance Pathways</span><span>Documento generato il ${fd(fmtDateISO(new Date()))}</span></div>
+  const itemHtml = it=>{
+    const extra = [];
+    if(it.quando) extra.push(`<div>${escHtml(it.quando)}</div>`);
+    if(it.desc) extra.push(`<div class="d">${escHtml(it.desc)}</div>`);
+    const rs = it.resp || (it.preset==='ans' ? ((breathShapeSel(c)||[]).map(k=>(BREATH_SHAPES.find(b=>b[0]===k)||[,''])[1]).filter(Boolean)[0] || '') : '');
+    if(rs) extra.push(`<div>Respirazione: <i>${escHtml(rs)}</i></div>`);
+    return `<div class="it"><div class="t">- ${escHtml(it.titolo)}</div>${extra.join('')}</div>`;
+  };
+  const slotHtml = ([k,l])=>{
+    const items = r.slots[k]||[];
+    if(!items.length && !(k==='mattina'&&r.sveglia) && !(k==='sera'&&r.letto)) return '';
+    return `<div class="slot"><h2>${l.toUpperCase()}</h2>${k==='mattina'&&r.sveglia?`<div class="hh"><u><b>SVEGLIA ORE:</b></u> ${escHtml(r.sveglia)}</div>`:''}${items.map(itemHtml).join('')}${k==='sera'&&r.letto?`<div class="hh"><u><b>LETTO ORE:</b></u> ${escHtml(r.letto)}</div>`:''}</div>`;
+  };
+  const css = `*{box-sizing:border-box}body{font-family:Calibri,Arial,Helvetica,sans-serif;margin:0;padding:28px 40px;color:#111;font-size:13px;text-align:center}
+  .hd{border:1px solid #111;display:flex;align-items:center;padding:14px 18px;margin-bottom:26px;text-align:left}.hd img{height:50px;margin-right:60px}.hd .n{flex:1;text-align:center;font-size:14px}.hd .dt{font-size:12px}
+  h2{font-size:14px;text-decoration:underline;margin:26px 0 10px;letter-spacing:.02em}.slot{page-break-inside:avoid}.it{margin:12px auto;max-width:560px;page-break-inside:avoid}.t{font-weight:700;font-style:italic}.d{margin:2px 0}.hh{margin:10px 0}
+  .note{margin:30px auto 0;max-width:560px;text-align:center}table{margin:10px auto;border-collapse:collapse;width:80%;text-align:left}td,th{border:1px solid #aaa;padding:6px 8px}
+  .pbtn{position:fixed;right:18px;bottom:18px;padding:10px 16px;background:#1F3A5F;color:#fff;border:0;border-radius:6px;cursor:pointer}@media print{.pbtn{display:none}body{padding:0}}`;
+  const prev = r.preventivo ? `<div class="slot"><h2>PREVENTIVO</h2><table><tr><th>Prestazione</th><th style="width:22%">Importo</th></tr><tr><td>${prest?escHtml(prest.descrizione):'Percorso ANS (controlli e retest inclusi)'}</td><td>${prezzo!=null?eur(prezzo):''}</td></tr></table><div style="font-size:11px;color:#666">Pagamento: in segreteria, PayPal, Satispay o bonifico.</div></div>` : '';
+  const html = `<!doctype html><html lang="it"><head><meta charset="utf-8"><title>Routine quotidiana – ${escHtml(c.nome)}</title><style>${css}</style></head><body>
+  <div class="hd">${logoSrc?`<img src="${escAttr(logoSrc)}" alt="HRL">`:''}<div class="n">${escHtml(c.nome)}</div><div class="dt">${oggi}</div></div>
+  ${RT_SLOTS.map(slotHtml).join('')}
+  ${r.note?`<div class="note"><b>NOTE:</b> ${escHtml(r.note)}</div>`:''}
+  ${prev}
   <button class="pbtn" onclick="window.print()">Stampa / Salva come PDF</button></body></html>`;
   const win = window.open('', '_blank');
   if(!win){ alert('Il browser ha bloccato l\'apertura della finestra. Consenti i popup per questo sito e riprova.'); return; }
