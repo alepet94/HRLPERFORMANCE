@@ -6255,18 +6255,22 @@ function rtNewItem(preset, slot, c){
   return { id:'rt_'+Date.now()+'_'+Math.random().toString(36).slice(2,6), preset, titolo:pr.titolo, desc: (preset==='ans' && slot==='mattina') ? RT_ANS_DESC : pr.desc,
     resp: pr.resp ? lab : '', quando:'' };
 }
+function rtVuota(){ return { sveglia:'', letto:'', note:'', preventivo:false, slots:{mattina:[],meta:[],pomeriggio:[],sera:[]} }; }
 function rtGet(c){
   const sis = ensurePercorso(c).sistema;
-  if(!sis.routine){
-    const r = { sveglia:'07:00', letto:'23:00', note:"Per un riposo migliore, ti consigliamo di evitare attività stimolanti (usare il telefono, guardare la tv, fare attività sportiva) nelle 2 ore prima di andare a dormire.", preventivo:false, slots:{mattina:[],meta:[],pomeriggio:[],sera:[]} };
-    sis.routine = r;
-    const add=(slot,pre,q)=>{ const it = rtNewItem(pre,slot,c); if(q) it.quando=q; r.slots[slot].push(it); };
-    add('mattina','freddo'); add('mattina','ans'); add('mattina','colazione');
-    add('meta','ans','prima di pranzo'); add('meta','pranzo');
-    add('pomeriggio','riposino'); add('pomeriggio','ans','da fare prima cena');
-    add('sera','cena'); add('sera','relax');
-  }
+  if(!sis.routine) sis.routine = rtVuota();
   return sis.routine;
+}
+// routine tipo: solo su richiesta, mai precompilata
+function rtCaricaTipo(c){
+  const r = rtVuota(); ensurePercorso(c).sistema.routine = r;
+  r.sveglia = '07:00'; r.letto = '23:00';
+  r.note = "Per un riposo migliore, ti consigliamo di evitare attività stimolanti (usare il telefono, guardare la tv, fare attività sportiva) nelle 2 ore prima di andare a dormire.";
+  const add=(slot,pre,q)=>{ const it = rtNewItem(pre,slot,c); if(q) it.quando=q; r.slots[slot].push(it); };
+  add('mattina','freddo'); add('mattina','ans'); add('mattina','colazione');
+  add('meta','ans','prima di pranzo'); add('meta','pranzo');
+  add('pomeriggio','riposino'); add('pomeriggio','ans','da fare prima cena');
+  add('sera','cena'); add('sera','relax');
 }
 function rtEditorHTML(c){
   const r = rtGet(c);
@@ -6298,7 +6302,11 @@ function rtEditorHTML(c){
       </div>`).join('')}
     <div class="ev-field" style="margin-top:8px;"><label>Note finali</label><textarea class="editable" id="rtNote" rows="3" style="width:100%;">${escHtml(r.note||'')}</textarea></div>
     <label style="font-size:12.5px;display:flex;gap:6px;align-items:center;margin:8px 0 12px;"><input type="checkbox" id="rtPrev" ${r.preventivo?'checked':''}> Includi il preventivo nel PDF</label>
-    <button class="btn-gold" id="btnRefertoRoutine">Esporta routine (PDF)</button>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <button class="btn-gold" id="btnRefertoRoutine">Esporta routine (PDF)</button>
+      <button type="button" class="btn-ghost" id="btnRtTipo">Inserisci routine tipo</button>
+      <button type="button" class="btn-ghost" id="btnRtVuota">Svuota</button>
+    </div>
   </div>`;
 }
 function rtBind(c, box){
@@ -6314,6 +6322,8 @@ function rtBind(c, box){
   const lt = box.querySelector('#rtLetto'); if(lt) lt.onchange = ()=>{ r.letto = lt.value; db.saveCliente(c); };
   const nt = box.querySelector('#rtNote'); if(nt) nt.oninput = ()=>{ r.note = nt.value; db.saveCliente(c); };
   const pv = box.querySelector('#rtPrev'); if(pv) pv.onchange = ()=>{ r.preventivo = pv.checked; db.saveCliente(c); };
+  const bTipo = box.querySelector('#btnRtTipo'); if(bTipo) bTipo.onclick = ()=>{ if(!confirm('Sostituire la routine attuale con la routine tipo?')) return; rtCaricaTipo(c); db.saveCliente(c); renderSistemaTab(); };
+  const bVuota = box.querySelector('#btnRtVuota'); if(bVuota) bVuota.onclick = ()=>{ if(!confirm('Svuotare la routine?')) return; ensurePercorso(c).sistema.routine = rtVuota(); db.saveCliente(c); renderSistemaTab(); };
   const bRef = box.querySelector('#btnRefertoRoutine'); if(bRef) bRef.onclick = ()=> apriRefertoRoutine(c);
 }
 function apriRefertoRoutine(c){
