@@ -1271,6 +1271,8 @@ header.top{
 .osteo-note-box textarea{width:100%;}
 .osteo-note-report{border-left-color:var(--gold);}
 .osteo-note-privata{border-left-color:#8E8C88;background:var(--navy-700);}
+.priv-btn{background:var(--navy-700);border:1px dashed var(--line);color:var(--ink-mute);border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;text-align:left;font-family:inherit;max-width:100%;white-space:pre-wrap;}
+.priv-btn:hover{color:var(--ink);}.priv-btn.open{border-style:solid;color:var(--ink);background:var(--navy-800);}
 .osteo-privata-toggle{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-mute);cursor:pointer;margin:2px 0 10px;}
 .osteo-privata-toggle input{cursor:pointer;}
 .osteo-condividi-btn{background:none;border:1px solid var(--line);border-radius:20px;padding:6px 14px;font-size:12.5px;color:var(--ink-dim);cursor:pointer;}
@@ -6382,7 +6384,7 @@ function apriRefertoRoutine(c){
     return `<div class="slot"><h2>${l.toUpperCase()}</h2>${k==='mattina'&&r.sveglia?`<div class="hh"><u><b>SVEGLIA ORE:</b></u> ${escHtml(r.sveglia)}</div>`:''}${items.map(itemHtml).join('')}${k==='sera'&&r.letto?`<div class="hh"><u><b>LETTO ORE:</b></u> ${escHtml(r.letto)}</div>`:''}</div>`;
   };
   const css = `*{box-sizing:border-box}body{font-family:Calibri,Arial,Helvetica,sans-serif;margin:0;padding:28px 40px;color:#111;font-size:13px;text-align:center}
-  .hd{border:1px solid #111;display:flex;align-items:center;padding:14px 18px;margin-bottom:26px;text-align:left}.hd img{height:50px;margin-right:60px}.hd .n{flex:1;text-align:center;font-size:14px}.hd .dt{font-size:12px}
+  .hd{border:1px solid #111;display:flex;align-items:center;padding:14px 18px;margin-bottom:26px;text-align:left}.hd img{height:50px;margin-right:60px;filter:invert(1)}.ft{margin-top:34px;text-align:center}.ft img{height:34px;filter:invert(1);opacity:.85}.hd .n{flex:1;text-align:center;font-size:14px}.hd .dt{font-size:12px}
   h2{font-size:14px;text-decoration:underline;margin:26px 0 10px;letter-spacing:.02em}.slot{page-break-inside:avoid}.it{margin:12px auto;max-width:560px;page-break-inside:avoid}.t{font-weight:700;font-style:italic}.d{margin:2px 0}.hh{margin:10px 0}
   .note{margin:30px auto 0;max-width:560px;text-align:center}table{margin:10px auto;border-collapse:collapse;width:80%;text-align:left}td,th{border:1px solid #aaa;padding:6px 8px}
   .pbtn{position:fixed;right:18px;bottom:18px;padding:10px 16px;background:#1F3A5F;color:#fff;border:0;border-radius:6px;cursor:pointer}@media print{.pbtn{display:none}body{padding:0}}`;
@@ -6392,11 +6394,25 @@ function apriRefertoRoutine(c){
   ${RT_SLOTS.map(slotHtml).join('')}
   ${r.note?`<div class="note"><b>NOTE:</b> ${escHtml(r.note)}</div>`:''}
   ${prev}
+  ${logoSrc?`<div class="ft"><img src="${escAttr(logoSrc)}" alt="HRL"></div>`:''}
   <button class="pbtn" onclick="window.print()">Stampa / Salva come PDF</button></body></html>`;
   const win = window.open('', '_blank');
   if(!win){ alert('Il browser ha bloccato l\'apertura della finestra. Consenti i popup per questo sito e riprova.'); return; }
   win.document.open(); win.document.write(html); win.document.close();
 }
+
+// Note private: restano nascoste finché non si clicca (evita che compaiano per sbaglio davanti al paziente).
+// Il testo vive solo nell'attributo e viene mostrato al click; un secondo click lo nasconde di nuovo.
+function privNota(t){
+  return `<button type="button" class="priv-btn" data-privtxt="${escAttr(t)}">🔒 Nota privata — clicca per leggere</button>`;
+}
+document.addEventListener('click', e=>{
+  const b = e.target.closest('.priv-btn'); if(!b) return;
+  e.preventDefault(); e.stopPropagation();
+  if(b.classList.toggle('open')){ b.textContent = '🔒 ' + b.dataset.privtxt; }
+  else { b.textContent = '🔒 Nota privata — clicca per leggere'; }
+}, true);
+document.addEventListener('visibilitychange', ()=>{ if(document.hidden) document.querySelectorAll('.priv-btn.open').forEach(b=>{ b.classList.remove('open'); b.textContent = '🔒 Nota privata — clicca per leggere'; }); });
 
 // ==================== AREA HUMAN ====================
 // smista il contenuto della tab "Area Human" in base alla competenza del
@@ -6503,7 +6519,7 @@ function renderOsteoTrattamenti(box){
     const blocks = osteoAreaBlocks(s);
     const dettaglioHTML = blocks.length ? blocks.map(b=>{
       const reportLine = `<div><b>${escHtml(b.titolo)}:</b> ${b.report ? escHtml(b.report) : '<em>nessuna nota</em>'}</div>`;
-      const privataLine = vedePrivata ? `<div style="color:var(--ink-mute);">🔒 <i>Privata:</i> ${b.privata ? escHtml(b.privata) : '<em>nessuna</em>'}</div>` : '';
+      const privataLine = vedePrivata ? `<div style="color:var(--ink-mute);">${b.privata ? privNota(b.privata) : '🔒 <em>nessuna nota privata</em>'}</div>` : '';
       return reportLine + privataLine;
     }).join('') : '<div><em>Nessuna area registrata</em></div>';
     return `<div class="val-card">
@@ -6843,7 +6859,7 @@ function renderAreaHumanEnergetica(box){
     const vedePrivata = canSeeEnergeticaPrivata(s);
     const dettaglioHTML = energeticaBlocks(s).map(b=>{
       const reportLine = `<div><b>${escHtml(b.titolo)}:</b> ${b.report ? escHtml(b.report) : '<em>nessuna nota</em>'}</div>`;
-      const privataLine = vedePrivata ? `<div style="color:var(--ink-mute);">🔒 <i>Privata:</i> ${b.privata ? escHtml(b.privata) : '<em>nessuna</em>'}</div>` : '';
+      const privataLine = vedePrivata ? `<div style="color:var(--ink-mute);">${b.privata ? privNota(b.privata) : '🔒 <em>nessuna nota privata</em>'}</div>` : '';
       return reportLine + privataLine;
     }).join('');
     return `<div class="val-card">
@@ -8176,7 +8192,7 @@ function renderFisioTrattamentiSection(c){
     const blocks = fisioTrattamentoBlocks(s);
     const dettaglioHTML = blocks.length ? blocks.map(b=>{
       const reportLine = `<div><b>${escHtml(b.titolo)}:</b> ${b.report ? escHtml(b.report) : '<em>nessuna nota</em>'}</div>`;
-      const privataLine = vedePrivata ? `<div style="color:var(--ink-mute);">🔒 <i>Privata:</i> ${b.privata ? escHtml(b.privata) : '<em>nessuna</em>'}</div>` : '';
+      const privataLine = vedePrivata ? `<div style="color:var(--ink-mute);">${b.privata ? privNota(b.privata) : '🔒 <em>nessuna nota privata</em>'}</div>` : '';
       return reportLine + privataLine;
     }).join('') : '<div><em>Nessun trattamento registrato</em></div>';
     const valRif = s.collegataAValutazioneId ? (c.valutazioniFisioterapia||[]).find(v=>v.id===s.collegataAValutazioneId) : null;
@@ -8955,7 +8971,7 @@ function renderStoricoTab(){
     const blocks = fisioTrattamentoBlocks(s);
     const dettaglioHTML = blocks.length ? blocks.map(b=>{
       const reportPart = `<b>${escHtml(b.titolo)}:</b> ${b.report ? escHtml(b.report) : 'nessuna nota'}`;
-      const privataPart = vedePrivata && b.privata ? ` <span style="color:var(--ink-mute);">(🔒 ${escHtml(b.privata)})</span>` : '';
+      const privataPart = vedePrivata && b.privata ? ` <span style="color:var(--ink-mute);">(${privNota(b.privata)})</span>` : '';
       return `<div>${reportPart}${privataPart}</div>`;
     }).join('') : '<div>Nessuna nota</div>';
     return `<div class="upcoming-item tipo-border-allenamento">
@@ -8984,7 +9000,7 @@ function renderStoricoTab(){
     const vedePrivata = canSeeEnergeticaPrivata(s);
     const dettaglioHTML = energeticaBlocks(s).map(b=>{
       const reportPart = `<b>${escHtml(b.titolo)}:</b> ${b.report ? escHtml(b.report) : 'nessuna nota'}`;
-      const privataPart = vedePrivata && b.privata ? ` <span style="color:var(--ink-mute);">(🔒 ${escHtml(b.privata)})</span>` : '';
+      const privataPart = vedePrivata && b.privata ? ` <span style="color:var(--ink-mute);">(${privNota(b.privata)})</span>` : '';
       return `<div>${reportPart}${privataPart}</div>`;
     }).join('');
     return `<div class="upcoming-item tipo-border-allenamento">
@@ -9005,7 +9021,7 @@ function renderStoricoTab(){
     const blocks = osteoAreaBlocks(s);
     const dettaglioHTML = blocks.length ? blocks.map(b=>{
       const reportPart = `<b>${escHtml(b.titolo)}:</b> ${b.report ? escHtml(b.report) : 'nessuna nota'}`;
-      const privataPart = vedePrivata && b.privata ? ` <span style="color:var(--ink-mute);">(🔒 ${escHtml(b.privata)})</span>` : '';
+      const privataPart = vedePrivata && b.privata ? ` <span style="color:var(--ink-mute);">(${privNota(b.privata)})</span>` : '';
       return `<div>${reportPart}${privataPart}</div>`;
     }).join('') : '<div>Nessuna nota</div>';
     return `<div class="upcoming-item tipo-border-allenamento">
