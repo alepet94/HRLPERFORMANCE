@@ -5512,10 +5512,8 @@ function normalizeSchedaOsteopatia(s){
 // scheda: l'autore, chi è stato esplicitamente condiviso, o l'admin (stesso
 // principio di visibilità totale già applicato altrove nell'app all'admin)
 function canSeeOsteoPrivata(s){
-  if(!state.professionista) return false;
-  if(state.professionista.ruolo==='admin') return true;
-  if(s.professionistaId===state.professionista.id) return true;
-  return Array.isArray(s.condividiPrivateCon) && s.condividiPrivateCon.includes(state.professionista.id);
+  // note private: leggibili da tutti i professionisti (non dalla Segreteria, non dal cliente, mai nel report); si aprono solo con un clic
+  return !!state.professionista && state.professionista.area!=='Segreteria';
 }
 // elenca i blocchi (uno per area di trattamento selezionata, tre per
 // "strutturale") con relativo testo report/privata, per riuso comune tra
@@ -6544,6 +6542,13 @@ function renderOsteoTrattamenti(box){
         <label>Note per il report (nel PDF e nello storico del cliente)</label>
         <textarea class="editable" id="${idBase}Report" rows="2" placeholder="Contenuto del trattamento, visibile nel report">${escHtml(campo.report)}</textarea>
       </div>
+      <label class="osteo-privata-toggle"><input type="checkbox" data-privata-toggle="${idBase}" ${isOpen?'checked':''}> 🔒 Aggiungi nota privata</label>
+      ${isOpen ? `
+        <div class="osteo-note-box osteo-note-privata">
+          <label>Nota privata (visibile ai professionisti, mai al cliente né nel report)</label>
+          <textarea class="editable" id="${idBase}Privata" rows="2" placeholder="Note personali, non esportate nel report">${escHtml(campo.privata)}</textarea>
+        </div>
+      ` : ''}
     `;
   }
 
@@ -6872,6 +6877,13 @@ function renderAreaHumanEnergetica(box){
         <label>Note per il report (nel PDF e nello storico del cliente)</label>
         <textarea class="editable" id="${idBase}Report" rows="3" placeholder="Scrivi qui, visibile nel report">${escHtml(campo.report)}</textarea>
       </div>
+      <label class="osteo-privata-toggle"><input type="checkbox" data-privata-toggle-e="${idBase}" ${isOpen?'checked':''}> 🔒 Aggiungi nota privata</label>
+      ${isOpen ? `
+        <div class="osteo-note-box osteo-note-privata">
+          <label>Nota privata (visibile ai professionisti, mai al cliente né nel report)</label>
+          <textarea class="editable" id="${idBase}Privata" rows="2" placeholder="Note personali, non esportate nel report">${escHtml(campo.privata)}</textarea>
+        </div>
+      ` : ''}
     `;
   }
 
@@ -7984,10 +7996,8 @@ function normalizeTrattamentoFisio(s){
   return s;
 }
 function canSeeFisioPrivata(s){
-  if(!state.professionista) return false;
-  if(state.professionista.ruolo==='admin') return true;
-  if(s.professionistaId===state.professionista.id) return true;
-  return Array.isArray(s.condividiPrivateCon) && s.condividiPrivateCon.includes(state.professionista.id);
+  // note private: leggibili da tutti i professionisti (non dalla Segreteria, non dal cliente, mai nel report); si aprono solo con un clic
+  return !!state.professionista && state.professionista.area!=='Segreteria';
 }
 function fisioTrattamentoBlocks(s){
   normalizeTrattamentoFisio(s);
@@ -8195,6 +8205,13 @@ function renderFisioTrattamentiSection(c){
         <label>Note per il report (nel PDF e nello storico del cliente)</label>
         <textarea class="editable" id="${idBase}Report" rows="2" placeholder="Contenuto del trattamento, visibile nel report">${escHtml(campo.report)}</textarea>
       </div>
+      <label class="osteo-privata-toggle"><input type="checkbox" data-privata-toggle-f="${idBase}" ${isOpen?'checked':''}> 🔒 Aggiungi nota privata</label>
+      ${isOpen ? `
+        <div class="osteo-note-box osteo-note-privata">
+          <label>Nota privata (visibile ai professionisti, mai al cliente né nel report)</label>
+          <textarea class="editable" id="${idBase}Privata" rows="2" placeholder="Note personali, non esportate nel report">${escHtml(campo.privata)}</textarea>
+        </div>
+      ` : ''}
     `;
   }
 
