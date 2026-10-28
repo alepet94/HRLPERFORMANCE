@@ -6445,15 +6445,30 @@ function crmClientData(c){
 const crmEur = n=> (Number(n)||0).toLocaleString('it-IT',{style:'currency',currency:'EUR',maximumFractionDigits:0});
 const crmPct = n=> (isFinite(n) ? Math.round(n*100) : 0) + ' %';
 const crmFd = d=> d ? d.split('-').reverse().join('/') : '—';
+const CRM_PERIODI = [['mese','Mese in corso'],['30g','Ultimi 30 giorni'],['90g','Ultimi 90 giorni'],['trim','Trimestre in corso'],['anno','Anno in corso'],['anno_prec','Anno scorso'],['12m','Ultimi 12 mesi'],['tutto','Da sempre'],['custom','Personalizzato…']];
 function crmRange(){
-  const oggi = new Date(), p = state.crmPeriodo || 'anno';
+  const o = new Date(), p = state.crmPeriodo || 'anno', y = o.getFullYear(), m = o.getMonth();
+  const iso = d=> fmtDateISO(d);
   if(p==='tutto') return ['0000-01-01','9999-12-31'];
-  if(p==='12m') return [fmtDateISO(addDays(oggi,-365)), fmtDateISO(oggi)];
-  return [oggi.getFullYear()+'-01-01', oggi.getFullYear()+'-12-31'];
+  if(p==='mese') return [iso(new Date(y,m,1)), iso(new Date(y,m+1,0))];
+  if(p==='30g') return [iso(addDays(o,-29)), iso(o)];
+  if(p==='90g') return [iso(addDays(o,-89)), iso(o)];
+  if(p==='trim'){ const q = Math.floor(m/3)*3; return [iso(new Date(y,q,1)), iso(new Date(y,q+3,0))]; }
+  if(p==='anno_prec') return [(y-1)+'-01-01', (y-1)+'-12-31'];
+  if(p==='12m') return [iso(addDays(o,-365)), iso(o)];
+  if(p==='custom'){ const da = state.crmDa || (y+'-01-01'), a = state.crmA || iso(o); return da<=a ? [da,a] : [a,da]; }
+  return [y+'-01-01', y+'-12-31'];
+}
+// periodo immediatamente precedente, di pari durata (per i confronti)
+function crmRangePrec(){
+  const [da,a] = crmRange(); if(da.startsWith('0000')) return null;
+  const d1 = new Date(da+'T00:00:00'), d2 = new Date(a+'T00:00:00');
+  const n = Math.round((d2-d1)/86400000)+1;
+  return [fmtDateISO(addDays(d1,-n)), fmtDateISO(addDays(d1,-1))];
 }
 // calcolo unico: una riga per cliente, con tutto ciò che serve alle quattro viste
-function crmCalc(){
-  const cfg = crmCfg(), [da,a] = crmRange(), oggi = fmtDateISO(new Date());
+function crmCalc(rng){
+  const cfg = crmCfg(), [da,a] = rng || crmRange(), oggi = fmtDateISO(new Date());
   const perCli = {};
   (state.appuntamenti||[]).forEach(ap=>{ if(ap.clienteId) (perCli[ap.clienteId] = perCli[ap.clienteId]||[]).push(ap); });
   const pkUsati = new Set();
@@ -6488,7 +6503,7 @@ function crmCalc(){
     const ultima = passati.length ? passati[passati.length-1].day : '';
     const prossima = futuri[0] ? futuri[0].day : '';
     const nuovoInPeriodo = prima && inP(prima);
-    const costo = costoLav + (nuovoInPeriodo || (state.crmPeriodo==='tutto') ? costoAcq : 0);
+    const costo = costoLav + (nuovoInPeriodo || da.startsWith('0000') ? costoAcq : 0);
     // quanto è andato avanti nel percorso
     const nRetest = passati.filter(x=>x.tipo==='retest'||x.tipo==='ans').length;
     let step = 0;
@@ -6549,14 +6564,21 @@ function renderCrm(){
   const tabs = [['panoramica','Panoramica'],['clienti','Clienti'],['percorso','Percorso e abbandoni'],['marketing','Marketing'],['impostazioni','Impostazioni']];
   box.innerHTML = `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px;">
     <div class="cal-mode-toggle" style="flex-wrap:wrap;">${tabs.map(([k,l])=>`<div class="cal-mode-opt ${state.crmTab===k?'active':''}" data-crmtab="${k}">${l}</div>`).join('')}</div>
-    <select class="editable" id="crmPeriodo" style="max-width:190px;margin-left:auto;"><option value="anno" ${state.crmPeriodo==='anno'?'selected':''}>Anno in corso</option><option value="12m" ${state.crmPeriodo==='12m'?'selected':''}>Ultimi 12 mesi</option><option value="tutto" ${state.crmPeriodo==='tutto'?'selected':''}>Da sempre</option></select>
+    <div style="margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <select class="editable" id="crmPeriodo" style="max-width:200px;">${CRM_PERIODI.map(([k,l])=>`<option value="${k}" ${state.crmPeriodo===k?'selected':''}>${l}</option>`).join('')}</select>
+      ${state.crmPeriodo==='custom' ? `<input class="editable" type="date" id="crmDa" value="${crmRange()[0]}" style="max-width:150px;"><span style="color:var(--ink-mute);">→</span><input class="editable" type="date" id="crmA" value="${crmRange()[1]}" style="max-width:150px;">` : `<span style="font-size:12px;color:var(--ink-mute);">${crmRange()[0].startsWith('0000') ? 'tutta la storia' : crmFd(crmRange()[0])+' → '+crmFd(crmRange()[1])}</span>`}
+    </div>
   </div><div id="crmBody"></div>`;
   box.querySelectorAll('[data-crmtab]').forEach(b=> b.onclick = ()=>{ state.crmTab = b.dataset.crmtab; renderCrm(); });
-  document.getElementById('crmPeriodo').onchange = e=>{ state.crmPeriodo = e.target.value; renderCrm(); };
+  document.getElementById('crmPeriodo').onchange = e=>{ state.crmPeriodo = e.target.value; if(state.crmPeriodo==='custom' && !state.crmDa){ [state.crmDa,state.crmA] = [crmRange()[0], crmRange()[1]]; } renderCrm(); };
+  const dd = document.getElementById('crmDa'), aa = document.getElementById('crmA');
+  if(dd) dd.onchange = e=>{ state.crmDa = e.target.value; renderCrm(); };
+  if(aa) aa.onchange = e=>{ state.crmA = e.target.value; renderCrm(); };
   const body = document.getElementById('crmBody');
   ({panoramica:crmViewPanoramica, clienti:crmViewClienti, percorso:crmViewPercorso, marketing:crmViewMarketing, impostazioni:crmViewImpostazioni}[state.crmTab])(body, rows);
 }
-const crmKpi = (l,v,sub,col)=>`<div style="border:1px solid var(--line);border-radius:8px;padding:12px 14px;background:var(--navy-900);"><div style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-mute);">${l}</div><div style="font-size:22px;font-family:var(--serif);color:${col||'var(--ink)'};margin-top:4px;">${v}</div>${sub?`<div style="font-size:11.5px;color:var(--ink-mute);margin-top:2px;">${sub}</div>`:''}</div>`;
+const crmDelta = (cur, prec)=> { if(prec==null) return ''; if(!prec) return cur ? '<span style="color:#4FA37A">▲ nuovo</span>' : ''; const d = (cur-prec)/Math.abs(prec); return `<span style="color:${d>=0?'#4FA37A':'#E0776A'}">${d>=0?'▲':'▼'} ${Math.abs(Math.round(d*100))} %</span> vs periodo prima`; };
+const crmKpi = (l,v,sub,col,delta)=>`<div style="border:1px solid var(--line);border-radius:8px;padding:12px 14px;background:var(--navy-900);"><div style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-mute);">${l}</div><div style="font-size:22px;font-family:var(--serif);color:${col||'var(--ink)'};margin-top:4px;">${v}</div>${sub?`<div style="font-size:11.5px;color:var(--ink-mute);margin-top:2px;">${sub}</div>`:''}${delta?`<div style="font-size:11.5px;margin-top:2px;">${delta}</div>`:''}</div>`;
 function crmViewPanoramica(box, rows){
   const sum = k=> rows.reduce((t,r)=>t+r[k],0);
   const ric = sum('ricavi'), inc = sum('incassato'), cost = sum('costo'), marg = ric-cost;
@@ -6565,16 +6587,19 @@ function crmViewPanoramica(box, rows){
   const nuovi = rows.filter(r=>r.nuovoInPeriodo).length;
   const costoLav = sum('costoLav'), costoNoSet = (+crmCfg().costoOrarioDefault||0)===0 && !Object.keys(crmCfg().costoOrario).length;
   const top = rows.slice().sort((a,b)=>b.margine-a.margine).slice(0,10);
+  const rp = crmRangePrec(), pr = rp ? crmCalc(rp) : null;
+  const ps = k=> pr ? pr.reduce((t,r)=>t+r[k],0) : null;
+  const pRic = ps('ricavi'), pCost = ps('costo'), pNuovi = pr ? pr.filter(r=>r.nuovoInPeriodo).length : null, pSed = ps('sedutePer');
   box.innerHTML = `
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px;margin-bottom:22px;">
-      ${crmKpi('Ricavi', crmEur(ric), 'incassati '+crmEur(inc))}
+      ${crmKpi('Ricavi', crmEur(ric), 'incassati '+crmEur(inc), '', crmDelta(ric,pRic))}
       ${crmKpi('Da incassare', crmEur(ric-inc), '', (ric-inc)>0?'#E0A030':'')}
       ${crmKpi('Costi stimati', crmEur(cost), 'lavoro '+crmEur(costoLav)+' · acquisizione '+crmEur(cost-costoLav))}
-      ${crmKpi('Margine', crmEur(marg), ric ? crmPct(marg/ric)+' dei ricavi' : '', marg<0?'#E0776A':'#4FA37A')}
+      ${crmKpi('Margine', crmEur(marg), ric ? crmPct(marg/ric)+' dei ricavi' : '', marg<0?'#E0776A':'#4FA37A', crmDelta(marg, pr ? pRic-pCost : null))}
       ${crmKpi('Clienti attivi', attivi, rischio+' a rischio · '+inatt+' inattivi')}
-      ${crmKpi('Nuovi nel periodo', nuovi)}
+      ${crmKpi('Nuovi nel periodo', nuovi, '', '', crmDelta(nuovi,pNuovi))}
       ${crmKpi('Ricavo medio / cliente', crmEur(paganti.length ? ric/paganti.length : 0), paganti.length+' clienti con ricavi')}
-      ${crmKpi('Sedute nel periodo', sum('sedutePer'))}
+      ${crmKpi('Sedute nel periodo', sum('sedutePer'), '', '', crmDelta(sum('sedutePer'),pSed))}
     </div>
     ${costoNoSet ? `<div class="val-legacy-note" style="margin-bottom:16px;">Il costo del lavoro è a zero: imposta il costo orario dei professionisti in <b>Impostazioni</b> per avere margini realistici.</div>`:''}
     <div class="client-section-label">Ultimi 12 mesi</div>
@@ -11236,13 +11261,19 @@ function anFormHtml(c, p){
     <details style="margin:4px 0 12px;" ${a.ragSociale||a.piva?'open':''}><summary style="cursor:pointer;font-size:12.5px;color:var(--ink-mute);">Dati per fattura a azienda (facoltativo)</summary>
       <div class="ev-row" style="margin-top:8px;">${f('RagSociale','Ragione sociale',a.ragSociale)}${f('Piva','Partita IVA',a.piva)}</div></details>
     <div class="ev-field"><label>Categoria${p==='cli'?' *':''}</label><select class="editable" id="${p}Categoria">${catOptionsHtml(c.categoria, p==='cli' ? '— scegli la categoria —' : '— da assegnare —')}</select></div>
+    <div class="ev-field"><label>Come ci ha conosciuto</label><select class="editable" id="${p}Fonte"><option value="">— non indicata —</option>${anFontiOpts(((a.crm||{}).fonte)||'')}</select></div>
     <div class="ev-field"><label>Note</label><textarea class="editable" id="${p}Note" rows="2">${escHtml(c.note||'')}</textarea></div>`;
+}
+function anFontiOpts(sel){
+  const fonti = (typeof crmCfg==='function' ? crmCfg().fonti : []).slice();
+  if(sel && !fonti.includes(sel)) fonti.push(sel);
+  return fonti.map(f=>`<option ${f===sel?'selected':''}>${escHtml(f)}</option>`).join('');
 }
 function anRead(p){
   const g = k=>{ const e = document.getElementById(p+k); return e ? e.value.trim() : ''; };
   const up = v=>v.toUpperCase();
   return {
-    categoria: g('Categoria'), dataNascita: g('Nascita'), telefono: g('Tel'), email: g('Email'), note: document.getElementById(p+'Note').value,
+    categoria: g('Categoria'), fonte: g('Fonte'), dataNascita: g('Nascita'), telefono: g('Tel'), email: g('Email'), note: document.getElementById(p+'Note').value,
     an: {nome:g('Nome'), cognome:g('Cognome'), sesso:g('Sesso'), luogoNascita:g('LuogoNascita'), provNascita:up(g('ProvNascita')), cf:up(g('Cf')), professione:g('Professione'),
       indirizzo:g('Indirizzo'), cap:g('Cap'), comune:g('Comune'), provincia:up(g('Provincia')), cell2:g('Cell2'), pec:g('Pec'), ragSociale:g('RagSociale'), piva:g('Piva')}
   };
@@ -11251,6 +11282,7 @@ function anApplica(c, d){
   c.anagrafica = {...(c.anagrafica||{}), ...d.an};
   c.nome = (d.an.nome+' '+d.an.cognome).trim();
   c.dataNascita = d.dataNascita; c.telefono = d.telefono; c.email = d.email; c.note = d.note;
+  if(d.fonte!==undefined){ c.anagrafica.crm = {...(c.anagrafica.crm||{}), fonte: d.fonte}; }
   applicaCategoria(c, d.categoria);
 }
 function createCliente(data, opts){
@@ -14166,6 +14198,7 @@ function renderEventModal(){
         <div class="ev-field"><label>Cognome</label><input class="editable" id="evPazCognome"></div></div>
         <div class="ev-field"><label>Telefono</label><input class="editable" type="tel" id="evPazTel" placeholder="es. 333 1234567"></div>
         <div class="ev-field"><label>Categoria</label><select class="editable" id="evPazCat">${catOptionsHtml('', '— da assegnare dopo —')}</select></div>
+        <div class="ev-field"><label>Come ci ha conosciuto</label><select class="editable" id="evPazFonte"><option value="">— non indicata —</option>${anFontiOpts('')}</select></div>
         <button type="button" class="btn-gold" id="evPazCrea">Crea paziente e selezionalo</button>
       </div>` : ''}
     </div>
@@ -14252,7 +14285,7 @@ function renderEventModal(){
     const tel = document.getElementById('evPazTel').value.trim();
     if(!nome || !cognome){ alert('Inserisci nome e cognome del paziente.'); return; }
     if(!pazConfermaDuplicati({nome, cognome, telefono:tel})) return;
-    const c = createCliente({ nome: nome + ' ' + cognome, telefono: tel, anagrafica:{nome, cognome}, categoria: document.getElementById('evPazCat').value });
+    const c = createCliente({ nome: nome + ' ' + cognome, telefono: tel, anagrafica:{nome, cognome, crm:{fonte: (document.getElementById('evPazFonte')||{}).value||''}}, categoria: document.getElementById('evPazCat').value });
     const pEv = ed.professionistaId ? state.professionisti.find(p=>p.id===ed.professionistaId) : null;
     c.professionistiIds = (pEv && pEv.area!=='Segreteria') ? [pEv.id] : [];
     db.saveCliente(c);
