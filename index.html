@@ -6544,13 +6544,6 @@ function renderOsteoTrattamenti(box){
         <label>Note per il report (nel PDF e nello storico del cliente)</label>
         <textarea class="editable" id="${idBase}Report" rows="2" placeholder="Contenuto del trattamento, visibile nel report">${escHtml(campo.report)}</textarea>
       </div>
-      <label class="osteo-privata-toggle"><input type="checkbox" data-privata-toggle="${idBase}" ${isOpen?'checked':''}> 🔒 Aggiungi nota privata</label>
-      ${isOpen ? `
-        <div class="osteo-note-box osteo-note-privata">
-          <label>Nota privata (solo per te, salvo condivisione)</label>
-          <textarea class="editable" id="${idBase}Privata" rows="2" placeholder="Note personali, non esportate nel report">${escHtml(campo.privata)}</textarea>
-        </div>
-      ` : ''}
     `;
   }
 
@@ -6573,11 +6566,6 @@ function renderOsteoTrattamenti(box){
           ${campoHTML('osteoStrutFun', 'Strutturale', draft.strutturale.funzionale, 'Funzionale')}
           ${campoHTML('osteoStrutMus', 'Strutturale', draft.strutturale.muscolare, 'Muscolare')}
         `}
-      </div>
-
-      <div class="osteo-flag-box" style="margin-top:16px;">
-        <label style="font-size:11px;color:var(--ink-mute);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:8px;">Note private</label>
-        <button type="button" class="osteo-condividi-btn" id="btnOsteoCondividi"></button>
       </div>
 
       <div class="osteo-flag-box">
@@ -6609,8 +6597,6 @@ function renderOsteoTrattamenti(box){
       renderAreaHumanTab();
     };
   });
-  updateCondividiBtnLabel(draft, 'btnOsteoCondividi');
-  document.getElementById('btnOsteoCondividi').onclick = ()=> openCondividiModal(draft, 'btnOsteoCondividi');
   function wireCampo(idBase, campo){
     const rEl = document.getElementById(idBase+'Report'); if(rEl) rEl.oninput = (e)=>{ campo.report = e.target.value; };
     const pEl = document.getElementById(idBase+'Privata'); if(pEl) pEl.oninput = (e)=>{ campo.privata = e.target.value; };
@@ -6886,13 +6872,6 @@ function renderAreaHumanEnergetica(box){
         <label>Note per il report (nel PDF e nello storico del cliente)</label>
         <textarea class="editable" id="${idBase}Report" rows="3" placeholder="Scrivi qui, visibile nel report">${escHtml(campo.report)}</textarea>
       </div>
-      <label class="osteo-privata-toggle"><input type="checkbox" data-privata-toggle-e="${idBase}" ${isOpen?'checked':''}> 🔒 Aggiungi nota privata</label>
-      ${isOpen ? `
-        <div class="osteo-note-box osteo-note-privata">
-          <label>Nota privata (solo per te, salvo condivisione)</label>
-          <textarea class="editable" id="${idBase}Privata" rows="2" placeholder="Note personali, non esportate nel report">${escHtml(campo.privata)}</textarea>
-        </div>
-      ` : ''}
     `;
   }
 
@@ -6906,11 +6885,6 @@ function renderAreaHumanEnergetica(box){
         <div class="ev-field"><label>Data seduta</label><input class="editable" type="date" id="energData" value="${escAttr(draft.data)}"></div>
       </div>
       ${Object.keys(ENERGETICA_LABELS).map(campoHTML).join('')}
-
-      <div class="osteo-flag-box" style="margin-top:16px;">
-        <label style="font-size:11px;color:var(--ink-mute);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:8px;">Note private</label>
-        <button type="button" class="osteo-condividi-btn" id="btnEnergCondividi"></button>
-      </div>
 
       <div class="osteo-flag-box">
         <label class="osteo-flag-toggle">
@@ -6943,8 +6917,6 @@ function renderAreaHumanEnergetica(box){
     const rEl = document.getElementById(idBase+'Report'); if(rEl) rEl.oninput = (e)=>{ campo.report = e.target.value; };
     const pEl = document.getElementById(idBase+'Privata'); if(pEl) pEl.oninput = (e)=>{ campo.privata = e.target.value; };
   });
-  updateCondividiBtnLabel(draft, 'btnEnergCondividi');
-  document.getElementById('btnEnergCondividi').onclick = ()=> openCondividiModal(draft, 'btnEnergCondividi');
   document.getElementById('energFlagCheck').onchange = (e)=>{ draft.segnalaFlag = e.target.checked; renderAreaHumanTab(); };
   const fp = document.getElementById('energFlagProf'); if(fp) fp.onchange = (e)=>{ draft.segnalaAProfId = e.target.value; };
   const ft = document.getElementById('energFlagTesto'); if(ft) ft.oninput = (e)=>{ draft.segnalaTesto = e.target.value; };
@@ -8223,13 +8195,6 @@ function renderFisioTrattamentiSection(c){
         <label>Note per il report (nel PDF e nello storico del cliente)</label>
         <textarea class="editable" id="${idBase}Report" rows="2" placeholder="Contenuto del trattamento, visibile nel report">${escHtml(campo.report)}</textarea>
       </div>
-      <label class="osteo-privata-toggle"><input type="checkbox" data-privata-toggle-f="${idBase}" ${isOpen?'checked':''}> 🔒 Aggiungi nota privata</label>
-      ${isOpen ? `
-        <div class="osteo-note-box osteo-note-privata">
-          <label>Nota privata (solo per te, salvo condivisione)</label>
-          <textarea class="editable" id="${idBase}Privata" rows="2" placeholder="Note personali, non esportate nel report">${escHtml(campo.privata)}</textarea>
-        </div>
-      ` : ''}
     `;
   }
 
@@ -8262,11 +8227,6 @@ function renderFisioTrattamentiSection(c){
       <div class="client-section-label-row" style="margin-top:18px;"><div class="client-section-label" style="font-size:15px;">Dolore rilevato in questa seduta</div></div>
       ${bodyMapHTML(draft.dolorePunti, 'fisioTrattPain', draft._selectedPainId, draft.collegataAValutazioneId ? ((c.valutazioniFisioterapia||[]).find(v=>v.id===draft.collegataAValutazioneId)||{}).dolorePunti : null)}
 
-      <div class="osteo-flag-box" style="margin-top:16px;">
-        <label style="font-size:11px;color:var(--ink-mute);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:8px;">Note private</label>
-        <button type="button" class="osteo-condividi-btn" id="btnFisioCondividi"></button>
-      </div>
-
       <button class="btn-gold" id="btnSaveFisioTratt" style="margin-top:16px;">Salva trattamento</button>
     </div>
   `;
@@ -8290,8 +8250,6 @@ function renderFisioTrattamentiSection(c){
       renderFisioTrattamentiSection(c);
     };
   });
-  updateCondividiBtnLabel(draft, 'btnFisioCondividi');
-  document.getElementById('btnFisioCondividi').onclick = ()=> openCondividiModal(draft, 'btnFisioCondividi');
   draft.tipi.forEach(t=>{
     const campo = draft.campi[t];
     const idBase = 'fisioCampo_'+t;
