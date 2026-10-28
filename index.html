@@ -852,9 +852,20 @@ header.top{
 .cli-header-actions{display:flex;gap:10px;align-items:center;}
 .cli-header-actions input{width:220px;}
 
-.cli-grid{
-  display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px;
-}
+.cli-grid{display:flex;flex-direction:column;gap:0;border:1px solid var(--line);border-radius:6px;overflow:hidden;}
+.cli-row{display:grid;grid-template-columns:minmax(180px,2fr) 130px 170px minmax(140px,2fr) 64px;gap:12px;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line-soft);cursor:pointer;background:var(--navy-900);transition:background .12s;}
+.cli-row:last-child{border-bottom:0}.cli-row:hover{background:var(--navy-800);}
+.cli-row.head{cursor:default;background:var(--navy-800);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-mute);position:sticky;top:0;z-index:2;}
+.cli-row.head:hover{background:var(--navy-800);}
+.cli-row .cl-n{font-family:var(--serif);font-size:15px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.cli-row .cl-d,.cli-row .cl-c{font-size:12.5px;color:var(--ink-dim);}
+.cli-row .cl-x{font-size:12px;color:var(--ink-mute);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.cli-row .cl-a{display:flex;gap:6px;justify-content:flex-end;}
+.cli-row .cl-a button{background:none;border:none;color:var(--ink-mute);font-size:16px;cursor:pointer;line-height:1;padding:2px 4px;}
+.cli-row .cl-a button:hover{color:var(--gold);}.cli-row .cl-a .cli-del:hover{color:#e0776a;}
+.cli-row select{font-size:11px;padding:4px 6px;max-width:100%;text-transform:none;letter-spacing:0;background:var(--navy-900);color:var(--ink);border:1px solid var(--line);border-radius:4px;}
+.cli-row.stub{opacity:.78}
+@media(max-width:760px){.cli-row{grid-template-columns:1fr 90px 40px;}.cli-row .rc,.cli-row .rx{display:none}.cli-row.head .cl-c{display:block}}
 .cli-card{
   border:1px solid var(--line);background:var(--navy-900);border-radius:5px;
   padding:16px 18px;cursor:pointer;position:relative;
@@ -4262,7 +4273,11 @@ async function initAuthFlow(){
   showAuthOverlay();
   document.getElementById('authContent').innerHTML = '<p class="auth-sub">Verifica accesso…</p>';
   try{
-    const { data } = await sb.auth.getSession();
+    // se il controllo della sessione resta appeso (cache, altra scheda aperta, rete) non restiamo bloccati su "Verifica accesso…"
+    const { data } = await Promise.race([
+      sb.auth.getSession(),
+      new Promise((_,rej)=> setTimeout(()=>rej(new Error('Il controllo dell\u2019accesso non risponde. Chiudi le altre schede del sito aperte, ricarica la pagina (Ctrl+Maiusc+R) e riprova.')), 10000))
+    ]);
     if(ACCESSO_HINT && ACCESSO_HINT.k){
       // QR: se c'è già una sessione di un altro utente, esce e entra come il cliente del codice
       if(data.session && (data.session.user.email||'').toLowerCase() === qrEmail(ACCESSO_HINT.k)){ await afterLogin(data.session); return; }
@@ -4933,15 +4948,21 @@ function valRuotaSectionHTML(v, interactive){
   </div>`;
 }
 
+function valTraumiMapHTML(v){
+  const mk = v.traumi.map((t,i)=> (t.x!=null && t.y!=null) ? `<div class="body-map-marker" data-trmark="${i}" style="left:${(t.x*100).toFixed(1)}%;top:${(t.y*100).toFixed(1)}%;--pcolor:#E0776A;" title="${escAttr(t.distretto||'')}">${i+1}</div>` : '').join('');
+  return `<div class="body-map-wrap"><div class="body-map-canvas" id="valTrCanvas">${BODY_MAP_SVG_HTML}${mk}</div>
+    <div class="body-map-side"><div class="body-map-hint">Clicca sulla figura (fronte a sinistra, retro a destra) nel punto del trauma: la zona viene riconosciuta in automatico e si aggiunge una riga qui sotto, dove completi anno e lato.</div></div></div>`;
+}
 function valTraumiTableHTML(v){
   const rows = v.traumi.map((t,i)=>`<div class="val-trauma-row" data-traumarow="${i}">
+    <span class="val-trauma-n" style="flex:0 0 20px;font-size:12px;color:var(--ink-mute);">${t.x!=null?(i+1)+'.':''}</span>
     <input class="editable" placeholder="anno" data-traumaf="${i}|anno" value="${escAttr(t.anno||'')}">
     <input class="editable" placeholder="distretto" data-traumaf="${i}|distretto" value="${escAttr(t.distretto||'')}">
     <label class="val-trauma-chk"><input type="checkbox" data-traumaf="${i}|dx" ${t.dx?'checked':''}> dx</label>
     <label class="val-trauma-chk"><input type="checkbox" data-traumaf="${i}|sx" ${t.sx?'checked':''}> sx</label>
     <button type="button" class="val-trauma-rm" data-traumarm="${i}" title="Rimuovi">×</button>
   </div>`).join('');
-  return `<div id="valTraumiTable">${rows || '<div class="val-empty" style="padding:8px 0;">Nessun trauma registrato.</div>'}</div>
+  return `${valTraumiMapHTML(v)}<div id="valTraumiTable">${rows || '<div class="val-empty" style="padding:8px 0;">Nessun trauma registrato.</div>'}</div>
   <button type="button" class="btn-ghost" id="btnAddTrauma" style="margin-top:8px;">+ Aggiungi trauma</button>`;
 }
 
@@ -4970,6 +4991,19 @@ function renderValTraumiSection(){
     state.valutazioneEditor.traumi.push({anno:'', distretto:'', dx:false, sx:false});
     renderValTraumiSection();
   };
+  const cv = document.getElementById('valTrCanvas');
+  if(cv){
+    cv.addEventListener('click', (e)=>{
+      if(e.target.closest('[data-trmark]')) return;
+      const rect = cv.getBoundingClientRect();
+      const x = Math.max(0, Math.min(1, (e.clientX-rect.left)/rect.width));
+      const y = Math.max(0, Math.min(1, (e.clientY-rect.top)/rect.height));
+      const zp = e.target.closest('path[id]');
+      const zona = (zp && BODY_ZONE_LABELS[zp.id]) || '';
+      state.valutazioneEditor.traumi.push({anno:'', distretto:zona, dx:false, sx:false, x, y});
+      renderValTraumiSection();
+    });
+  }
 }
 
 function valChipGroupHTML(name, options, current){
@@ -8751,23 +8785,20 @@ function renderFisioterapiaTab(){
   const c = activeClient();
   const box = document.getElementById('fisioterapiaContent');
   if(!c || !box) return;
-  if(!state.fisioSubTab) state.fisioSubTab = 'valutazione';
+  if(!state.fisioSubTab || state.fisioSubTab==='valutazione') state.fisioSubTab = 'trattamenti';
 
   box.innerHTML = `
     <div class="cal-mode-toggle" style="margin-bottom:18px;">
-      <div class="cal-mode-opt ${state.fisioSubTab==='valutazione'?'active':''}" data-fisiosubtab="valutazione">Valutazione</div>
       <div class="cal-mode-opt ${state.fisioSubTab==='trattamenti'?'active':''}" data-fisiosubtab="trattamenti">Trattamenti</div>
       <div class="cal-mode-opt ${state.fisioSubTab==='schede'?'active':''}" data-fisiosubtab="schede">Schede esercizio</div>
     </div>
-    <div id="fisioValContent" style="${state.fisioSubTab==='valutazione'?'':'display:none;'}"></div>
     <div id="fisioTrattContent" style="${state.fisioSubTab==='trattamenti'?'':'display:none;'}"></div>
     <div id="fisioSchedeContent" style="${state.fisioSubTab==='schede'?'':'display:none;'}"></div>
   `;
   box.querySelectorAll('[data-fisiosubtab]').forEach(btn=>{
     btn.onclick = ()=>{ state.fisioSubTab = btn.dataset.fisiosubtab; renderFisioterapiaTab(); };
   });
-  if(state.fisioSubTab==='valutazione') renderFisioValutazioneSection(c);
-  else if(state.fisioSubTab==='trattamenti') renderFisioTrattamentiSection(c);
+  if(state.fisioSubTab==='trattamenti') renderFisioTrattamentiSection(c);
   else renderFisioSchedeSection();
 }
 
@@ -11317,34 +11348,28 @@ function renderClientiList(filter){
   const cnt = document.getElementById('cliCount');
   if(cnt) cnt.textContent = totale.toLocaleString('it-IT') + (totale===1 ? ' cliente' : ' clienti');
   list = list.slice(0, state.cliLimit||60);
-  box.innerHTML = list.map(c=>{
-    // se la categoria e il profilo coincidono (es. "Persona normale") la riga sotto
-    // mostra solo il pathway, per non ripetere due volte la stessa etichetta
+  const fmtNasc = c=>{ if(!c.dataNascita) return '—'; const a = clienteEtaAnni(c); return c.dataNascita.split('-').reverse().join('/') + (a!=null ? ` · ${a} a.` : ''); };
+  const head = `<div class="cli-row head"><div>Nome e cognome</div><div>Data di nascita</div><div class="cl-c"><select id="cliHeadCat" title="Filtra per tipologia">${[['','Tipologia: tutte'],...CATEGORIE.map(x=>[x.id,x.name]),['none','Da assegnare']].map(([v,l])=>`<option value="${escAttr(v)}" ${(state.cliFilterCat||'')===v?'selected':''}>${escHtml(l)}</option>`).join('')}</select></div><div class="cl-x">Percorso</div><div></div></div>`;
+  box.innerHTML = head + list.map(c=>{
     const catDef = CATEGORIE.find(x=>x.id===c.categoria);
     const summary = (c.pathway && catDef && catDef.profilo===c.profilo) ? c.pathway : clientPathwaySummary(c);
     const schedeCount = Object.values(c.schede||{}).reduce((tot,arr)=>tot+arr.length,0);
     const profNames = showProf ? clienteProfIds(c).map(id=>state.professionisti.find(p=>p.id===id)).filter(Boolean).map(p=>p.nome).join(', ') : '';
+    const cat = c.categoria ? escHtml(catLabel(c.categoria)) : '<span style="opacity:.6">Da assegnare</span>';
     if(c.stub){
       const seg = clienteProfIds(c).map(id=>state.professionisti.find(p=>p.id===id)).filter(Boolean).map(p=>p.nome).join(', ');
-      return `<div class="cli-card" data-open-cliente="${c.id}" style="opacity:.82;">
-      <div class="cli-name">${escHtml(c.nome)}</div>
-      <div style="font-size:11.5px;color:var(--ink-mute);margin:-2px 0 4px;">${c.categoria ? escHtml(catLabel(c.categoria)) : 'Categoria da assegnare'}</div>
-      <div class="cli-status empty">Non seguito da te</div>
-      <div class="cli-meta">${clienteEtaAnni(c) ? clienteEtaAnni(c) + ' anni · ' : ''}${seg ? 'Seguito da ' + escHtml(seg) : 'Nessun professionista lo segue'}</div>
-      <div style="font-size:12px;margin-top:6px;"><a href="#" style="color:var(--gold,#EE7A3C);text-decoration:none;font-weight:600;">+ Segui</a></div>
-    </div>`;
+      return `<div class="cli-row stub" data-open-cliente="${c.id}"><div class="cl-n">${escHtml(c.nome)}</div><div class="cl-d">${fmtNasc(c)}</div><div class="cl-c">${cat}</div><div class="cl-x">${seg ? 'Seguito da '+escHtml(seg) : 'Non seguito da nessuno'}</div><div class="cl-a"><a href="#" style="color:var(--gold,#EE7A3C);text-decoration:none;font-weight:600;font-size:12px;">+ Segui</a></div></div>`;
     }
-    return `<div class="cli-card" data-open-cliente="${c.id}">
-      ${canManageAll() ? `<button class="cli-edit" data-edit-anag="${c.id}" title="Modifica anagrafica" style="right:${isAdmin?40:12}px;">✎</button>` : ''}
-      ${isAdmin ? `<button class="cli-del" data-del-cliente="${c.id}" title="Elimina cliente">×</button>` : ''}
-      <div class="cli-name">${c.nome}</div>
-      <div style="font-size:11.5px;color:var(--ink-mute);margin:-2px 0 4px;">${c.categoria ? escHtml(catLabel(c.categoria)) : 'Categoria da assegnare'}</div>
-
-      <div class="cli-status ${summary?'':'empty'}">${summary || 'Pathway da assegnare'}</div>
-      <div class="cli-meta">${clienteEtaAnni(c) ? clienteEtaAnni(c) + ' anni · ' : ''}${schedeCount} sched${schedeCount===1?'a':'e'}${profNames ? ' · '+profNames : ''}</div>
-      ${avvAgendaHtml(c, ag)}
+    return `<div class="cli-row" data-open-cliente="${c.id}">
+      <div class="cl-n">${escHtml(c.nome)}</div>
+      <div class="cl-d">${fmtNasc(c)}</div>
+      <div class="cl-c">${cat}</div>
+      <div class="cl-x" title="${escAttr((summary||'')+(profNames?' · '+profNames:''))}">${summary ? escHtml(summary) : 'Pathway da assegnare'} · ${schedeCount} sched${schedeCount===1?'a':'e'}${profNames ? ' · '+escHtml(profNames) : ''}</div>
+      <div class="cl-a">${canManageAll() ? `<button data-edit-anag="${c.id}" title="Modifica anagrafica">✎</button>` : ''}${isAdmin ? `<button class="cli-del" data-del-cliente="${c.id}" title="Elimina cliente">×</button>` : ''}</div>
     </div>`;
-  }).join('') + (totale>list.length ? `<div class="cli-more"><button class="btn-ghost" id="btnCliMore">Mostra altri (${(totale-list.length).toLocaleString('it-IT')})</button></div>` : '');
+  }).join('') + (totale>list.length ? `<div class="cli-more" style="padding:12px;text-align:center;"><button class="btn-ghost" id="btnCliMore">Mostra altri (${(totale-list.length).toLocaleString('it-IT')})</button></div>` : '');
+  const hc = document.getElementById('cliHeadCat');
+  if(hc) hc.onchange = ()=>{ state.cliFilterCat = hc.value; renderClientiList(document.getElementById('cliSearchInput').value); };
   const bMore = document.getElementById('btnCliMore');
   if(bMore) bMore.onclick = ()=>{ state.cliLimit = (state.cliLimit||60) + 120; renderClientiList(document.getElementById('cliSearchInput').value); };
 
