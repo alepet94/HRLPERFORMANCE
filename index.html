@@ -1996,6 +1996,7 @@ body[data-theme="light"] .paz-lk-list{background:#fff;border-color:#ccc;}
       <button class="btn-ghost" id="btnTemplate">Template</button>
       <button class="btn-ghost" id="btnEsercizi">Libreria esercizi</button>
       <button class="btn-ghost" id="btnBlocchiOperativi">Blocchi operativi</button>
+      <button class="btn-ghost" id="btnCrm" style="display:none;">CRM</button>
     </div></div>
     <button class="btn-ghost" id="btnHelp">Come funziona</button>
     <button class="theme-toggle" id="btnThemeToggle" title="Cambia tema chiaro/scuro"></button>
@@ -2282,6 +2283,11 @@ body[data-theme="light"] .paz-lk-list{background:#fff;border-color:#ccc;}
   <div id="segContent"></div>
 </div>
 
+<div class="cli-wrap" id="crmArea" style="display:none;">
+  <div class="cli-header"><h2 style="margin:0;font-size:24px;">CRM — percorso economico dei clienti</h2></div>
+  <div id="crmContent" style="margin-top:16px;"></div>
+</div>
+<div class="modal-bg" id="crmModal"><div class="modal modal-wide" style="max-height:90vh;overflow:auto;"><button class="modal-close" id="crmClose">×</button><div id="crmModalBody"></div></div></div>
 <div class="cli-wrap" id="fatturazioneArea" style="display:none;">
   <div class="cli-header"><h2 style="margin:0;font-size:24px;">Fatturazione e pagamenti</h2></div>
   <div id="fattContent" style="margin-top:16px;"></div>
@@ -4310,6 +4316,8 @@ function showView(name){
   if(name!=='calendario' && name!=='segreteria') state.segFlag = false;
   const sa = document.getElementById('segreteriaArea'); if(sa) sa.style.display = name==='segreteria' ? 'block' : 'none';
   const fa = document.getElementById('fatturazioneArea'); if(fa) fa.style.display = name==='fatturazione' ? 'block' : 'none';
+  const crA = document.getElementById('crmArea'); if(crA) crA.style.display = name==='crm' ? 'block' : 'none';
+  const bCrm = document.getElementById('btnCrm'); if(bCrm) bCrm.style.display = (state.professionista && state.professionista.ruolo==='admin') ? '' : 'none';
   // segreteria "pura": due tasti in vista; admin: un menu "Segreteria ▾" con Fatturazione dentro
   const fb = document.getElementById('btnFatturazione'); if(fb) fb.style.display = isSegreteriaOnly() ? '' : 'none';
   const sb = document.getElementById('btnSegreteria'); if(sb) sb.style.display = isSegreteriaOnly() ? '' : 'none';
@@ -6411,6 +6419,304 @@ document.addEventListener('click', e=>{
   else { b.textContent = '🔒 Nota privata — clicca per leggere'; }
 }, true);
 document.addEventListener('visibilitychange', ()=>{ if(document.hidden) document.querySelectorAll('.priv-btn.open').forEach(b=>{ b.classList.remove('open'); b.textContent = '🔒 Nota privata — clicca per leggere'; }); });
+
+// ==================== CRM (percorso economico del cliente, abbandoni, marketing) ====================
+// Solo admin. Nessuna tabella nuova: le impostazioni stanno in state.fattImp.crm (stessa riga di
+// fatturazione_impostazioni) e i dati per cliente in c.anagrafica.crm (stesso campo JSON dell'anagrafica).
+const CRM_STEPS = ['Contatto','Prima visita','Percorso avviato','Controllo / retest','Fidelizzato'];
+const CRM_FONTI_DEF = ['Passaparola','Instagram / social','Google','Medico / fisioterapista','Squadra / società','Evento','Altro'];
+const CRM_MOTIVI = ['Prezzo','Tempo / distanza','Obiettivo raggiunto','Infortunio risolto','Poco soddisfatto','Passato ad altro centro','Non risponde','Altro'];
+function crmCfg(){
+  if(!state.fattImp) state.fattImp = {};
+  const c = state.fattImp.crm = state.fattImp.crm || {};
+  if(c.sogliaInattivo==null) c.sogliaInattivo = 60;
+  if(!c.costoOrario) c.costoOrario = {};
+  if(c.costoOrarioDefault==null) c.costoOrarioDefault = 0;
+  if(!c.costiFonte) c.costiFonte = {};
+  if(!c.fonti || !c.fonti.length) c.fonti = CRM_FONTI_DEF.slice();
+  return c;
+}
+function crmSave(){ return db.saveFattImp(state.fattImp); }
+function crmClientData(c){
+  if(!c.anagrafica) c.anagrafica = {};
+  if(!c.anagrafica.crm) c.anagrafica.crm = {};
+  return c.anagrafica.crm;
+}
+const crmEur = n=> (Number(n)||0).toLocaleString('it-IT',{style:'currency',currency:'EUR',maximumFractionDigits:0});
+const crmPct = n=> (isFinite(n) ? Math.round(n*100) : 0) + ' %';
+const crmFd = d=> d ? d.split('-').reverse().join('/') : '—';
+function crmRange(){
+  const oggi = new Date(), p = state.crmPeriodo || 'anno';
+  if(p==='tutto') return ['0000-01-01','9999-12-31'];
+  if(p==='12m') return [fmtDateISO(addDays(oggi,-365)), fmtDateISO(oggi)];
+  return [oggi.getFullYear()+'-01-01', oggi.getFullYear()+'-12-31'];
+}
+// calcolo unico: una riga per cliente, con tutto ciò che serve alle quattro viste
+function crmCalc(){
+  const cfg = crmCfg(), [da,a] = crmRange(), oggi = fmtDateISO(new Date());
+  const perCli = {};
+  (state.appuntamenti||[]).forEach(ap=>{ if(ap.clienteId) (perCli[ap.clienteId] = perCli[ap.clienteId]||[]).push(ap); });
+  const pkUsati = new Set();
+  (state.pacchetti||[]).forEach(p=>{ if((+p.prezzo||0)>0) (p.usi||[]).forEach(u=>{ if(u.apId) pkUsati.add(u.apId); }); });
+  const costoOra = pid=> (cfg.costoOrario[pid]!=null && cfg.costoOrario[pid]!=='') ? +cfg.costoOrario[pid] : (+cfg.costoOrarioDefault||0);
+  const rows = [];
+  (state.clienti||[]).forEach(c=>{
+    if(c.eliminato || c.stub) return;
+    const aps = (perCli[c.id]||[]).slice().sort((x,y)=> (x.day+x.start).localeCompare(y.day+y.start));
+    const passati = aps.filter(x=>x.day<=oggi), futuri = aps.filter(x=>x.day>oggi);
+    const inP = d=> d>=da && d<=a;
+    let ricavi=0, incassato=0, costoLav=0, sedutePer=0, oreTot=0;
+    const mov = [];
+    aps.forEach(x=>{
+      const ore = Math.max(0,(timeToMinutes(x.end)-timeToMinutes(x.start))/60);
+      const imp = (x.importo!=null && x.importo!=='' && !pkUsati.has(x.id)) ? +x.importo : 0;
+      const cl = x.day<=oggi ? ore*costoOra(x.professionistaId) : 0;
+      oreTot += x.day<=oggi ? ore : 0;
+      if(inP(x.day)){ ricavi += imp; if(x.pagato) incassato += imp; costoLav += cl; if(x.day<=oggi) sedutePer++; }
+      mov.push({day:x.day, tipo:'seduta', ap:x, imp, ore, costo:cl});
+    });
+    const pks = (state.pacchetti||[]).filter(p=>p.clienteId===c.id && (+p.prezzo||0)>0);
+    pks.forEach(p=>{
+      const d = p.dataInizio || (aps[0] && aps[0].day) || oggi;
+      if(inP(d)){ ricavi += +p.prezzo; if(p.fatturaId) incassato += +p.prezzo; }
+      mov.push({day:d, tipo:'pacchetto', pk:p, imp:+p.prezzo, ore:0, costo:0});
+    });
+    const cd = crmClientData(c);
+    const fonte = cd.fonte || '';
+    const costoAcq = (cd.costoAcq!=null && cd.costoAcq!=='') ? +cd.costoAcq : (+cfg.costiFonte[fonte]||0);
+    const prima = passati[0] ? passati[0].day : '';
+    const ultima = passati.length ? passati[passati.length-1].day : '';
+    const prossima = futuri[0] ? futuri[0].day : '';
+    const nuovoInPeriodo = prima && inP(prima);
+    const costo = costoLav + (nuovoInPeriodo || (state.crmPeriodo==='tutto') ? costoAcq : 0);
+    // quanto è andato avanti nel percorso
+    const nRetest = passati.filter(x=>x.tipo==='retest'||x.tipo==='ans').length;
+    let step = 0;
+    if(passati.length || (c.valutazioni||[]).length) step = 1;
+    if(passati.length>=3) step = 2;
+    if(step>=2 && (nRetest || (c.ghiStorico||[]).length>=2 || (c.valutazioni||[]).length>=2)) step = 3;
+    if(passati.length>=10 || (state.pacchetti||[]).filter(p=>p.clienteId===c.id).length>=2) step = 4;
+    const gg = ultima ? Math.floor((new Date(oggi)-new Date(ultima))/86400000) : null;
+    let stato;
+    if(cd.stato==='perso') stato='perso'; else if(cd.stato==='concluso') stato='concluso';
+    else if(!passati.length && !futuri.length) stato='nuovo';
+    else if(futuri.length || (gg!=null && gg<=30)) stato='attivo';
+    else if(gg!=null && gg<=cfg.sogliaInattivo) stato='a rischio';
+    else stato='inattivo';
+    const pkScaduti = (state.pacchetti||[]).filter(p=>p.clienteId===c.id && p.attivo!==false && typeof pkStato==='function' && pkStato(p)!=='attivo').length;
+    rows.push({c, cd, aps, mov, ricavi, incassato, daIncassare: ricavi-incassato, costoLav, costoAcq, costo, margine: ricavi-costo,
+      nSedute: passati.length, sedutePer, ore: oreTot, prima, ultima, prossima, gg, step, stato, fonte, pkScaduti, nuovoInPeriodo:!!nuovoInPeriodo,
+      ltv: mov.reduce((t,m)=>t+m.imp,0)});
+  });
+  return rows;
+}
+const CRM_STATO_COL = {attivo:'#4FA37A', nuovo:'#6FA8DC', 'a rischio':'#E0A030', inattivo:'#E0776A', perso:'#B0554A', concluso:'#8E8C88'};
+const crmChip = s=>`<span style="display:inline-block;padding:2px 9px;border-radius:10px;font-size:11px;color:#fff;background:${CRM_STATO_COL[s]||'#777'};">${escHtml(s)}</span>`;
+function crmBars(items, fmt){   // barre orizzontali: [{label, v, sub}]
+  const mx = Math.max(1, ...items.map(i=>i.v));
+  return items.map(i=>`<div style="display:grid;grid-template-columns:150px 1fr 90px;gap:10px;align-items:center;margin:6px 0;font-size:12.5px;">
+    <div style="color:var(--ink-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escAttr(i.label)}">${escHtml(i.label)}</div>
+    <div style="background:var(--navy-800);border-radius:4px;height:16px;"><div style="width:${Math.max(2,i.v/mx*100)}%;height:100%;background:${i.col||'var(--gold)'};border-radius:4px;"></div></div>
+    <div style="text-align:right;color:var(--ink);">${fmt?fmt(i.v):i.v}${i.sub?` <span style="color:var(--ink-mute);font-size:11px;">${i.sub}</span>`:''}</div></div>`).join('');
+}
+function crmMensile(rows){   // ricavi e costi degli ultimi 12 mesi
+  const oggi = new Date(), mesi = [];
+  for(let i=11;i>=0;i--){ const d = new Date(oggi.getFullYear(), oggi.getMonth()-i, 1); mesi.push({k:d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'), r:0, c:0}); }
+  const idx = {}; mesi.forEach((m,i)=>idx[m.k]=i);
+  const cfg = crmCfg(), oggiS = fmtDateISO(oggi);
+  const costoOra = pid=> (cfg.costoOrario[pid]!=null && cfg.costoOrario[pid]!=='') ? +cfg.costoOrario[pid] : (+cfg.costoOrarioDefault||0);
+  rows.forEach(r=> r.mov.forEach(m=>{
+    const k = m.day.slice(0,7); if(!(k in idx)) return;
+    mesi[idx[k]].r += m.imp;
+    if(m.tipo==='seduta' && m.day<=oggiS) mesi[idx[k]].c += m.ore*costoOra(m.ap.professionistaId);
+  }));
+  const mx = Math.max(1, ...mesi.map(m=>Math.max(m.r,m.c)));
+  const W=620,H=170,bw=W/12;
+  const mn = ['G','F','M','A','M','G','L','A','S','O','N','D'];
+  return `<svg viewBox="0 0 ${W} ${H+22}" style="width:100%;max-width:720px;height:auto;">
+    ${mesi.map((m,i)=>{ const h1=m.r/mx*H, h2=m.c/mx*H, x=i*bw;
+      return `<rect x="${x+6}" y="${H-h1}" width="${bw/2-8}" height="${h1}" fill="var(--gold)" rx="2"><title>${m.k}: ricavi ${crmEur(m.r)}</title></rect>
+      <rect x="${x+bw/2-1}" y="${H-h2}" width="${bw/2-8}" height="${h2}" fill="#6672a8" rx="2"><title>${m.k}: costo lavoro ${crmEur(m.c)}</title></rect>
+      <text x="${x+bw/2}" y="${H+15}" text-anchor="middle" font-size="11" fill="var(--ink-mute)">${mn[+m.k.slice(5)-1]}</text>`; }).join('')}
+  </svg><div style="font-size:11.5px;color:var(--ink-mute);"><span style="color:var(--gold)">■</span> Ricavi &nbsp; <span style="color:#6672a8">■</span> Costo del lavoro</div>`;
+}
+function renderCrm(){
+  const box = document.getElementById('crmContent'); if(!box) return;
+  if(!state.professionista || state.professionista.ruolo!=='admin'){ box.innerHTML = '<div class="val-empty">Sezione riservata all’amministratore.</div>'; return; }
+  if(!state.crmTab) state.crmTab = 'panoramica';
+  if(!state.crmPeriodo) state.crmPeriodo = 'anno';
+  const rows = crmCalc();
+  const tabs = [['panoramica','Panoramica'],['clienti','Clienti'],['percorso','Percorso e abbandoni'],['marketing','Marketing'],['impostazioni','Impostazioni']];
+  box.innerHTML = `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px;">
+    <div class="cal-mode-toggle" style="flex-wrap:wrap;">${tabs.map(([k,l])=>`<div class="cal-mode-opt ${state.crmTab===k?'active':''}" data-crmtab="${k}">${l}</div>`).join('')}</div>
+    <select class="editable" id="crmPeriodo" style="max-width:190px;margin-left:auto;"><option value="anno" ${state.crmPeriodo==='anno'?'selected':''}>Anno in corso</option><option value="12m" ${state.crmPeriodo==='12m'?'selected':''}>Ultimi 12 mesi</option><option value="tutto" ${state.crmPeriodo==='tutto'?'selected':''}>Da sempre</option></select>
+  </div><div id="crmBody"></div>`;
+  box.querySelectorAll('[data-crmtab]').forEach(b=> b.onclick = ()=>{ state.crmTab = b.dataset.crmtab; renderCrm(); });
+  document.getElementById('crmPeriodo').onchange = e=>{ state.crmPeriodo = e.target.value; renderCrm(); };
+  const body = document.getElementById('crmBody');
+  ({panoramica:crmViewPanoramica, clienti:crmViewClienti, percorso:crmViewPercorso, marketing:crmViewMarketing, impostazioni:crmViewImpostazioni}[state.crmTab])(body, rows);
+}
+const crmKpi = (l,v,sub,col)=>`<div style="border:1px solid var(--line);border-radius:8px;padding:12px 14px;background:var(--navy-900);"><div style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-mute);">${l}</div><div style="font-size:22px;font-family:var(--serif);color:${col||'var(--ink)'};margin-top:4px;">${v}</div>${sub?`<div style="font-size:11.5px;color:var(--ink-mute);margin-top:2px;">${sub}</div>`:''}</div>`;
+function crmViewPanoramica(box, rows){
+  const sum = k=> rows.reduce((t,r)=>t+r[k],0);
+  const ric = sum('ricavi'), inc = sum('incassato'), cost = sum('costo'), marg = ric-cost;
+  const attivi = rows.filter(r=>r.stato==='attivo').length, rischio = rows.filter(r=>r.stato==='a rischio').length, inatt = rows.filter(r=>r.stato==='inattivo').length;
+  const paganti = rows.filter(r=>r.ricavi>0);
+  const nuovi = rows.filter(r=>r.nuovoInPeriodo).length;
+  const costoLav = sum('costoLav'), costoNoSet = (+crmCfg().costoOrarioDefault||0)===0 && !Object.keys(crmCfg().costoOrario).length;
+  const top = rows.slice().sort((a,b)=>b.margine-a.margine).slice(0,10);
+  box.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px;margin-bottom:22px;">
+      ${crmKpi('Ricavi', crmEur(ric), 'incassati '+crmEur(inc))}
+      ${crmKpi('Da incassare', crmEur(ric-inc), '', (ric-inc)>0?'#E0A030':'')}
+      ${crmKpi('Costi stimati', crmEur(cost), 'lavoro '+crmEur(costoLav)+' · acquisizione '+crmEur(cost-costoLav))}
+      ${crmKpi('Margine', crmEur(marg), ric ? crmPct(marg/ric)+' dei ricavi' : '', marg<0?'#E0776A':'#4FA37A')}
+      ${crmKpi('Clienti attivi', attivi, rischio+' a rischio · '+inatt+' inattivi')}
+      ${crmKpi('Nuovi nel periodo', nuovi)}
+      ${crmKpi('Ricavo medio / cliente', crmEur(paganti.length ? ric/paganti.length : 0), paganti.length+' clienti con ricavi')}
+      ${crmKpi('Sedute nel periodo', sum('sedutePer'))}
+    </div>
+    ${costoNoSet ? `<div class="val-legacy-note" style="margin-bottom:16px;">Il costo del lavoro è a zero: imposta il costo orario dei professionisti in <b>Impostazioni</b> per avere margini realistici.</div>`:''}
+    <div class="client-section-label">Ultimi 12 mesi</div>
+    <div style="margin:10px 0 24px;">${crmMensile(rows)}</div>
+    <div class="client-section-label">Primi 10 clienti per margine</div>
+    <div style="margin-top:10px;">${crmBars(top.map(r=>({label:r.c.nome, v:Math.max(0,r.margine), sub:'ricavi '+crmEur(r.ricavi)})), crmEur)}</div>`;
+}
+function crmViewClienti(box, rows){
+  const st = state.crmCliFiltro || '', q = (state.crmCliQ||'').toLowerCase(), so = state.crmSort || 'margine';
+  let list = rows.filter(r=>(!st || r.stato===st) && (!q || (r.c.nome||'').toLowerCase().includes(q)));
+  const cmp = {margine:(a,b)=>b.margine-a.margine, ricavi:(a,b)=>b.ricavi-a.ricavi, ultima:(a,b)=>(b.ultima||'').localeCompare(a.ultima||''), nome:(a,b)=>(a.c.nome||'').localeCompare(b.c.nome||''), sedute:(a,b)=>b.nSedute-a.nSedute}[so];
+  list.sort(cmp);
+  const tot = list.length; list = list.slice(0, state.crmLimit||80);
+  box.innerHTML = `<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;align-items:center;">
+      <input class="editable" id="crmQ" placeholder="Cerca cliente" value="${escAttr(state.crmCliQ||'')}" style="max-width:220px;">
+      <select class="editable" id="crmSt" style="max-width:160px;"><option value="">Tutti gli stati</option>${Object.keys(CRM_STATO_COL).map(s=>`<option ${st===s?'selected':''}>${s}</option>`).join('')}</select>
+      <select class="editable" id="crmSo" style="max-width:190px;">${[['margine','Ordina: margine'],['ricavi','Ordina: ricavi'],['ultima','Ordina: ultima seduta'],['sedute','Ordina: sedute'],['nome','Ordina: nome']].map(([k,l])=>`<option value="${k}" ${so===k?'selected':''}>${l}</option>`).join('')}</select>
+      <button class="btn-ghost" id="crmCsv" style="margin-left:auto;">Esporta CSV</button>
+    </div>
+    <div style="font-size:12px;color:var(--ink-mute);margin-bottom:8px;">${tot.toLocaleString('it-IT')} clienti</div>
+    <div style="overflow-x:auto;"><table class="ghi-table" style="min-width:860px;"><thead><tr><th>Cliente</th><th>Fonte</th><th>Sedute</th><th>Ricavi</th><th>Costo</th><th>Margine</th><th>Ultima</th><th>Stato</th><th>Si è fermato a</th></tr></thead><tbody>
+    ${list.map(r=>`<tr data-crmcli="${r.c.id}" style="cursor:pointer;"><td style="font-weight:600;">${escHtml(r.c.nome)}</td><td>${escHtml(r.fonte||'—')}</td><td>${r.nSedute}</td><td>${crmEur(r.ricavi)}</td><td>${crmEur(r.costo)}</td><td style="color:${r.margine<0?'#E0776A':'inherit'}">${crmEur(r.margine)}</td><td>${crmFd(r.ultima)}</td><td>${crmChip(r.stato)}</td><td>${(r.stato==='inattivo'||r.stato==='perso') ? escHtml(CRM_STEPS[r.step]) : '—'}</td></tr>`).join('')}
+    </tbody></table></div>
+    ${tot>list.length ? `<div style="text-align:center;margin-top:12px;"><button class="btn-ghost" id="crmMore">Mostra altri (${(tot-list.length).toLocaleString('it-IT')})</button></div>`:''}`;
+  box.querySelector('#crmQ').oninput = e=>{ state.crmCliQ = e.target.value; clearTimeout(state._crmT); state._crmT = setTimeout(()=>{ renderCrm(); const i=document.getElementById('crmQ'); if(i){ i.focus(); i.setSelectionRange(i.value.length,i.value.length); } },250); };
+  box.querySelector('#crmSt').onchange = e=>{ state.crmCliFiltro = e.target.value; renderCrm(); };
+  box.querySelector('#crmSo').onchange = e=>{ state.crmSort = e.target.value; renderCrm(); };
+  const mo = box.querySelector('#crmMore'); if(mo) mo.onclick = ()=>{ state.crmLimit = (state.crmLimit||80)+200; renderCrm(); };
+  box.querySelectorAll('[data-crmcli]').forEach(tr=> tr.onclick = ()=> crmApriCliente(tr.dataset.crmcli));
+  box.querySelector('#crmCsv').onclick = ()=> crmCsv(rows.filter(r=>(!st || r.stato===st) && (!q || (r.c.nome||'').toLowerCase().includes(q))));
+}
+function crmCsv(list){
+  const esc = v=> '"'+String(v==null?'':v).replace(/"/g,'""')+'"';
+  const head = ['Nome','Email','Telefono','Tipologia','Fonte','Stato','Sedute','Ricavi','Costo','Margine','Ultima seduta','Prossima','Fermato a','Motivo'];
+  const lines = [head.map(esc).join(';')].concat(list.map(r=>[r.c.nome,r.c.email,r.c.telefono,catLabel(r.c.categoria),r.fonte,r.stato,r.nSedute,r.ricavi.toFixed(2),r.costo.toFixed(2),r.margine.toFixed(2),r.ultima,r.prossima,(r.stato==='inattivo'||r.stato==='perso')?CRM_STEPS[r.step]:'',r.cd.motivo||''].map(esc).join(';')));
+  const blob = new Blob(['﻿'+lines.join('\n')],{type:'text/csv;charset=utf-8'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'crm-clienti-'+fmtDateISO(new Date())+'.csv'; a.click();
+}
+function crmViewPercorso(box, rows){
+  const base = rows.filter(r=>r.stato!=='nuovo' || true);
+  const raggiunti = CRM_STEPS.map((_,i)=> rows.filter(r=>r.step>=i).length);
+  const funnel = CRM_STEPS.map((l,i)=>({label:l, v:raggiunti[i], sub: i? crmPct(raggiunti[i-1]? raggiunti[i]/raggiunti[i-1] : 0)+' dal passo prima':''}));
+  const persi = rows.filter(r=>r.stato==='inattivo'||r.stato==='perso');
+  const fermi = CRM_STEPS.map((l,i)=>({label:l, v:persi.filter(r=>r.step===i).length, col:'#E0776A'}));
+  const motivi = {}; rows.filter(r=>r.cd.motivo).forEach(r=> motivi[r.cd.motivo]=(motivi[r.cd.motivo]||0)+1);
+  const mot = Object.entries(motivi).sort((a,b)=>b[1]-a[1]).map(([l,v])=>({label:l,v,col:'#B0554A'}));
+  const daRiat = rows.filter(r=>r.stato==='inattivo'||r.stato==='a rischio').sort((a,b)=>b.ltv-a.ltv).slice(0,40);
+  const sedPrima = persi.filter(r=>r.nSedute>0);
+  const media = sedPrima.length ? sedPrima.reduce((t,r)=>t+r.nSedute,0)/sedPrima.length : 0;
+  box.innerHTML = `
+    <div class="client-section-label">Quanti arrivano a ogni passo del percorso</div>
+    <div style="margin:10px 0 6px;">${crmBars(funnel)}</div>
+    <div style="font-size:11.5px;color:var(--ink-mute);margin-bottom:22px;">Prima visita: almeno una seduta · Percorso avviato: 3+ sedute · Controllo: retest/controllo o secondo GHI/valutazione · Fidelizzato: 10+ sedute o secondo pacchetto.</div>
+    <div class="client-section-label">Dove si fermano (inattivi oltre ${crmCfg().sogliaInattivo} giorni o segnati come persi)</div>
+    <div style="margin:10px 0 6px;">${persi.length ? crmBars(fermi) : '<div class="val-empty">Nessun cliente inattivo.</div>'}</div>
+    ${persi.length ? `<div style="font-size:12.5px;color:var(--ink-mute);margin-bottom:22px;">${persi.length} clienti fermi · in media ${media.toFixed(1).replace('.',',')} sedute prima di fermarsi.</div>`:''}
+    ${mot.length ? `<div class="client-section-label">Motivi indicati</div><div style="margin:10px 0 22px;">${crmBars(mot)}</div>` : `<div class="val-legacy-note" style="margin-bottom:22px;">Apri un cliente dalla scheda "Clienti" e segna "Perso" con il motivo: qui comparirà la classifica.</div>`}
+    <div class="client-section-label">Da riattivare (ordinati per quanto hanno già portato)</div>
+    <div style="overflow-x:auto;margin-top:10px;"><table class="ghi-table" style="min-width:720px;"><thead><tr><th>Cliente</th><th>Stato</th><th>Ultima seduta</th><th>Giorni</th><th>Ha portato</th><th>Contatti</th><th>Fermo a</th></tr></thead><tbody>
+    ${daRiat.map(r=>`<tr data-crmcli="${r.c.id}" style="cursor:pointer;"><td style="font-weight:600;">${escHtml(r.c.nome)}</td><td>${crmChip(r.stato)}</td><td>${crmFd(r.ultima)}</td><td>${r.gg!=null?r.gg:'—'}</td><td>${crmEur(r.ltv)}</td><td>${escHtml([r.c.telefono,r.c.email].filter(Boolean).join(' · '))||'—'}</td><td>${escHtml(CRM_STEPS[r.step])}${r.pkScaduti?' · pacchetto da rinnovare':''}</td></tr>`).join('') || '<tr><td colspan="7" class="val-empty">Nessuno.</td></tr>'}
+    </tbody></table></div>
+    <div style="font-size:11.5px;color:var(--ink-mute);margin-top:8px;">Per le comunicazioni commerciali serve il consenso marketing del cliente: verifica i consensi prima di contattare.</div>`;
+  box.querySelectorAll('[data-crmcli]').forEach(tr=> tr.onclick = ()=> crmApriCliente(tr.dataset.crmcli));
+}
+function crmViewMarketing(box, rows){
+  const cfg = crmCfg();
+  const gruppo = (key)=>{ const m = {}; rows.forEach(r=>{ const k = key(r)||'—'; const g = m[k] = m[k]||{n:0,att:0,ric:0,cost:0,acq:0,ltv:0}; g.n++; if(r.stato==='attivo') g.att++; g.ric+=r.ricavi; g.cost+=r.costo; g.acq+=r.costoAcq; g.ltv+=r.ltv; }); return Object.entries(m).sort((a,b)=>b[1].ric-a[1].ric); };
+  const tab = (titolo, g, conAcq)=>`<div class="client-section-label" style="margin-top:22px;">${titolo}</div>
+    <div style="overflow-x:auto;margin-top:10px;"><table class="ghi-table" style="min-width:640px;"><thead><tr><th>${titolo.split(' per ')[1]||''}</th><th>Clienti</th><th>Attivi</th><th>Ricavi</th><th>Margine</th><th>Ricavo/cliente</th>${conAcq?'<th>Costo acquisizione</th><th>Ritorno</th>':''}</tr></thead><tbody>
+    ${g.map(([k,v])=>`<tr><td style="font-weight:600;">${escHtml(k)}</td><td>${v.n}</td><td>${v.att}</td><td>${crmEur(v.ric)}</td><td>${crmEur(v.ric-v.cost)}</td><td>${crmEur(v.n? v.ric/v.n : 0)}</td>${conAcq?`<td>${v.acq?crmEur(v.acq):'—'}</td><td>${v.acq? (v.ric/v.acq).toFixed(1).replace('.',',')+'×' : '—'}</td>`:''}</tr>`).join('')}</tbody></table></div>`;
+  const ore = {}; rows.forEach(r=> r.aps.forEach(x=>{ if(x.day>fmtDateISO(new Date())) return; const [da,a]=crmRange(); if(x.day<da||x.day>a) return; const k = x.professionistaId||'—'; const o = ore[k] = ore[k]||{h:0,r:0,c:0}; o.h += Math.max(0,(timeToMinutes(x.end)-timeToMinutes(x.start))/60); o.r += (+x.importo||0); }));
+  const profRows = Object.entries(ore).map(([id,o])=>{ const p = state.professionisti.find(x=>x.id===id); const cOra = (cfg.costoOrario[id]!=null && cfg.costoOrario[id]!=='') ? +cfg.costoOrario[id] : (+cfg.costoOrarioDefault||0); return [p?p.nome:'—', o.h, o.r, o.h*cOra]; }).sort((a,b)=>b[2]-a[2]);
+  box.innerHTML = tab('Clienti per fonte di arrivo', gruppo(r=>r.fonte), true)
+    + tab('Clienti per tipologia', gruppo(r=>catLabel(r.c.categoria)||'Da assegnare'), false)
+    + `<div class="client-section-label" style="margin-top:22px;">Resa per professionista (periodo scelto)</div>
+    <div style="overflow-x:auto;margin-top:10px;"><table class="ghi-table"><thead><tr><th>Professionista</th><th>Ore</th><th>Ricavi</th><th>Costo</th><th>Ricavo/ora</th></tr></thead><tbody>
+    ${profRows.map(([n,h,r,c])=>`<tr><td style="font-weight:600;">${escHtml(n)}</td><td>${h.toFixed(1).replace('.',',')}</td><td>${crmEur(r)}</td><td>${crmEur(c)}</td><td>${h? crmEur(r/h):'—'}</td></tr>`).join('')}</tbody></table></div>
+    <div style="font-size:11.5px;color:var(--ink-mute);margin-top:10px;">La fonte si assegna a ogni cliente dalla scheda cliente CRM; il costo acquisizione per fonte si imposta in <b>Impostazioni</b>.</div>`;
+}
+function crmViewImpostazioni(box, rows){
+  const cfg = crmCfg();
+  box.innerHTML = `<div style="max-width:640px;">
+    <div class="ev-field"><label>Giorni senza sedute dopo cui un cliente è considerato inattivo</label><input class="editable" id="crmSoglia" type="number" min="15" max="365" value="${cfg.sogliaInattivo}" style="max-width:120px;"></div>
+    <div class="client-section-label" style="margin-top:18px;">Costo orario dei professionisti (€/h, costo per il centro)</div>
+    <div class="ev-field"><label>Valore predefinito</label><input class="editable" id="crmCostoDef" value="${escAttr(String(cfg.costoOrarioDefault).replace('.',','))}" style="max-width:120px;"></div>
+    ${state.professionisti.map(p=>`<div class="ev-field"><label>${escHtml(p.nome)}${p.area?' ('+escHtml(p.area)+')':''}</label><input class="editable" data-crmcosto="${p.id}" placeholder="come predefinito" value="${cfg.costoOrario[p.id]!=null?escAttr(String(cfg.costoOrario[p.id]).replace('.',',')):''}" style="max-width:120px;"></div>`).join('')}
+    <div class="client-section-label" style="margin-top:18px;">Fonti di arrivo e costo di acquisizione per cliente (€)</div>
+    ${cfg.fonti.map(f=>`<div class="ev-field"><label>${escHtml(f)}</label><input class="editable" data-crmfonte="${escAttr(f)}" placeholder="0" value="${cfg.costiFonte[f]!=null?escAttr(String(cfg.costiFonte[f]).replace('.',',')):''}" style="max-width:120px;"></div>`).join('')}
+    <div class="ev-field"><label>Elenco fonti (separate da virgola)</label><input class="editable" id="crmFonti" value="${escAttr(cfg.fonti.join(', '))}"></div>
+    <button class="btn-gold" id="crmSaveCfg" style="margin-top:10px;">Salva impostazioni</button><span id="crmSaveMsg" style="margin-left:10px;font-size:12px;color:var(--ink-mute);"></span>
+    <div style="font-size:11.5px;color:var(--ink-mute);margin-top:12px;">Ricavi = importi degli appuntamenti + prezzo dei pacchetti (le sedute coperte da un pacchetto non si contano due volte). Costo del lavoro = durata delle sedute svolte × costo orario. Il margine sottrae anche il costo di acquisizione.</div></div>`;
+  const num = v=>{ const n = parseFloat(String(v).replace(',','.')); return isFinite(n) ? n : null; };
+  box.querySelector('#crmSaveCfg').onclick = async ()=>{
+    cfg.sogliaInattivo = Math.max(15, parseInt(box.querySelector('#crmSoglia').value)||60);
+    cfg.costoOrarioDefault = num(box.querySelector('#crmCostoDef').value)||0;
+    box.querySelectorAll('[data-crmcosto]').forEach(i=>{ const n = num(i.value); if(n==null) delete cfg.costoOrario[i.dataset.crmcosto]; else cfg.costoOrario[i.dataset.crmcosto] = n; });
+    const nuove = box.querySelector('#crmFonti').value.split(',').map(x=>x.trim()).filter(Boolean);
+    cfg.fonti = nuove.length ? nuove : CRM_FONTI_DEF.slice();
+    box.querySelectorAll('[data-crmfonte]').forEach(i=>{ const n = num(i.value); if(n==null) delete cfg.costiFonte[i.dataset.crmfonte]; else cfg.costiFonte[i.dataset.crmfonte] = n; });
+    const ok = await crmSave();
+    box.querySelector('#crmSaveMsg').textContent = ok===false ? 'Errore nel salvataggio.' : 'Salvato.';
+    if(ok!==false) setTimeout(renderCrm, 600);
+  };
+}
+function crmApriCliente(id){
+  const r = crmCalc().find(x=>x.c.id===id); if(!r) return;
+  const c = r.c, cd = r.cd, cfg = crmCfg();
+  const modal = document.getElementById('crmModal'), body = document.getElementById('crmModalBody');
+  const prof = pid=>{ const p = state.professionisti.find(x=>x.id===pid); return p ? p.nome : '—'; };
+  const mov = r.mov.slice().sort((a,b)=>b.day.localeCompare(a.day));
+  body.innerHTML = `<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap;">
+      <div><div style="font-family:var(--serif);font-size:20px;">${escHtml(c.nome)}</div><div style="font-size:12.5px;color:var(--ink-mute);">${escHtml(catLabel(c.categoria)||'Da assegnare')} · ${escHtml([c.telefono,c.email].filter(Boolean).join(' · '))}</div></div>
+      <div>${crmChip(r.stato)}</div></div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin:14px 0;">
+      ${crmKpi('Ha portato', crmEur(r.ricavi), 'incassato '+crmEur(r.incassato))}${crmKpi('Costa', crmEur(r.costo), 'lavoro '+crmEur(r.costoLav)+' + acq. '+crmEur(r.costoAcq))}${crmKpi('Margine', crmEur(r.margine), '', r.margine<0?'#E0776A':'#4FA37A')}${crmKpi('Sedute', r.nSedute, r.ore.toFixed(1).replace('.',',')+' ore')}</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;">${CRM_STEPS.map((l,i)=>`<span style="padding:3px 10px;border-radius:12px;font-size:11.5px;border:1px solid var(--line);${i<=r.step?'background:var(--gold-dim);color:var(--gold-bright);border-color:var(--gold-line);':'color:var(--ink-mute);'}">${l}</span>`).join('')}</div>
+    <div style="font-size:12px;color:var(--ink-mute);margin-bottom:14px;">Prima seduta ${crmFd(r.prima)} · ultima ${crmFd(r.ultima)}${r.gg!=null?' ('+r.gg+' giorni fa)':''}${r.prossima?' · prossima '+crmFd(r.prossima):''}</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;">
+      <div class="ev-field"><label>Come ci ha conosciuto</label><select class="editable" id="crmFonte"><option value="">—</option>${cfg.fonti.map(f=>`<option ${cd.fonte===f?'selected':''}>${escHtml(f)}</option>`).join('')}</select></div>
+      <div class="ev-field"><label>Costo acquisizione (€, opzionale)</label><input class="editable" id="crmAcq" value="${cd.costoAcq!=null&&cd.costoAcq!==''?escAttr(String(cd.costoAcq).replace('.',',')):''}" placeholder="${r.fonte && cfg.costiFonte[r.fonte]!=null ? 'da fonte: '+cfg.costiFonte[r.fonte] : '0'}"></div>
+      <div class="ev-field"><label>Stato</label><select class="editable" id="crmStato"><option value="">Automatico</option><option value="perso" ${cd.stato==='perso'?'selected':''}>Perso</option><option value="concluso" ${cd.stato==='concluso'?'selected':''}>Percorso concluso</option></select></div>
+      <div class="ev-field"><label>Motivo</label><select class="editable" id="crmMotivo"><option value="">—</option>${CRM_MOTIVI.map(m=>`<option ${cd.motivo===m?'selected':''}>${m}</option>`).join('')}</select></div></div>
+    <div class="ev-field"><label>Note</label><input class="editable" id="crmNote" value="${escAttr(cd.note||'')}" placeholder="es. ricontattare a gennaio"></div>
+    <button class="btn-gold" id="crmSaveCli">Salva</button> <button class="btn-ghost" id="crmOpenCli">Apri scheda cliente</button>
+    <div class="client-section-label" style="margin-top:20px;">Storia economica</div>
+    <div style="max-height:300px;overflow:auto;margin-top:8px;"><table class="ghi-table"><thead><tr><th>Data</th><th>Cosa</th><th>Professionista</th><th>Importo</th><th>Incassato</th><th>Costo</th></tr></thead><tbody>
+    ${mov.map(m=> m.tipo==='pacchetto'
+      ? `<tr><td>${crmFd(m.day)}</td><td>Pacchetto: ${escHtml(m.pk.nome||'')}</td><td>—</td><td>${crmEur(m.imp)}</td><td>${m.pk.fatturaId?'sì':'—'}</td><td>—</td></tr>`
+      : `<tr><td>${crmFd(m.day)}${m.day>fmtDateISO(new Date())?' <span style="opacity:.6">(prevista)</span>':''}</td><td>${escHtml(m.ap.titolo || m.ap.tipo || 'Seduta')}</td><td>${escHtml(prof(m.ap.professionistaId))}</td><td>${m.imp?crmEur(m.imp):'—'}</td><td>${m.ap.pagato?'sì':(m.imp?'no':'—')}</td><td>${m.costo?crmEur(m.costo):'—'}</td></tr>`).join('') || '<tr><td colspan="6" class="val-empty">Nessun movimento.</td></tr>'}
+    </tbody></table></div>`;
+  modal.classList.add('open');
+  const num = v=>{ const n = parseFloat(String(v).replace(',','.')); return isFinite(n) ? n : null; };
+  body.querySelector('#crmSaveCli').onclick = ()=>{
+    cd.fonte = body.querySelector('#crmFonte').value; cd.costoAcq = num(body.querySelector('#crmAcq').value);
+    cd.stato = body.querySelector('#crmStato').value; cd.motivo = body.querySelector('#crmMotivo').value; cd.note = body.querySelector('#crmNote').value;
+    if(cd.stato==='perso' && !cd.dataPerdita) cd.dataPerdita = fmtDateISO(new Date());
+    db.saveCliente(c); modal.classList.remove('open'); renderCrm();
+  };
+  body.querySelector('#crmOpenCli').onclick = ()=>{ modal.classList.remove('open'); openClientForRole(c.id); };
+}
+document.getElementById('crmClose').onclick = ()=> document.getElementById('crmModal').classList.remove('open');
+document.getElementById('btnCrm').onclick = ()=>{ showView('crm'); renderCrm(); };
 
 // ==================== AREA HUMAN ====================
 // smista il contenuto della tab "Area Human" in base alla competenza del
@@ -14514,7 +14820,7 @@ function fattApriImp(){
   m.classList.add('open');
   document.getElementById('fiSalva').onclick = async ()=>{
     const g = id=>document.getElementById(id).value.trim();
-    state.fattImp = {denominazione:g('fiDen'), piva:g('fiPiva'), cf:g('fiCf'), regime:g('fiReg'), indirizzo:g('fiInd'), cap:g('fiCap'), comune:g('fiCom'), provincia:g('fiProv').toUpperCase(), iban:g('fiIban').replace(/\s+/g,''), bollo:parseFloat(g('fiBollo').replace(',','.'))||2, ultimoNumero:parseInt(g('fiUlt'))||0, listinoSeeded:!!state.fattImp.listinoSeeded};
+    state.fattImp = {denominazione:g('fiDen'), piva:g('fiPiva'), cf:g('fiCf'), regime:g('fiReg'), indirizzo:g('fiInd'), cap:g('fiCap'), comune:g('fiCom'), provincia:g('fiProv').toUpperCase(), iban:g('fiIban').replace(/\s+/g,''), bollo:parseFloat(g('fiBollo').replace(',','.'))||2, ultimoNumero:parseInt(g('fiUlt'))||0, listinoSeeded:!!state.fattImp.listinoSeeded, crm:state.fattImp.crm};
     const ok = await db.saveFattImp(state.fattImp);
     if(!ok) alert('Salvataggio non riuscito: controlla di aver eseguito il blocco SQL della Fatturazione.');
     m.classList.remove('open');
