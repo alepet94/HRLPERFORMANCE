@@ -1962,6 +1962,100 @@ body[data-theme="light"] .paz-lk-list{background:#fff;border-color:#ccc;}
 .fat-pg{display:grid;grid-template-columns:110px 1fr auto 34px;gap:8px;align-items:center;padding:4px 0;border-bottom:1px solid var(--line-soft);}
 @media(max-width:700px){.fat-rg-head{display:none}.fat-rg{grid-template-columns:1fr 1fr}}
 .avv-chip.warn:not(.active){color:var(--ink-dim);}
+
+/* ================= RESTYLE 2026 — stessa identità HRL, più pulita e leggibile =================
+   Solo override di aspetto (nessuna logica): colori e font del brand invariati. */
+:root{
+  --radius:10px;
+  --r-sm:8px; --r-md:12px; --r-lg:16px;
+  --shadow-1:0 1px 2px rgba(0,0,0,.25);
+  --shadow-2:0 12px 40px rgba(0,0,0,.45);
+  --ring:0 0 0 3px rgba(253,112,35,.35);
+  --t:150ms cubic-bezier(.2,.7,.3,1);
+}
+body[data-theme="light"]{
+  --ink-mute:#5C5B57;
+  --shadow-1:0 1px 2px rgba(20,20,10,.08);
+  --shadow-2:0 12px 40px rgba(20,20,10,.18);
+}
+body{font-size:15px;letter-spacing:.005em;text-rendering:optimizeLegibility;}
+h1,h2,h3{text-wrap:balance;}
+/* focus sempre visibile da tastiera */
+:focus-visible{outline:2px solid var(--gold);outline-offset:2px;border-radius:6px;}
+button,[role="button"],select,summary,label[for],a.btn-small,.cal-mode-opt,.cli-row,.fat-table tbody tr{cursor:pointer;}
+button:disabled{cursor:not-allowed;opacity:.5;}
+
+/* testata */
+header.top{padding:14px 28px;align-items:center;background:color-mix(in srgb,var(--navy-950) 88%,transparent);border-bottom:1px solid var(--line-soft);}
+.brand h1{font-size:17px;letter-spacing:.04em;}
+.brand .sub{font-size:12px;}
+.top-actions{gap:6px;flex-wrap:wrap;}
+.top-actions .btn-ghost{border-color:transparent;background:transparent;}
+.top-actions .btn-ghost:hover{background:var(--navy-800);border-color:var(--line);color:var(--ink);}
+
+/* pulsanti: gerarchia chiara (primario pieno, secondario a contorno, piccolo) */
+.btn-gold,.btn-ghost,.btn-small{transition:background var(--t),border-color var(--t),color var(--t),transform var(--t),box-shadow var(--t);}
+.btn-gold{border-radius:var(--r-sm);padding:10px 20px;font-size:12.5px;letter-spacing:.05em;min-height:40px;box-shadow:var(--shadow-1);}
+.btn-gold:hover{box-shadow:0 4px 14px rgba(253,112,35,.28);}
+.btn-gold:active,.btn-ghost:active,.btn-small:active{transform:translateY(1px) scale(.99);}
+.btn-ghost{border-radius:var(--r-sm);padding:8px 14px;font-size:12.5px;font-weight:600;text-transform:none;letter-spacing:.01em;min-height:36px;color:var(--ink);}
+.btn-ghost:hover{background:var(--gold-dim);}
+.btn-small{border-radius:var(--r-sm);padding:6px 12px;font-size:12px;font-weight:500;min-height:32px;}
+.btn-small:hover{background:var(--gold-dim);}
+.btn-small.danger:hover{background:rgba(224,119,106,.14);}
+
+/* campi */
+.editable,input.editable,select.editable,textarea.editable{border-radius:var(--r-sm);min-height:38px;padding:8px 12px;font-size:13.5px;background:var(--navy-850);border-color:var(--line);transition:border-color var(--t),box-shadow var(--t),background var(--t);}
+textarea.editable{min-height:72px;line-height:1.45;}
+.editable:hover{border-color:var(--ink-mute);}
+.editable:focus{border-color:var(--gold);box-shadow:var(--ring);background:var(--navy-900);outline:none;}
+.ev-field label,.ev-field>label{font-size:11.5px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-mute);margin-bottom:5px;display:block;}
+
+/* schede a segmenti (tab dentro le pagine) */
+.cal-mode-toggle{gap:2px;background:var(--navy-850);padding:3px;border-radius:12px;border:1px solid var(--line-soft);width:fit-content;max-width:100%;}
+.cal-mode-opt{border:0;border-radius:9px;padding:8px 14px;font-size:12.5px;font-weight:600;color:var(--ink-mute);transition:background var(--t),color var(--t);}
+.cal-mode-opt:hover{color:var(--ink);background:var(--navy-800);}
+.cal-mode-opt.active{background:var(--gold);color:#0A0A0A;box-shadow:var(--shadow-1);}
+
+/* finestre */
+.modal-bg{background:rgba(8,8,8,.66);backdrop-filter:blur(4px);}
+.modal{border-radius:var(--r-lg);box-shadow:var(--shadow-2);border-color:var(--line-soft);padding:28px 32px;}
+.modal h3{font-size:18px;letter-spacing:.03em;}
+.modal-close{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;transition:background var(--t),color var(--t);}
+.modal-close:hover{background:var(--navy-800);color:var(--ink);}
+
+/* tabelle: più aria, intestazioni discrete, riga evidenziata al passaggio */
+.ghi-table,.fat-table{font-variant-numeric:tabular-nums;}
+.ghi-table th,.ghi-table td{padding:10px 12px;}
+.ghi-table th:first-child,.ghi-table td:first-child{text-align:left;}
+.ghi-table thead th,.fat-table th{font-size:11px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-mute);}
+.ghi-table tbody tr{transition:background var(--t);}
+.ghi-table tbody tr:hover{background:var(--navy-850);}
+.fat-table th{padding:11px 12px;background:var(--navy-850);}
+.fat-table td{padding:11px 12px;}
+.fat-table-wrap{border-radius:var(--r-md);border-color:var(--line-soft);}
+.cli-row{padding:12px 18px;border-radius:0;transition:background var(--t);}
+.cli-row .cl-n{font-size:15.5px;}
+
+/* etichette di sezione e note */
+.client-section-label{font-size:17px;letter-spacing:.01em;}
+.val-empty{text-align:center;padding:32px 0;}
+.val-legacy-note{border-radius:var(--r-md);}
+.fat-pill{border-radius:999px;}
+
+/* barre di scorrimento sottili */
+*{scrollbar-width:thin;scrollbar-color:var(--line) transparent;}
+::-webkit-scrollbar{width:10px;height:10px;}
+::-webkit-scrollbar-thumb{background:var(--line);border-radius:10px;border:2px solid transparent;background-clip:content-box;}
+
+@media (max-width:720px){
+  header.top{padding:12px 16px;}
+  .modal{padding:22px 18px;border-radius:var(--r-md);}
+  .cal-mode-toggle{width:100%;overflow-x:auto;flex-wrap:nowrap;}
+  .cal-mode-opt{white-space:nowrap;}
+}
+@media (pointer:coarse){ .btn-small{min-height:40px;} .btn-ghost{min-height:42px;} }
+@media (prefers-reduced-motion:reduce){ *{transition-duration:.01ms !important;animation-duration:.01ms !important;scroll-behavior:auto !important;} }
 </style>
 </head>
 <body>
@@ -6631,8 +6725,8 @@ function crmRicTesto(r, n){
 }
 const CRM_STATO_COL = {fidelizzato:'#2F8F6B', attivo:'#4FA37A', nuovo:'#6FA8DC', 'a rischio':'#E0A030', inattivo:'#E0776A', perso:'#B0554A', concluso:'#8E8C88'};
 const crmChip = s=>`<span style="display:inline-block;padding:2px 9px;border-radius:10px;font-size:11px;color:#fff;background:${CRM_STATO_COL[s]||'#777'};">${escHtml(s)}</span>`;
-function crmBars(items, fmt){   // barre orizzontali: [{label, v, sub}]
-  const mx = Math.max(1, ...items.map(i=>i.v));
+function crmBars(items, fmt, fisso){   // barre orizzontali: [{label, v, sub}]; fisso = fondo scala (es. 100 per le percentuali)
+  const mx = fisso || Math.max(1, ...items.map(i=>i.v));
   return items.map(i=>`<div style="display:grid;grid-template-columns:150px 1fr 90px;gap:10px;align-items:center;margin:6px 0;font-size:12.5px;">
     <div style="color:var(--ink-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escAttr(i.label)}">${escHtml(i.label)}</div>
     <div style="background:var(--navy-800);border-radius:4px;height:16px;"><div style="width:${Math.max(2,i.v/mx*100)}%;height:100%;background:${i.col||'var(--gold)'};border-radius:4px;"></div></div>
@@ -6719,13 +6813,13 @@ function crmViewPanoramica(box, rows){
     <div style="display:flex;gap:8px;align-items:center;margin:8px 0;flex-wrap:wrap;">
       <button class="btn-ghost" id="crmWkPrev">‹</button><span style="font-size:13px;">${crmFd(wl.da)} → ${crmFd(wl.a)}${state.crmWeek===0?' (questa settimana)':''}</span><button class="btn-ghost" id="crmWkNext">›</button>${state.crmWeek!==0?'<button class="btn-ghost" id="crmWkNow">Oggi</button>':''}
       <span style="margin-left:auto;font-size:11.5px;color:var(--ink-mute);"><span style="color:#4FA37A;">■</span> oltre 80 % · <span style="color:#E0A030;">■</span> 62–80 % · <span style="color:#E0776A;">■</span> 61 % o meno</span></div>
-    <div style="margin:6px 0 4px;">${wl.righe.length ? crmBars(wl.righe.map(x=>({label:x.nome, v:Math.min(100,x.pct), col:crmWlCol(x.pct), sub:Math.round(x.pct)+' % · '+x.occ.toFixed(1).replace('.',',')+'/'+x.av.toFixed(1).replace('.',',')+' h'+(x.noDisp?' *':'')})), v=>'') : '<div class="val-empty">Nessuna disponibilità o seduta in questa settimana.</div>'}</div>
+    <div style="margin:6px 0 4px;">${wl.righe.length ? crmBars(wl.righe.map(x=>({label:x.nome, v:Math.min(100,x.pct), col:crmWlCol(x.pct), sub:Math.round(x.pct)+' % · '+x.occ.toFixed(1).replace('.',',')+'/'+x.av.toFixed(1).replace('.',',')+' h'+(x.noDisp?' *':'')})), v=>'', 100) : '<div class="val-empty">Nessuna disponibilità o seduta in questa settimana.</div>'}</div>
     <div style="font-size:11.5px;color:var(--ink-mute);margin-bottom:24px;">Le ore di disponibilità sono quelle impostate nel calendario (“Disponibilità settimanale”, meno le fasce “non disponibile”); conta tutta la settimana, anche le sedute già fissate nei giorni futuri.${wl.righe.some(x=>x.noDisp)?' * Disponibilità non impostata: uso l’orario del calendario.':''} Un professionista con 10 ore date e 1 lavorata è al 10 %: workload bassissimo.</div>
-    ${sat.perSp.length ? `<div class="client-section-label">Occupazione degli spazi (periodo scelto)</div><div style="margin:10px 0 24px;">${crmBars(sat.perSp.map(x=>({label:x.nome, v:x.cap?Math.min(100,x.occ/x.cap*100):0, sub:crmPct(x.cap?x.occ/x.cap:0)+' · '+x.occ.toFixed(0)+'/'+x.cap.toFixed(0)+' posti-ora'})), v=>'')}</div>` : ''}
+    ${sat.perSp.length ? `<div class="client-section-label">Occupazione degli spazi (periodo scelto)</div><div style="margin:10px 0 24px;">${crmBars(sat.perSp.map(x=>({label:x.nome, v:x.cap?Math.min(100,x.occ/x.cap*100):0, sub:crmPct(x.cap?x.occ/x.cap:0)+' · '+x.occ.toFixed(0)+'/'+x.cap.toFixed(0)+' posti-ora'})), v=>'', 100)}</div>` : ''}
     <div class="client-section-label">Ultimi 12 mesi</div>
     <div style="margin:10px 0 24px;">${crmMensile(rows)}</div>
     <div class="client-section-label">Primi 10 clienti per margine</div>
-    <div style="margin-top:10px;">${crmBars(top.map(r=>({label:r.c.nome, v:Math.max(0,r.margine), sub:'ricavi '+crmEur(r.ricavi)})), crmEur)}</div>`;
+    <div style="margin-top:10px;">${crmBars(top.map(r=>({label:r.c.nome, v:Math.max(0,r.margine)})), crmEur)}</div>`;
   const wp=box.querySelector('#crmWkPrev'), wn=box.querySelector('#crmWkNext'), w0=box.querySelector('#crmWkNow');
   if(wp) wp.onclick = ()=>{ state.crmWeek--; renderCrm(); }; if(wn) wn.onclick = ()=>{ state.crmWeek++; renderCrm(); }; if(w0) w0.onclick = ()=>{ state.crmWeek=0; renderCrm(); };
 }
@@ -12796,9 +12890,13 @@ function bindSchedaEvents(box){
 }
 
 // ---------------- esercizi / video tutorial ----------------
+// un esercizio personalizzato con lo stesso nome di uno della libreria di base lo sostituisce
+// (è così che si assegna un link Vimeo a un esercizio di base)
 function allExercises(){
-  return EXDB.concat(state.customExercises);
+  const mio = new Set(state.customExercises.map(c=>(c.nome||'').trim().toLowerCase()));
+  return EXDB.filter(b=>!mio.has(b.nome.toLowerCase())).concat(state.customExercises);
 }
+const isVimeo = u=> /^https?:\/\/([a-z0-9-]+\.)?vimeo\.com\//i.test(u||'');
 function findExerciseVideo(name){
   const n = (name||'').trim().toLowerCase();
   if(!n) return null;
@@ -12842,8 +12940,8 @@ function renderExLibrary(filter){
     return `<div class="ex-lib-item">
       <div><div class="exl-name">${e.nome}${isCustom ? ' <span style="color:var(--ink-mute);font-size:10px;">(personalizzato)</span>' : ''}</div><div class="exl-cat">${e.categoria}</div></div>
       <div style="display:flex;gap:8px;align-items:center;">
-        ${e.youtube ? `<a href="${e.youtube}" target="_blank" rel="noopener">▶ Video</a>` : `<span style="color:var(--ink-mute);font-size:11.5px;">Nessun video</span>`}
-        ${isCustom ? `<button class="btn-small" data-edit-ex="${e.id}">Modifica</button><button class="btn-small danger" data-del-ex="${e.id}">Elimina</button>` : ''}
+        ${e.youtube ? `<a href="${e.youtube}" target="_blank" rel="noopener">▶ Video</a>${isVimeo(e.youtube) ? '' : ' <span style="color:#E0A030;font-size:10.5px;">non Vimeo</span>'}` : `<span style="color:var(--ink-mute);font-size:11.5px;">Nessun video</span>`}
+        ${isCustom ? `<button class="btn-small" data-edit-ex="${e.id}">Modifica</button><button class="btn-small danger" data-del-ex="${e.id}">Elimina</button>` : `<button class="btn-small" data-vimeo-ex="${escAttr(e.nome)}">Link Vimeo</button>`}
       </div>
     </div>`;
   }).join('') || `<div style="color:var(--ink-mute);font-size:12.5px;">Nessun esercizio trovato: cambia la ricerca o aggiungilo con “+ Nuovo esercizio”.</div>`;
@@ -12852,6 +12950,15 @@ function renderExLibrary(filter){
     btn.onclick = ()=>{
       const ex = state.customExercises.find(x=>x.id===btn.dataset.editEx);
       if(ex) openExerciseEditor(ex);
+    };
+  });
+  box.querySelectorAll('[data-vimeo-ex]').forEach(btn=>{
+    btn.onclick = ()=>{
+      const b = EXDB.find(x=>x.nome===btn.dataset.vimeoEx); if(!b) return;
+      openExerciseEditor(null);
+      const ed = state.exerciseEditor; ed.nome = b.nome; ed.categoria = b.categoria || ''; ed.alias = (b.alias||[]).slice(); ed.youtube = '';
+      document.getElementById('exeNome').value = ed.nome; document.getElementById('exeCategoria').value = ed.categoria;
+      document.getElementById('exEditorTitle').textContent = 'Link Vimeo per ' + ed.nome;
     };
   });
   box.querySelectorAll('[data-del-ex]').forEach(btn=>{
@@ -12878,7 +12985,7 @@ function openExerciseEditor(existing){
   box.innerHTML = `
     <div class="ev-field"><label>Nome esercizio</label><input class="editable" id="exeNome" value="${e.nome}" placeholder="es. Affondo laterale"></div>
     <div class="ev-field"><label>Categoria (opzionale)</label><input class="editable" id="exeCategoria" value="${e.categoria}" placeholder="es. Forza, Mobilità, Sprint..."></div>
-    <div class="ev-field"><label>Link video (YouTube o altro, opzionale)</label><input class="editable" id="exeYoutube" value="${e.youtube}" placeholder="https://..."></div>
+    <div class="ev-field"><label>Link video Vimeo (opzionale)</label><input class="editable" id="exeYoutube" value="${escAttr(e.youtube)}" placeholder="https://vimeo.com/123456789"></div>
     <div class="ev-actions">
       <div>${!state.exerciseEditorIsNew ? '<button class="btn-small danger" id="btnDeleteExercise">Elimina</button>' : ''}</div>
       <button class="btn-gold" id="btnSaveExercise">Salva esercizio</button>
@@ -12889,6 +12996,7 @@ function openExerciseEditor(existing){
     if(!nome){ alert('Inserisci almeno il nome dell\'esercizio.'); return; }
     const youtube = document.getElementById('exeYoutube').value.trim();
     if(youtube && !/^https?:\/\//i.test(youtube)){ alert('Il link video deve iniziare con http:// o https://'); return; }
+    if(youtube && !isVimeo(youtube) && !confirm('Questo non sembra un link Vimeo (vimeo.com). Salvare comunque?')) return;
     e.nome = nome;
     e.categoria = document.getElementById('exeCategoria').value.trim() || 'Personalizzato';
     e.youtube = youtube;
